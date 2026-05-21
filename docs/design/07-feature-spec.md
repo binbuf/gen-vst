@@ -11,7 +11,7 @@ All features present in Genny v1.5 must be matched:
 - [ ] Per-channel controls: ALG, FB, L/R output enable, AMS, PMS
 - [ ] Global LFO: enable toggle, rate selector (8 values)
 - [ ] TFI patch load
-- [ ] Patch browser with bank/patch list
+- [ ] Folder-tree patch browser ([ADR-0006](adr/0006-folder-tree-patch-browser.md))
 - [ ] MIDI note-on / note-off
 - [ ] MIDI velocity → TL scaling (configurable on/off)
 - [ ] MIDI pitch bend
@@ -20,25 +20,39 @@ All features present in Genny v1.5 must be matched:
 
 ---
 
+## Multitimbral Architecture
+
+Gen VST is a **six-part multitimbral** instrument ([ADR-0013](adr/0013-multitimbral-voice-model.md)):
+
+- **6 FM parts**, each with its own patch and assigned MIDI channel.
+- **16-voice shared pool** — FM polyphony is 16 notes shared across all active
+  parts, not a per-part limit.
+- **PSG** — 3 tone slots + 1 noise slot, each on its own MIDI channel.
+- **DAC** — a dedicated sample channel on its own MIDI channel ([ADR-0014](adr/0014-special-channel-features.md)).
+
+The MIDI-channel → destination binding table is user-configurable and persisted.
+
+---
+
 ## Extensions Beyond Genny
 
 ### Patch Formats
 - [ ] VGI patch import (adds AMS/FMS fields missing from TFI)
 - [ ] VGI patch export
-- [ ] DMP patch import (DefleMask format, version 8 and 11)
+- [ ] DMP patch import (DefleMask format, version 11 — [ADR-0012](adr/0012-dmp-version-scope.md))
 - [ ] Drag-and-drop: accept `.tfi`/`.vgi`/`.dmp` dropped onto plugin window
-- [ ] Bulk folder import: drop a folder → create new user bank
+- [ ] Bulk folder import: drop a folder → register it as a custom patch root
 
 ### Polyphony
-- [ ] 16-voice FM polyphony (vs. Genny's hardware-limited 6)
+- [ ] 16-voice FM polyphony — a shared pool across 6 multitimbral parts ([ADR-0013](adr/0013-multitimbral-voice-model.md)), vs. Genny's hardware-limited 6
 - [ ] Configurable voice count (8, 12, 16)
 - [ ] Poly mode (default): LRU voice stealing
 - [ ] Mono mode: last-note priority, configurable legato vs. retrigger
-- [ ] Unison mode: N voices playing same note with spread DT offset
+- [ ] Unison mode: N voices playing same note with per-voice detune spread
 - [ ] Per-voice envelope retrigger option in Mono mode
 
 ### FM Features
-- [ ] Channel 3 special mode (per-operator pitch for 4 independent pitches)
+- [ ] Channel 3 special mode (per-operator pitch for 4 independent pitches) — *post-MVP ([ADR-0014](adr/0014-special-channel-features.md))*
 - [ ] SSG-EG for all 8 looping envelope shapes
 
 ### MIDI
@@ -47,7 +61,7 @@ All features present in Genny v1.5 must be matched:
 - [ ] All Sound Off (CC 120)
 - [ ] Reset All Controllers (CC 121)
 - [ ] All Notes Off (CC 123)
-- [ ] Program Change: load patch by bank index
+- [ ] Program Change: load the Nth factory patch into the part on that MIDI channel
 - [ ] Aftertouch (channel pressure): optional map to LFO depth or carrier TL
 
 ### PSG Features
@@ -71,7 +85,7 @@ All features present in Genny v1.5 must be matched:
 
 ### State
 - [ ] Full DAW state save/restore (`getStateInformation`/`setStateInformation`)
-- [ ] Bank/preset name persisted in DAW project
+- [ ] Per-part patch + MIDI-channel assignments persisted in DAW project
 
 ---
 
@@ -125,8 +139,8 @@ Scaling formula: `hardware_val = round(cc_val × max_val / 127.0f)`
 | 64 | Sustain Pedal | 0/127 | Standard |
 | 70 | LFO Enable | 0/127 | |
 | 71 | LFO Rate | 0–7 | |
-| 72 | AMS (active channel) | 0–3 | |
-| 73 | PMS (active channel) | 0–7 | |
+| 72 | AMS | 0–3 | per-part |
+| 73 | PMS | 0–7 | per-part |
 | 80 | AMON OP1 | 0/127 | |
 | 81 | AMON OP2 | 0/127 | |
 | 82 | AMON OP3 | 0/127 | |
@@ -137,11 +151,15 @@ Scaling formula: `hardware_val = round(cc_val × max_val / 127.0f)`
 | 121 | Reset All Controllers | — | Standard |
 | 123 | All Notes Off | — | Standard (with release) |
 
-All CC parameters are also exposed as JUCE `AudioProcessorParameter` entries in `apvts` for full DAW automation lane support.
+A CC affects the FM part bound to the MIDI channel it arrives on (not the UI-selected part). All CC parameters are also exposed as JUCE `AudioProcessorParameter` entries in `apvts` for full DAW automation lane support.
 
 ---
 
 ## Polyphony Modes
+
+Polyphony mode is a **per-part** setting — each of the 6 FM parts is independently
+Poly, Mono or Unison. Voices are drawn from the shared 16-voice pool
+([ADR-0013](adr/0013-multitimbral-voice-model.md)).
 
 ### Poly (Default)
 
@@ -159,7 +177,10 @@ Configurable via a "Mono Mode" toggle in the UI.
 
 ### Unison
 
-All N voices play the same pitch simultaneously. Each voice has a DT offset from a configurable spread table:
+All N voices play the same pitch simultaneously, each detuned by a per-voice
+**F-number offset**. (Not the YM2612 DT register — DT is a coarse 3-bit detune and
+cannot express cents; fine unison spread must be applied to the F-number.) Offsets
+fan out symmetrically:
 
 ```
 Voice 0: no offset
@@ -170,11 +191,12 @@ Voice 4: -spread × 2
 ...
 ```
 
-Spread is a plugin parameter (in cents, 0–50). Larger spread = more detuned unison / chorus effect.
+Spread is a plugin parameter in cents (0–50); each voice's F-number is computed for
+its detuned pitch. Larger spread = a wider, more chorused unison.
 
 ### Chord (Optional / Post-MVP)
 
-Split MIDI note range into zones, each triggering a different FM channel configuration. Useful for playing a single key to trigger a full chord.
+Split MIDI note range into zones, each triggering a different FM part configuration. Useful for playing a single key to trigger a full chord.
 
 ---
 
@@ -182,16 +204,29 @@ Split MIDI note range into zones, each triggering a different FM channel configu
 
 - Bend range: configurable ±1, ±2, ±7, ±12 semitones (default ±2)
 - Implementation: `semitone_offset = (bend_value / 8192.0f) × bend_range_semitones`
-- Recalculate F-number and BLK for all active voices on the bent MIDI channel
+- Recalculate F-number and BLK for all active voices of the part on the bent MIDI channel
 - Applies to FM voices only by default; enable separately for PSG voices
+
+---
+
+## Program Change
+
+A Program Change message loads a factory patch into the FM part bound to the
+message's MIDI channel. Program number *N* selects the **Nth factory patch** in
+sorted order — the factory root provides a stable, predictable index (the browser
+itself is a folder tree with no flat index, see
+[ADR-0006](adr/0006-folder-tree-patch-browser.md)). Bank Select (MSB/LSB) to
+address the user or custom roots is a possible later addition.
 
 ---
 
 ## DAC Mode Specification
 
-When DAC mode is enabled:
-1. Write `0x2B = 0x80` to enable DAC on YM2612 channel 6
-2. The voice allocator excludes channel 6 from FM allocation
+DAC playback runs on a **dedicated `ymfm` instance** reserved for it
+([ADR-0014](adr/0014-special-channel-features.md)) — it is not part of the
+16-voice pool, and no FM channel is ever excluded:
+1. The DAC instance has `0x2B = 0x80` (DACEN) set on its own channel 6.
+2. It is triggered via a dedicated MIDI channel, consistent with PSG routing.
 3. `DACPlayer::process(numSamples)` runs each block, writing 8-bit PCM samples to `0x2A` at the configured rate
 
 **Phase-accurate timing:**
@@ -213,7 +248,7 @@ void process(int numSamples) {
 }
 ```
 
-**PCM source:** Load a WAV file via `juce::AudioFormatManager` / `juce::AudioFormatReader`. Loop or one-shot playback. Limited to 8-bit resolution (hardware limitation).
+**PCM source:** Load a WAV file via `juce::AudioFormatManager` / `juce::AudioFormatReader`. Loop or one-shot playback. Limited to 8-bit resolution (hardware limitation). The converted 8-bit PCM is **embedded in plugin state** (base64 in the state XML) so a saved project is self-contained — see *State Persistence*.
 
 ---
 
@@ -222,34 +257,59 @@ void process(int numSamples) {
 All `apvts` parameters are automatically serialized by JUCE. Custom fields appended to the XML:
 
 ```xml
-<GenVstState bankName="SoR Koshiro" patchIndex="3" polyMode="poly" voiceCount="16"
-             bendRange="2" psgMidiCh0="11" psgMidiCh1="12" psgMidiCh2="13" psgMidiNoise="14">
+<GenVstState voiceCount="16" bendRange="2">
+  <parts>
+    <part index="0" midiChannel="1" patchPath="…/factory/bass.tfi"/>
+    <part index="1" midiChannel="2" patchPath="…/user/lead.tfi"/>
+    <!-- … parts 2–5 … -->
+  </parts>
+  <psg ch0="11" ch1="12" ch2="13" noise="14"/>
+  <dac midiChannel="16" pcm="(base64 8-bit PCM)"/>
+  <customRoots>
+    <root path="…"/>
+  </customRoots>
   <!-- apvts parameter tree follows -->
 </GenVstState>
 ```
 
-`setStateInformation` restores all parameters, then calls `patchSystem.loadByIndex()` to re-apply the saved patch's register values to the active voice.
+`setStateInformation` restores all `apvts` parameters, re-binds each part's MIDI
+channel, reloads each part's patch by path, and restores the DAC PCM. A patch path
+that no longer resolves leaves the part's restored parameter values in place and
+raises a notification ([05-ui-ux.md](05-ui-ux.md)).
 
 ---
 
-## Open Questions (Consolidated)
+## Open Questions
 
-1. **SN76489 library choice:** `vgmrips/vgmplay`, `ValleyBell/libvgm`, or custom. Decide before writing `SN76489Engine`.
+Most former open questions are now resolved by ADRs (see `docs/design/adr/`):
+SN76489 library ([ADR-0009](adr/0009-sn76489-library.md)), ymfm instance model
+([ADR-0010](adr/0010-ymfm-instance-model.md)), resampling
+([ADR-0011](adr/0011-resampling-strategy.md)), DMP version scope
+([ADR-0012](adr/0012-dmp-version-scope.md)), voice model
+([ADR-0013](adr/0013-multitimbral-voice-model.md)), DAC and Channel 3 special
+mode ([ADR-0014](adr/0014-special-channel-features.md)), patch licensing
+([ADR-0004](adr/0004-furnace-only-factory-bank.md)), UI framework
+([ADR-0001](adr/0001-juce8-webview-ui.md)), window size
+([ADR-0007](adr/0007-fixed-window-size.md)). The PSG noise channel is controlled
+by direct UI parameters (see [03-psg-synthesis.md](03-psg-synthesis.md)).
 
-2. **ymfm instance count:** 16×1-channel instances vs. 3×6-channel instances for 18 voices. Profile CPU cost of 16 instances at 44,100 Hz before committing.
+What remains:
 
-3. **Resampling strategy:** `juce::ResamplingAudioSource` (easy, good quality) vs. polyphase FIR (better quality, more code). Start with JUCE resampler.
+1. **CPU profiling pass** — confirm 16 ymfm instances at 44,100 Hz are affordable;
+   revisit the instance layout if not ([ADR-0010](adr/0010-ymfm-instance-model.md)).
+   A post-skeleton implementation check.
+2. **DMP v11 byte offsets** — verify against the Furnace source
+   (`src/format/dmp.cpp`) during implementation
+   ([ADR-0012](adr/0012-dmp-version-scope.md)).
+3. **VGI TL range** — confirm whether OP2–OP4 TL is 0–63 or 0–127; cross-check
+   against the plutiedev TFI/VGI reference (see [04-patch-system.md](04-patch-system.md)).
+4. **Mono / Unison defaults** — Mono exposes both retrigger and legato; pick the
+   shipped default (proposed: retrigger). Pick the default Unison spread value.
+5. **Aftertouch routing default** — channel pressure is a configurable routing
+   (LFO depth or carrier TL); pick the default target.
 
-4. **Mono legato behavior:** On note-on with an active note, does the envelope restart (retrigger) or continue (legato)? Expose both options.
-
-5. **MDDC patch licensing:** Contact community maintainers before bundling named game patches in a distributed binary.
-
-6. **DMP v11 byte offsets:** Verify against Furnace source code (`src/format/dmp.cpp`) during implementation — community documentation has discrepancies.
-
-7. **PSG noise → MIDI note mapping:** Fixed note-range mapping (as specified in [03-psg-synthesis.md](03-psg-synthesis.md)) vs. direct UI parameter control. Default to direct UI control for simplicity.
-
-8. **Foleys GUI Magic adoption:** Defer to post-MVP. Start with manual LookAndFeel.
-
-9. **Fixed vs. resizable window:** Fixed at 900×600 for MVP. Add resize support after layout is stable.
-
-10. **Aftertouch mapping:** Channel pressure → LFO depth or carrier TL. Expose as a configurable routing option rather than hardcoding.
+The former UI-specific open questions are now resolved: window scaling by
+[ADR-0017](adr/0017-hidpi-display-scaling.md), WebView2 runtime fallback by
+[ADR-0016](adr/0016-webview2-runtime-distribution.md), and SQ/D section parity by
+the full view catalog in [08-ui-views.md](08-ui-views.md). Every view, popup and
+sub-window is now specified there.

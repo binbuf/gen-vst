@@ -1,0 +1,13 @@
+7-Segment LED display font
+===========================
+
+Source : https://torinak.com/font/7-segment
+Files  : 7segment.ttf, 7segment.woff (downloaded 2026-05-21)
+License: SIL Open Font License (OFL) -- stated on the source page.
+
+Used by Gen VST for the red 7-segment patch-name display in the header.
+Covers digits 0-9, Latin letters, and segment-built symbols, plus a
+separate dot and colon. See docs/design/05-ui-ux.md and docs/genny-ui.md.
+
+The full OFL text is reproduced in ../press-start-2p/OFL.txt (the license
+body is identical for all OFL fonts; only the copyright line differs).

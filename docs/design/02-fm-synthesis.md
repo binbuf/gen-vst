@@ -14,6 +14,10 @@ The **Yamaha YM2612** (OPN2 — FM Operator Type-N, 2nd generation) is the FM so
 **NTSC clock:** 7,670,454 Hz (Genesis master 53,693,175 Hz ÷ 7).
 **Native output rate:** `ym2612::sample_rate(7670454)` ≈ **53,267 Hz**.
 
+Gen VST uses ymfm's `ym2612` class — the discrete YM2612 with its characteristic
+9-bit DAC "ladder effect" — rather than `ym3438` (the cleaner ASIC revision). The
+NTSC system is modelled; PAL (a different master clock) is out of scope.
+
 ---
 
 ## ymfm OPN2 API
@@ -89,7 +93,7 @@ Convenience wrappers for Bank 1: `write_address_hi(addr)`, `write_data_hi(data)`
 | 3:2  | EN    | Timer enable (bit3=B, bit2=A) |
 | 1:0  | LOAD  | Timer load (bit1=B, bit0=A) |
 
-**Special mode** (01): Channel 3's four operators can play at independent pitches using registers `0xA8`–`0xAF`. Useful for chord/arpeggio effects without consuming multiple channels.
+**Special mode** (01): Channel 3's four operators can play at independent pitches using registers `0xA8`–`0xAF`. Useful for chord/arpeggio effects without consuming multiple channels. Channel 3 special mode is **deferred to post-MVP** — see [ADR-0014](adr/0014-special-channel-features.md).
 
 ### `0x28` — Key On / Off
 
@@ -110,7 +114,7 @@ Key-on sequence: write with OPS=0x00 (key-off), then write with OPS=0xF0 (key-on
 |------|-------|-------------|
 | 7    | DACEN | 1 = Channel 6 outputs DAC register; FM synthesis on ch6 is silenced |
 
-Write `0x80` to enable DAC, `0x00` to restore FM on channel 6. The voice allocator must mark channel 6 unavailable when DAC is active.
+Write `0x80` to enable DAC, `0x00` to restore FM on channel 6. In Gen VST the DAC runs on a **dedicated `ymfm` instance** reserved for it ([ADR-0014](adr/0014-special-channel-features.md)), so no FM voice is ever displaced.
 
 ### `0x2C` — DAC LSB (test register)
 
@@ -236,7 +240,7 @@ int freq = static_cast<int>(std::round(note_hz * (1 << (21 - blk)) / 53267.0));
 
 ### `0xA8`–`0xAF` — Channel 3 Special Mode Frequencies
 
-When `0x27` bits 7:6 = 01 (special mode), each of channel 3's operators can be pitched independently:
+When `0x27` bits 7:6 = 01 (special mode), each of channel 3's operators can be pitched independently. *Channel 3 special mode is deferred to post-MVP ([ADR-0014](adr/0014-special-channel-features.md)); this register reference is retained for when it is built.*
 
 | Register | Operator |
 |----------|----------|
@@ -346,7 +350,7 @@ chip.write(1, 0x00);
 
 Phase-accurate write timing: compute the number of host samples per DAC sample, decrement a counter each block, and write when the counter reaches zero.
 
-The voice allocator must exclude channel 6 from FM allocation while DAC mode is active.
+In Gen VST, DAC playback uses a dedicated `ymfm::ym2612` instance separate from the 16-voice pool ([ADR-0014](adr/0014-special-channel-features.md)); no channel is ever excluded from FM allocation.
 
 ---
 

@@ -20,15 +20,15 @@ The **Texas Instruments SN76489** is the PSG (Programmable Sound Generator) in t
 
 ## ymfm Does NOT Include SN76489
 
-`ymfm_misc.h` provides an `ym2149` (AY-3-8910 / SSG) emulator, but **not SN76489**. A separate library is required. Candidates:
+`ymfm_misc.h` provides a `ym2149` (AY-3-8910 / SSG) emulator, but **not
+SN76489**. A separate library is required.
 
-| Library | License | Notes |
-|---------|---------|-------|
-| `vgmrips/vgmplay` `chips/sn76489.c` | Check before use | Battle-tested against VGM ecosystem; explicitly supports `FB_SEGAVDP` variant; C API matches VGM tooling |
-| `ValleyBell/libvgm` `emu/cores/sn764xx.c` | LGPL | More comprehensive, covers multiple SN variants; LGPL compatible with GPL project |
-| Custom implementation | MIT or public domain | ~150 lines; straightforward from public spec; ensures no license ambiguity |
-
-> **Open question:** Decide before finalizing build system. Recommendation: start with `vgmrips/vgmplay sn76489.c` for VGM ecosystem compatibility; fall back to custom if license is unclear.
+Gen VST uses **`ValleyBell/libvgm`** (`emu/cores/sn764xx.c`) — LGPL,
+GPL-compatible, battle-tested across the VGM ecosystem, and covering the Sega VDP
+variant. See [ADR-0009](adr/0009-sn76489-library.md) for the decision and the
+alternatives weighed (`vgmrips/vgmplay`, a custom core). Only the SN76489 core is
+compiled in, wrapped behind the `SN76489Wrapper` interface below so the backend
+stays swappable.
 
 ### Wrapper Interface
 
@@ -45,12 +45,14 @@ public:
 };
 ```
 
-The vgmplay C API maps as:
-```c
-SN76489_Init(clock, sampleRate, feedback, shiftWidth)
-SN76489_Write(chip, data)
-SN76489_Update(chip, int16_t* buf, numSamples)
-```
+`SN76489Wrapper` adapts libvgm's `sn764xx` core to this interface; the core's
+exact entry points are pinned when the submodule is added. The wrapper is the
+**only** code that touches libvgm directly — `SN76489Engine` and the rest of the
+plugin depend on `SN76489Wrapper` alone.
+
+The core is initialized with the host sample rate (`setSampleRate`) and resamples
+**internally**, so the PSG path does not pass through the FM mix-bus resampler
+([ADR-0011](adr/0011-resampling-strategy.md)).
 
 ---
 
@@ -178,17 +180,23 @@ Noise volume uses the same 4-bit attenuation register as tone channels:
 sn.write(0x80 | (3 << 5) | (1 << 4) | (atten & 0x0F));
 ```
 
-### Proposed MIDI Note → Noise Mapping
+### Noise Control — Direct UI Parameters
 
-| MIDI note range | Shift rate | Noise type |
-|-----------------|------------|------------|
-| 0–37            | 10 (low)   | White      |
-| 38–73           | 01 (mid)   | White      |
-| 74–127          | 00 (high)  | White      |
-| Even note #     | as above   | Periodic   |
-| Odd note #      | as above   | White      |
+Shift rate (2 bits) and noise type (periodic/white) are exposed as **direct UI
+parameters**, not derived from MIDI pitch. This gives users explicit control and
+keeps the noise channel predictable; both are automatable `apvts` parameters like
+everything else.
 
-> **Open question:** Alternative: expose shift rate and noise type as direct UI parameters rather than mapping from MIDI pitch, giving users full control.
+An **optional** auto-mode maps MIDI note → shift rate as a convenience, for
+players who want to "play" the noise channel from a keyboard:
+
+| MIDI note range | Shift rate |
+|-----------------|------------|
+| 0–37            | 10 (low)   |
+| 38–73           | 01 (mid)   |
+| 74–127          | 00 (high)  |
+
+Auto-mode is off by default — the direct parameters are the primary interface.
 
 ---
 
@@ -211,7 +219,10 @@ MIDI channels 1–10 remain available for FM voices.
 
 PSG voices are automatically layered on every FM note-on, creating a combined FM+PSG timbre. Less flexible but produces a richer sound with less setup.
 
-> **Open question:** Default to Option A for explicitness; expose Option B as a "PSG Layer" toggle.
+**Decision:** Option A (separate MIDI channels) is the default. Option B is
+available as a "PSG Layer" toggle. PSG MIDI-channel assignments are
+user-configurable and persisted alongside the FM part bindings (see
+[01-architecture.md](01-architecture.md) and [ADR-0013](adr/0013-multitimbral-voice-model.md)).
 
 ---
 
@@ -240,7 +251,8 @@ for (int i = 0; i < numSamples; i++) {
 - **PSG Mix Level:** global parameter (0.0–1.0), controlling PSG contribution to the main output.
 - **Per-channel soft pan:** left/right gain pair per PSG channel (no hardware pan in SN76489; entirely software).
 
-> **Open question:** Should per-channel PSG panning be exposed as an automatable plugin parameter? Initial answer: yes, at minimum a per-channel L/R balance knob.
+**Decision:** Per-channel PSG panning is an automatable `apvts` parameter — a
+per-channel L/R balance control.
 
 ---
 

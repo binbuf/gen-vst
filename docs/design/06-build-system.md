@@ -6,23 +6,33 @@
 gen-vst/
 ├── CMakeLists.txt           ← root: project, FetchContent JUCE, add_subdirectory
 ├── CMakePresets.json        ← developer presets (Debug/Release per platform)
-├── .gitmodules              ← ymfm + SN76489 lib as submodules
-├── third_party/
+├── LICENSE                  ← GPL v3 (ADR-0003)
+├── .gitmodules              ← ymfm + libvgm submodules
+├── third_party/             ← code submodules
 │   ├── ymfm/                ← git submodule: aaronsgiles/ymfm
-│   └── sn76489/             ← git submodule: chosen PSG library (TBD)
+│   └── libvgm/              ← git submodule: ValleyBell/libvgm (SN76489 core only — ADR-0009)
 ├── src/
 │   ├── CMakeLists.txt       ← juce_add_plugin, sources, link libraries
 │   ├── PluginProcessor.h/cpp
-│   ├── PluginEditor.h/cpp
+│   ├── PluginEditor.h/cpp   ← hosts juce::WebBrowserComponent
+│   ├── PartManager.h/cpp
 │   ├── VoiceAllocator.h/cpp
 │   ├── SN76489Engine.h/cpp
 │   ├── DACPlayer.h/cpp
-│   ├── PatchSystem.h/cpp
-│   └── GenVstLookAndFeel.h/cpp
-├── resources/
-│   ├── patches/             ← bundled TFI/VGI patch banks
-│   └── fonts/
-│       └── PressStart2P-Regular.ttf
+│   └── PatchSystem.h/cpp
+├── ui/                      ← Vite web UI project (HTML/CSS/JS + Canvas — ADR-0001)
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── vite.config.js
+│   ├── index.html
+│   └── src/
+├── extern/                  ← data assets (not code)
+│   ├── fonts/               ← bitmap/segment fonts, consumed by the ui/ build
+│   │   ├── press-start-2p/
+│   │   └── 7-segment/
+│   └── patches/
+│       ├── *.tfi            ← factory bank (committed, shipped — top level only)
+│       └── extra/           ← game-derived test set (gitignored, dev-only)
 ├── tests/
 │   ├── CMakeLists.txt
 │   └── *.cpp
@@ -30,20 +40,25 @@ gen-vst/
     └── design/
 ```
 
+`third_party/` holds code submodules; `extern/` holds data assets (fonts,
+patches). There is no native `LookAndFeel` source and no `resources/` directory —
+the UI is the web app under `ui/` ([ADR-0001](adr/0001-juce8-webview-ui.md)).
+
 ---
 
 ## Root CMakeLists.txt
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
-project(GenVst VERSION 0.1.0 LANGUAGES CXX)
+project(GenVst VERSION 0.1.0 LANGUAGES C CXX)   # C: libvgm sn764xx.c
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_TESTS "Build unit tests" ON)
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugin to system install directory" OFF)
+option(GENVST_DEV_SERVER "Load the UI from the Vite dev server, not the embedded bundle" OFF)
 
 # JUCE via FetchContent — pin to known-good tag
 include(FetchContent)
@@ -53,11 +68,17 @@ FetchContent_Declare(juce
     GIT_SHALLOW    TRUE)
 FetchContent_MakeAvailable(juce)
 
-# ymfm as git submodule — require it to be initialized
+# Submodules — require them to be initialized
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ymfm/src/ymfm.h")
-    message(FATAL_ERROR
-        "ymfm submodule not found. Run:\n"
-        "  git submodule update --init --recursive")
+    message(FATAL_ERROR "ymfm submodule not found. Run:\n  git submodule update --init --recursive")
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvgm/emu/cores/sn764xx.c")
+    message(FATAL_ERROR "libvgm submodule not found. Run:\n  git submodule update --init --recursive")
+endif()
+
+if(APPLE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")   # ADR-0015 — verify vs JUCE 8 WebView
 endif()
 
 add_subdirectory(third_party)
@@ -69,25 +90,75 @@ if(BUILD_TESTS)
 endif()
 ```
 
+C++20 is used (JUCE 8 supports it). The patch loader uses `std::optional<Patch>` +
+a separate error string rather than C++23's `std::expected` — see
+[04-patch-system.md](04-patch-system.md).
+
+---
+
+## Web UI Build
+
+The plugin UI is an HTML/CSS/JS app rendered in a WebView
+([ADR-0001](adr/0001-juce8-webview-ui.md), [05-ui-ux.md](05-ui-ux.md)). The `ui/`
+directory is a **Vite** project — vanilla JS + Canvas, no framework. The package
+manager is **npm**, with `ui/package-lock.json` committed.
+
+CMake drives the web build so a single `cmake --build` produces everything:
+
+```cmake
+set(UI_DIR  "${CMAKE_SOURCE_DIR}/ui")
+set(UI_DIST "${UI_DIR}/dist")
+set(UI_ZIP  "${CMAKE_BINARY_DIR}/genvst-ui.zip")
+
+# Resolve npm explicitly — on Windows the launcher is npm.cmd, which a bare
+# `npm` in a custom command may not find.
+find_program(NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED)
+
+# Rebuild the bundle when any tracked UI source changes.
+file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS
+    "${UI_DIR}/src/*" "${UI_DIR}/index.html"
+    "${UI_DIR}/package.json" "${UI_DIR}/vite.config.js")
+
+add_custom_command(
+    OUTPUT  "${UI_ZIP}"
+    COMMAND "${NPM_EXECUTABLE}" --prefix "${UI_DIR}" ci
+    COMMAND "${NPM_EXECUTABLE}" --prefix "${UI_DIR}" run build          # vite build -> ui/dist/
+    COMMAND "${CMAKE_COMMAND}" -E tar cf "${UI_ZIP}" --format=zip .
+    WORKING_DIRECTORY "${UI_DIST}"
+    DEPENDS ${UI_SOURCES}
+    VERBATIM)
+
+add_custom_target(GenVstWebBundle DEPENDS "${UI_ZIP}")
+```
+
+`genvst-ui.zip` is embedded via `juce_add_binary_data` (see below); the editor's
+WebView resource provider serves files out of the zip in release builds
+([05-ui-ux.md](05-ui-ux.md)). The Vite project pulls the bitmap/segment fonts from
+`extern/fonts/` into `ui/dist/`, so they ride **inside the same zip** — there is
+no separate font binary-data target.
+
+**Development:** configure with `-DGENVST_DEV_SERVER=ON`. The editor then loads
+`http://localhost:5173` (the Vite dev server, `npm run dev` in `ui/`) for hot
+reload, and the embedded bundle is not used. This is passed to C++ as the
+`GENVST_DEV_SERVER` compile definition.
+
+The exact `juce_add_binary_data` + resource-provider wiring follows the JUCE 8
+`WebViewPluginDemo` example — that demo is the reference for relays, native
+functions and the resource provider.
+
 ---
 
 ## src/CMakeLists.txt — juce_add_plugin
 
 ```cmake
-# Collect patch files for binary embedding
-file(GLOB_RECURSE PATCH_FILES
-    "${CMAKE_SOURCE_DIR}/resources/patches/*.tfi"
-    "${CMAKE_SOURCE_DIR}/resources/patches/*.vgi")
-
-juce_add_binary_data(GenVstBinaryData
-    SOURCES
-        "${CMAKE_SOURCE_DIR}/resources/fonts/PressStart2P-Regular.ttf"
-        ${PATCH_FILES})
+# Embed the zipped Vite web bundle built by the GenVstWebBundle target.
+juce_add_binary_data(GenVstWebData SOURCES "${UI_ZIP}")
+add_dependencies(GenVstWebData GenVstWebBundle)
 
 juce_add_plugin(GenVst
     COMPANY_NAME                "YourStudio"
     COMPANY_WEBSITE             "https://example.com"
-    PLUGIN_MANUFACTURER_CODE    GnVs     # 4 chars; AU requires first=uppercase, rest=lowercase
+    PLUGIN_MANUFACTURER_CODE    GnVs     # AU: first char uppercase, rest lowercase
     PLUGIN_CODE                 Genv     # 4 chars unique per plugin
     FORMATS                     VST3 AU Standalone
     PRODUCT_NAME                "Gen VST"
@@ -95,7 +166,8 @@ juce_add_plugin(GenVst
     NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE      # HTML UI has text/numeric inputs (ADR-0001)
+    NEEDS_WEBVIEW2              TRUE      # Windows WebView2 backend (ADR-0001)
     AU_MAIN_TYPE                kAudioUnitType_MusicDevice
     AU_SANDBOX_SAFE             TRUE
     COPY_PLUGIN_AFTER_BUILD     ${COPY_PLUGIN_AFTER_BUILD}
@@ -105,18 +177,43 @@ juce_add_plugin(GenVst
     VERSION                     "0.1.0"
 )
 
+# --- Standalone patch directory (runtime data dir, per platform) --------------
+if(WIN32)
+    set(GENVST_STANDALONE_PATCH_DIR "$ENV{LOCALAPPDATA}/GenVst/patches")
+elseif(APPLE)
+    set(GENVST_STANDALONE_PATCH_DIR "$ENV{HOME}/Library/Application Support/GenVst/patches")
+else()
+    set(GENVST_STANDALONE_PATCH_DIR "$ENV{HOME}/.local/share/GenVst/patches")
+endif()
+
+# --- Patch delivery -----------------------------------------------------------
+# Factory patches ship as loose .tfi files, not embedded binary data (ADR-0005).
+# Enumerate ONLY the top-level .tfi in extern/patches/ — a recursive glob would
+# pull in the gitignored extra/ developer test set (ADR-0004).
+file(GLOB FACTORY_PATCHES "${CMAKE_SOURCE_DIR}/extern/patches/*.tfi")
+
+# Stage into a clean dir, then copy that tree into each plugin bundle's Resources.
+set(FACTORY_STAGE "${CMAKE_BINARY_DIR}/factory-patches")
+file(MAKE_DIRECTORY "${FACTORY_STAGE}")
+file(COPY ${FACTORY_PATCHES} DESTINATION "${FACTORY_STAGE}")
+juce_add_bundle_resources_directory(GenVst "${FACTORY_STAGE}")
+
+# Standalone has no bundle — install the factory patches to the data directory.
+install(FILES ${FACTORY_PATCHES} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
+# ------------------------------------------------------------------------------
+
 target_sources(GenVst PRIVATE
     PluginProcessor.cpp  PluginProcessor.h
     PluginEditor.cpp     PluginEditor.h
+    PartManager.cpp      PartManager.h
     VoiceAllocator.cpp   VoiceAllocator.h
     SN76489Engine.cpp    SN76489Engine.h
     DACPlayer.cpp        DACPlayer.h
     PatchSystem.cpp      PatchSystem.h
-    GenVstLookAndFeel.cpp GenVstLookAndFeel.h
 )
 
-# ymfm sources — inline into plugin target, NOT a separate static lib
-# (avoids LTO boundary issues and simplifies the build graph)
+# ymfm sources — inline into the plugin target, NOT a separate static lib
+# (avoids LTO boundary issues and simplifies the build graph).
 target_sources(GenVst PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_opn.cpp"
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_misc.cpp"
@@ -124,21 +221,25 @@ target_sources(GenVst PRIVATE
 target_include_directories(GenVst PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src")
 
-# SN76489 library sources (adjust path when library is chosen)
-# target_sources(GenVst PRIVATE "${CMAKE_SOURCE_DIR}/third_party/sn76489/sn76489.c")
-# target_include_directories(GenVst PRIVATE "${CMAKE_SOURCE_DIR}/third_party/sn76489")
+# libvgm — compile ONLY the SN76489 core, not the whole library (ADR-0009).
+# The exact source/header subset is pinned when the submodule is added.
+target_sources(GenVst PRIVATE
+    "${CMAKE_SOURCE_DIR}/third_party/libvgm/emu/cores/sn764xx.c")
+target_include_directories(GenVst PRIVATE
+    "${CMAKE_SOURCE_DIR}/third_party/libvgm")
 
 target_compile_definitions(GenVst PUBLIC
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_REPORT_APP_USAGE=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
+    $<$<BOOL:${GENVST_DEV_SERVER}>:GENVST_DEV_SERVER=1>
 )
 
 target_link_libraries(GenVst PRIVATE
-    GenVstBinaryData
+    GenVstWebData
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -150,7 +251,7 @@ target_link_libraries(GenVst PRIVATE
     juce::juce_events
     juce::juce_graphics
     juce::juce_gui_basics
-    juce::juce_gui_extra
+    juce::juce_gui_extra          # juce::WebBrowserComponent lives here
     juce::juce_dsp
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
@@ -158,7 +259,9 @@ target_link_libraries(GenVst PRIVATE
 )
 ```
 
-**AU PLUGIN_MANUFACTURER_CODE note:** GarageBand 10.3+ requires exactly one uppercase letter followed by three lowercase letters (e.g., `GnVs`). Failing this will cause the AU to fail validation in Logic Pro.
+**AU `PLUGIN_MANUFACTURER_CODE` note:** GarageBand 10.3+ requires exactly one
+uppercase letter followed by three lowercase letters (e.g. `GnVs`). Failing this
+causes the AU to fail validation in Logic Pro.
 
 ---
 
@@ -166,41 +269,80 @@ target_link_libraries(GenVst PRIVATE
 
 ### Windows
 
-- Format: VST3 only (AU not supported on Windows)
-- Compiler: MSVC 2019+, Clang-cl also works
-- Extra flags: `/std:c++17`, `/W3`
-- Install path (system-wide): `%CommonProgramFiles%\VST3\`
-- Install path (user): `%LOCALAPPDATA%\Programs\Common\VST3\`
-- During development: set `COPY_PLUGIN_AFTER_BUILD OFF` to avoid UAC elevation prompts
+- Format: VST3 only (AU not supported on Windows).
+- Compiler: MSVC 2019+ (Clang-cl also works); `/W3`.
+- **WebView2:** `NEEDS_WEBVIEW2 TRUE` makes JUCE pull the WebView2 SDK. The
+  Evergreen WebView2 runtime ships with Windows 11 and recent Windows 10;
+  behaviour on machines lacking it is an open question in
+  [05-ui-ux.md](05-ui-ux.md).
+- Node.js (for the `ui/` build) must be on `PATH`.
+- Install path (system): `%CommonProgramFiles%\VST3\`; (user): `%LOCALAPPDATA%\Programs\Common\VST3\`.
+- During development set `COPY_PLUGIN_AFTER_BUILD OFF` to avoid UAC prompts.
 
 ### macOS
 
-- Formats: VST3 + AU
-- Compiler: AppleClang 14+ or Clang 15+
-- Min deployment target: macOS 10.15 (Catalina) — required for AU v2/v3 host compatibility
-- Universal binary: set in root CMakeLists.txt:
-  ```cmake
-  if(APPLE)
-      set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
-      set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
-  endif()
-  ```
-- VST3 install: `~/Library/Audio/Plug-Ins/VST3/`
-- AU install: `~/Library/Audio/Plug-Ins/Components/`
-- AU validation after build:
-  ```bash
-  auval -v aumu GnVs YStu
-  ```
-  Replace `YStu` with your 4-character manufacturer code.
+- Formats: VST3 + AU.
+- Compiler: AppleClang 14+ or Clang 15+.
+- Min deployment target: macOS 10.15 (Catalina) — pending the JUCE 8 WebView
+  verification in [ADR-0015](adr/0015-webview-backend-support.md); raise it if a
+  WebView native-integration feature proves unavailable at 10.15.
+- WebView backend: `WKWebView` — no extra dependency.
+- Universal binary set in the root CMakeLists.txt (`arm64;x86_64`).
+- VST3 install: `~/Library/Audio/Plug-Ins/VST3/`; AU: `~/Library/Audio/Plug-Ins/Components/`.
+- AU validation: `auval -v aumu Genv GnVs` (subtype `Genv`, manufacturer `GnVs`).
 
 ### Linux
 
-- Format: VST3 only
-- Compiler: GCC 11+ or Clang 14+
-- Required flags: `-std=c++17 -fPIC` (mandatory for shared library)
-- System packages required: `libasound2-dev` (ALSA), `libx11-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxinerama-dev`, `libfreetype6-dev`
-- Install path (user): `~/.vst3/`
-- Install path (system): `/usr/lib/vst3/`
+- Format: VST3 only.
+- Compiler: GCC 11+ or Clang 14+; `-fPIC`.
+- System packages: `libasound2-dev`, `libx11-dev`, `libxcursor-dev`,
+  `libxrandr-dev`, `libxinerama-dev`, `libfreetype6-dev`, `libgl-dev`, and
+  **`libwebkit2gtk-4.1-dev`** (the JUCE WebView backend on Linux).
+- WebView backend: WebKitGTK on the `webkit2gtk-4.1` API line. The minimum
+  runtime version is pinned against the oldest targeted distro (Ubuntu 22.04 LTS
+  / Debian 12) — see [ADR-0015](adr/0015-webview-backend-support.md).
+- Display server: X11 is the baseline; Wayland runs via XWayland — best-effort,
+  not separately QA'd ([ADR-0015](adr/0015-webview-backend-support.md)).
+- Install path (user): `~/.vst3/`; (system): `/usr/lib/vst3/`.
+
+---
+
+## Distribution & Installers
+
+Build artifacts are raw plugin bundles (VST3/AU) and the Standalone. How those
+reach end users — and how the Windows WebView2 runtime is guaranteed present — is
+set by [ADR-0016](adr/0016-webview2-runtime-distribution.md).
+
+### Windows — installer
+
+Windows ships an **installer**, not loose bundles. The installer:
+
+- places the VST3 (and the Standalone) in their install locations;
+- bundles the **WebView2 Evergreen Bootstrapper** (`MicrosoftEdgeWebView2Setup.exe`,
+  ~2 MB) and runs it silently — it installs the runtime only if absent, so a fresh
+  install always has a working WebView ([ADR-0016](adr/0016-webview2-runtime-distribution.md)).
+
+The installer tool (WiX, Inno Setup, …) is an implementation choice. For offline
+installers the WebView2 **Fixed Version** runtime (~150 MB+) is the documented
+alternative to the bootstrapper.
+
+### macOS — bundles (MVP)
+
+WKWebView is part of macOS, so there is no runtime to install. macOS ships as raw
+VST3/AU bundles for the MVP; a signed/notarized `.pkg` is post-MVP and needs an
+Apple Developer certificate (see *GitHub Actions CI*).
+
+### Linux — bundles (MVP)
+
+Linux ships as raw VST3 bundles for the MVP. WebKitGTK is a system library and is
+**not** bundled — a future `.deb`/AppImage declares the `libwebkit2gtk-4.1-0`
+runtime dependency.
+
+### Runtime fallback
+
+If the WebView still fails to initialise, the editor shows a native fallback
+panel rather than a blank window — specified in
+[08-ui-views.md](08-ui-views.md) (view 9).
 
 ---
 
@@ -210,30 +352,18 @@ target_link_libraries(GenVst PRIVATE
 {
   "version": 3,
   "configurePresets": [
-    {
-      "name": "windows-debug",
-      "generator": "Visual Studio 17 2022",
+    { "name": "windows-debug",   "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/build/windows-debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-    },
-    {
-      "name": "windows-release",
-      "generator": "Visual Studio 17 2022",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" } },
+    { "name": "windows-release", "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/build/windows-release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
-    },
-    {
-      "name": "macos-release",
-      "generator": "Xcode",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "macos-release",   "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/macos-release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
-    },
-    {
-      "name": "linux-release",
-      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "linux-release",   "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/linux-release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
-    }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } }
   ]
 }
 ```
@@ -242,7 +372,9 @@ target_link_libraries(GenVst PRIVATE
 
 ## GitHub Actions CI
 
-Three independent jobs in `.github/workflows/build.yml`:
+Three platform jobs in `.github/workflows/build.yml`. Every job checks out
+submodules **and** installs Node.js, because the CMake build drives the `ui/`
+web build.
 
 ```yaml
 jobs:
@@ -251,6 +383,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
       - run: cmake --preset windows-release
       - run: cmake --build build/windows-release --config Release
       - uses: actions/upload-artifact@v4
@@ -263,23 +397,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
       - run: cmake --preset macos-release
       - run: cmake --build build/macos-release --config Release
-      # auval validation (no-display CI, may need DISPLAY workaround)
+      # auval validation (no-display CI may need a workaround)
 
   build-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      - run: sudo apt-get install -y libasound2-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libfreetype6-dev libgl-dev
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: sudo apt-get install -y libasound2-dev libx11-dev libxcursor-dev
+             libxrandr-dev libxinerama-dev libfreetype6-dev libgl-dev
+             libwebkit2gtk-4.1-dev
       - run: cmake --preset linux-release
       - run: cmake --build build/linux-release
 ```
 
-Release artifacts (VST3 bundles) are uploaded on tag push via an additional `on: push: tags: ['v*']` condition.
-
-macOS code signing requires an Apple Developer certificate stored in GitHub Secrets. Defer until pre-release.
+Release artifacts (VST3 bundles) upload on tag push via an additional
+`on: push: tags: ['v*']` condition. macOS code signing requires an Apple
+Developer certificate in GitHub Secrets — defer until pre-release.
 
 ---
 
@@ -321,22 +461,32 @@ gtest_discover_tests(GenVstTests)
 
 | File | Tests |
 |------|-------|
-| `PatchLoaderTests.cpp` | TFI/VGI/DMP parse, round-trip, malformed input rejection |
-| `VoiceAllocatorTests.cpp` | Note-on/off, LRU stealing, sustain pedal hold, all-notes-off |
+| `PatchLoaderTests.cpp` | TFI/VGI/DMP parse, round-trip, malformed-input rejection |
+| `VoiceAllocatorTests.cpp` | Pool note-on/off, LRU stealing, part↔channel routing, sustain hold, all-notes-off |
 | `FrequencyCalcTests.cpp` | MIDI note → F-number + BLK, pitch bend recalc, octave boundary |
-| `RegisterWriteTests.cpp` | Correct ymfm register sequence for a known patch (compare against expected register log) |
+| `RegisterWriteTests.cpp` | Correct ymfm register sequence for a known patch (vs an expected register log) |
+
+The unit tests cover audio/patch logic only; they do not exercise the WebView UI.
 
 ---
 
 ## Submodule Setup
 
 ```bash
-# Add ymfm as a submodule (run once):
+# Add submodules (run once):
 git submodule add https://github.com/aaronsgiles/ymfm.git third_party/ymfm
+git submodule add https://github.com/ValleyBell/libvgm.git third_party/libvgm
 
-# Add SN76489 library (once decided):
-git submodule add <url> third_party/sn76489
-
-# Initialize on fresh clone:
+# Initialize on a fresh clone:
 git submodule update --init --recursive
 ```
+
+---
+
+## Post-MVP: CLAP
+
+CLAP is a planned post-MVP build target via `clap-juce-extensions`
+([ADR-0008](adr/0008-clap-post-mvp.md)). It is a non-disruptive addition — a
+`clap_juce_extensions_plugin()` call plus a CLAP plugin ID — and the WebView
+editor works unchanged. The build is structured so this can be added later
+without restructuring; it is deliberately **not** wired up for the MVP.
