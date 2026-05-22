@@ -45,8 +45,25 @@ install(FILES ${FACTORY_PATCHES} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
 # ------------------------------------------------------------------------------
 
 target_sources(GenVst PRIVATE
-    PluginProcessor.cpp  PluginProcessor.h
-    PluginEditor.cpp     PluginEditor.h)
+    PluginProcessor.cpp   PluginProcessor.h
+    PluginEditor.cpp      PluginEditor.h
+    FmRenderEngine.cpp    FmRenderEngine.h
+    GenVstYmfmInterface.h)
+
+# --- ymfm OPN2 (YM2612) FM core (ADR-0002) ------------------------------------
+# Compiled inline into the plugin target rather than as a separate static lib,
+# to avoid LTO boundary issues. ymfm_opn.cpp also defines the OPNA/OPNB chips
+# (ym2608 / ym2610), whose constructors reference the SSG and ADPCM engines, so
+# ymfm_ssg.cpp and ymfm_adpcm.cpp must be compiled as well or the link fails
+# with undefined symbols.
+target_sources(GenVst PRIVATE
+    "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_opn.cpp"
+    "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_ssg.cpp"
+    "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_adpcm.cpp"
+    "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_misc.cpp")
+target_include_directories(GenVst PRIVATE
+    "${CMAKE_SOURCE_DIR}/third_party/ymfm/src")
+# ------------------------------------------------------------------------------
 
 target_compile_definitions(GenVst PUBLIC
     JUCE_WEB_BROWSER=1
