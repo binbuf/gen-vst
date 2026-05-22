@@ -1,0 +1,141 @@
+/*
+ * Gen VST design system
+ * ---------------------
+ * The single source of truth for colour and the pixel-art discipline.
+ * Palette values are taken verbatim from docs/genny-ui.md "Color Palette" and
+ * docs/design/05-ui-ux.md; new colours are added to that table first, never
+ * invented here. Pixel-art rules are binding (05-ui-ux.md "Pixel-Art Style
+ * Rules"): 1x grid, no anti-aliasing, no border-radius, hard-edge bevels, no
+ * gradients, 8px base grid.
+ */
+
+/* ---- Fonts (extern/fonts/, pulled into the build by Vite publicDir) -------- */
+
+@font-face {
+  font-family: "Press Start 2P";
+  src: url("/press-start-2p/PressStart2P-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Segment7";
+  src:
+    url("/7-segment/7segment.woff") format("woff"),
+    url("/7-segment/7segment.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+/* ---- Palette (docs/genny-ui.md) ------------------------------------------- */
+
+:root {
+  /* Chassis & panels */
+  --chassis: #000000;        /* pure-black plastic chassis */
+  --panel: #0a0a0a;          /* very dark gray panel inset surface */
+  --bevel-light: #2a2a2a;    /* lit bevel edge */
+  --bevel-dark: #000000;     /* shadowed bevel edge */
+
+  /* Green LCD screens */
+  --lcd-base: #3d5a2e;       /* muted olive-green screen base */
+  --lcd-base-hi: #4a6b38;    /* lighter olive band */
+  --lcd-pixel: #a8d878;      /* phosphor-green active pixel */
+  --lcd-pixel-hi: #c8e89a;   /* bright phosphor highlight */
+
+  /* Red LED segment / dot-matrix readouts */
+  --led-base: #2a0808;       /* dark red-black segment base */
+  --led-dim: #2a0808;        /* unlit 5x7 dot (05-ui-ux.md) */
+  --led-on: #ff2020;         /* lit segment / dot */
+
+  /* Blue knobs */
+  --knob-body: #4a78c8;      /* mid-blue knob body */
+  --knob-ring: #1e3a6e;      /* darker blue ring */
+  --knob-dot: #d8f0ff;       /* white/cyan indicator dot */
+
+  /* Gold "GEN VST" logotype */
+  --logo: #f5c842;           /* gold */
+  --logo-shadow: #c89020;    /* gold shadow */
+  --logo-underline: #d83030; /* red underline stroke */
+
+  /* Text & selection */
+  --label: #e0e0e0;          /* off-white bitmap label text */
+  --select: #cc2020;         /* selected-item red highlight */
+
+  /* Operator badge (shares the knob blue) */
+  --badge: #4a78c8;
+
+  /* 8px base grid */
+  --grid: 8px;
+}
+
+/* ---- Pixel-art base rules ------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0; /* binding: all corners are square */
+}
+
+html,
+body {
+  width: 960px;
+  height: 560px;
+  overflow: hidden; /* fixed 960x560 window — ADR-0007 */
+  background: var(--chassis);
+  color: var(--label);
+  image-rendering: pixelated; /* no anti-aliased upscaling */
+  -webkit-font-smoothing: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* ---- Bevels --------------------------------------------------------------- */
+/* Hard-border bevels, never box-shadow blur (05-ui-ux.md). A raised panel is
+ * lit top/left; a recessed inset (LCD/LED screens) is lit bottom/right. */
+
+.bevel-raised {
+  border: 2px solid;
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  border-right-color: var(--bevel-dark);
+  border-bottom-color: var(--bevel-dark);
+}
+
+.bevel-inset {
+  border: 2px solid;
+  border-top-color: var(--bevel-dark);
+  border-left-color: var(--bevel-dark);
+  border-right-color: var(--bevel-light);
+  border-bottom-color: var(--bevel-light);
+}
+
+/* ---- Typography ----------------------------------------------------------- */
+/* Press Start 2P is rendered only at 8px / 16px — never fractional sizes. */
+
+.label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.label-lg {
+  font-family: "Press Start 2P", monospace;
+  font-size: 16px;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}

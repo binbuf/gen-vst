@@ -1,0 +1,256 @@
+/*
+ * Gen VST static chassis layout
+ * -----------------------------
+ * The four-region 960x560 frame from docs/genny-ui.md / docs/design/08-ui-views.md
+ * view 1: header bar, left/center/right columns, bottom operator-panel strip.
+ * Static placeholders only — the live widgets arrive in Tasks 10/11.
+ */
+
+#chassis {
+  width: 960px;
+  height: 560px;
+  background: var(--chassis);
+  display: grid;
+  grid-template-rows: 80px 260px 220px;
+}
+
+/* =========================================================================
+ * Header bar
+ * ========================================================================= */
+
+#header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+.wordmark {
+  font-family: "Press Start 2P", monospace;
+  font-size: 16px;
+  color: var(--logo);
+  text-transform: uppercase;
+  text-shadow: 1px 1px 0 var(--logo-shadow); /* hard 1px offset — no blur */
+  border-bottom: 2px solid var(--logo-underline);
+  padding: 0 8px 4px 0;
+  flex: 0 0 auto;
+}
+
+.meter-bay {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.meter {
+  height: 56px;
+  background: var(--lcd-base);
+}
+
+.meter.vu {
+  width: 40px;
+}
+
+.meter.scope {
+  width: 112px;
+}
+
+.patch-display {
+  flex: 1 1 auto;
+  height: 56px;
+  min-width: 0;
+  background: var(--led-base);
+  color: var(--led-on);
+  font-family: "Segment7", monospace;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.gear {
+  width: 40px;
+  height: 56px;
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* =========================================================================
+ * Middle row — three columns
+ * ========================================================================= */
+
+#middle {
+  display: grid;
+  grid-template-columns: 240px 432px 288px;
+}
+
+.column {
+  padding: 8px;
+  min-width: 0;
+}
+
+.panel {
+  width: 100%;
+  height: 100%;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-header {
+  height: 18px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  background: var(--chassis);
+}
+
+.panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---- Left column — MASTER ------------------------------------------------ */
+
+.master-body {
+  align-items: center;
+}
+
+.knob {
+  width: 72px;
+  height: 72px;
+  margin-top: 16px;
+  cursor: ns-resize;
+}
+
+.readout {
+  background: var(--led-base);
+  padding: 5px 8px;
+  min-width: 72px;
+  text-align: center;
+}
+
+.readout-text {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--led-on);
+}
+
+.master-note {
+  margin-top: 8px;
+  color: var(--label);
+}
+
+/* ---- Center / right columns — green-LCD lists ---------------------------- */
+
+.lcd {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--lcd-base);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.lcd-row {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--lcd-pixel);
+  padding: 2px;
+  white-space: nowrap;
+}
+
+.lcd-row.selected {
+  background: var(--lcd-pixel);
+  color: var(--lcd-base); /* inverse-video selection (genny-ui.md) */
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--label);
+}
+
+.tab.active {
+  color: var(--led-on);
+}
+
+/* =========================================================================
+ * Bottom row — four operator panels
+ * ========================================================================= */
+
+#bottom {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.op-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+
+.op-top {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.badge {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  background: var(--badge);
+  color: #ffffff;
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  background: var(--led-on);
+}
+
+.op-env {
+  height: 88px;
+  flex: 0 0 auto;
+  margin: 0 8px;
+  background: var(--lcd-base);
+}
+
+.op-knobs {
+  flex: 1 1 auto;
+  margin: 8px;
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}

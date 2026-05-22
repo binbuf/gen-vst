@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=960, height=560, initial-scale=1" />
+    <title>Gen VST</title>
+  </head>
+  <body>
+    <div id="chassis">
+      <!-- ============================ HEADER ============================ -->
+      <header id="header">
+        <div class="wordmark">GEN VST</div>
+        <div class="meter-bay">
+          <div class="meter vu bevel-inset"></div>
+          <div class="meter scope bevel-inset"></div>
+        </div>
+        <div class="patch-display bevel-inset">GEN VST</div>
+        <div class="gear bevel-raised"><span class="label">Set</span></div>
+      </header>
+
+      <!-- =========================== MIDDLE ============================= -->
+      <div id="middle">
+        <!-- Left column — MASTER (hosts the one working control) -->
+        <section class="column" id="col-left">
+          <div class="panel bevel-raised">
+            <div class="panel-header"><span class="label">Master</span></div>
+            <div class="panel-body master-body">
+              <canvas
+                id="master-knob"
+                class="knob"
+                width="72"
+                height="72"
+                title="Master Gain — drag vertically (Shift = fine, double-click = reset)"
+              ></canvas>
+              <div class="readout bevel-inset">
+                <span id="master-readout" class="readout-text">0.00</span>
+              </div>
+              <span class="label master-note">Volume</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Center column — Instruments -->
+        <section class="column" id="col-center">
+          <div class="panel bevel-raised">
+            <div class="panel-header"><span class="label">Instruments</span></div>
+            <div class="panel-body">
+              <div class="lcd bevel-inset">
+                <div class="lcd-row">Sine Lead</div>
+                <div class="lcd-row selected">Gadget Bass</div>
+                <div class="lcd-row">Perc Kit</div>
+                <div class="lcd-row">Brass Stab</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right column — Presets / Import -->
+        <section class="column" id="col-right">
+          <div class="panel bevel-raised">
+            <div class="panel-header tabs">
+              <span class="tab active">Presets</span>
+              <span class="tab">Import</span>
+            </div>
+            <div class="panel-body">
+              <div class="lcd bevel-inset">
+                <div class="lcd-row selected">Gadget Bass 01</div>
+                <div class="lcd-row">Shinobi Bass</div>
+                <div class="lcd-row">Perc Hat 01</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- =========================== BOTTOM ============================= -->
+      <div id="bottom">
+        <div class="op-panel bevel-raised">
+          <div class="op-top">
+            <span class="badge">1</span>
+            <span class="status-dot"></span>
+            <span class="label">Operator 1</span>
+          </div>
+          <div class="op-env bevel-inset"></div>
+          <div class="op-knobs bevel-inset">
+            <span class="label">Atk</span>
+            <span class="label">Dr1</span>
+            <span class="label">Sus</span>
+            <span class="label">Dr2</span>
+            <span class="label">Rr</span>
+          </div>
+        </div>
+        <div class="op-panel bevel-raised">
+          <div class="op-top">
+            <span class="badge">2</span>
+            <span class="status-dot"></span>
+            <span class="label">Operator 2</span>
+          </div>
+          <div class="op-env bevel-inset"></div>
+          <div class="op-knobs bevel-inset">
+            <span class="label">Atk</span>
+            <span class="label">Dr1</span>
+            <span class="label">Sus</span>
+            <span class="label">Dr2</span>
+            <span class="label">Rr</span>
+          </div>
+        </div>
+        <div class="op-panel bevel-raised">
+          <div class="op-top">
+            <span class="badge">3</span>
+            <span class="status-dot"></span>
+            <span class="label">Operator 3</span>
+          </div>
+          <div class="op-env bevel-inset"></div>
+          <div class="op-knobs bevel-inset">
+            <span class="label">Atk</span>
+            <span class="label">Dr1</span>
+            <span class="label">Sus</span>
+            <span class="label">Dr2</span>
+            <span class="label">Rr</span>
+          </div>
+        </div>
+        <div class="op-panel bevel-raised">
+          <div class="op-top">
+            <span class="badge">4</span>
+            <span class="status-dot"></span>
+            <span class="label">Operator 4</span>
+          </div>
+          <div class="op-env bevel-inset"></div>
+          <div class="op-knobs bevel-inset">
+            <span class="label">Atk</span>
+            <span class="label">Dr1</span>
+            <span class="label">Sus</span>
+            <span class="label">Dr2</span>
+            <span class="label">Rr</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
