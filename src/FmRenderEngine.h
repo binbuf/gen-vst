@@ -5,11 +5,12 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include "GenVstYmfmInterface.h"
+#include "PatchSystem.h"
 #include "ymfm_opn.h"
 
 // Single-voice YM2612 (OPN2) render engine.
 //
-// Drives one ymfm chip instance with a hard-coded FM patch, renders at the
+// Drives one ymfm chip instance with a loaded FM patch, renders at the
 // chip's native rate (~53.27 kHz) and resamples to the host sample rate in a
 // single pass (ADR-0011). Task 02 is monophonic; the shared 16-voice pool is
 // Task 05.
@@ -21,7 +22,11 @@ public:
     // Allocates all working buffers and resets the chip. Call from prepareToPlay.
     void prepare (double hostSampleRate, int maxBlockSize);
 
-    // Keys the hard-coded patch on at the pitch of the given MIDI note.
+    // Sets the patch used for subsequent note-ons. Call from the message
+    // thread before audio starts; live patch swaps arrive in Task 05.
+    void setPatch (const Patch& newPatch);
+
+    // Keys the current patch on at the pitch of the given MIDI note.
     void noteOn (int midiNote);
 
     // Keys off, but only if midiNote is the note currently sounding.
@@ -48,7 +53,8 @@ private:
     juce::LagrangeInterpolator resamplerL;
     juce::LagrangeInterpolator resamplerR;
 
-    int currentNote = -1;
+    Patch currentPatch;          // drives note-on; replaced live in Task 05
+    int   currentNote = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FmRenderEngine)
 };

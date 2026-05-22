@@ -2,6 +2,9 @@
 #include "PluginEditor.h"
 
 #include <cmath>
+#include <filesystem>
+
+#include "PatchSystem.h"
 
 namespace
 {
@@ -36,6 +39,15 @@ GenVstAudioProcessor::GenVstAudioProcessor()
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     masterGainParam = apvts.getRawParameterValue ("master_gain");
+
+    // Task 04 dev wiring: load a factory patch so the single voice plays a
+    // real timbre instead of silence. Per-part loading and the patch browser
+    // arrive in Task 05 / Task 09.
+#ifdef GENVST_DEV_PATCH_DIR
+    if (auto result = loadTFI (std::filesystem::path (GENVST_DEV_PATCH_DIR) / "organ.tfi");
+        result.patch.has_value())
+        fmEngine.setPatch (*result.patch);
+#endif
 }
 
 void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)

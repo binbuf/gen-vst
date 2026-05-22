@@ -10,10 +10,21 @@ FetchContent_Declare(googletest
 FetchContent_MakeAvailable(googletest)
 
 add_executable(GenVstTests
-    SmokeTest.cpp)
+    SmokeTest.cpp
+    PatchLoaderTests.cpp
+    FrequencyCalcTests.cpp
+    RegisterWriteTests.cpp
+    # Units under test, compiled straight into the test binary. Both are pure
+    # C++ (no JUCE, no ymfm), so they need no extra link libraries.
+    "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
+    "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp")
 
 target_include_directories(GenVstTests PRIVATE
     "${CMAKE_SOURCE_DIR}/src")
+
+# PatchLoaderTests loads every factory .tfi straight from the source tree.
+target_compile_definitions(GenVstTests PRIVATE
+    GENVST_FACTORY_PATCHES_DIR="${CMAKE_SOURCE_DIR}/extern/patches")
 
 target_link_libraries(GenVstTests PRIVATE
     GTest::gtest_main

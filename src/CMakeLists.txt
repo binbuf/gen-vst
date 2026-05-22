@@ -110,6 +110,8 @@ target_sources(GenVst PRIVATE
     PluginProcessor.cpp   PluginProcessor.h
     PluginEditor.cpp      PluginEditor.h
     FmRenderEngine.cpp    FmRenderEngine.h
+    FmRegisterMap.cpp     FmRegisterMap.h
+    PatchSystem.cpp       PatchSystem.h
     GenVstYmfmInterface.h)
 
 # --- ymfm OPN2 (YM2612) FM core (ADR-0002) ------------------------------------
@@ -139,6 +141,13 @@ target_compile_definitions(GenVst PUBLIC
     JUCE_REPORT_APP_USAGE=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     $<$<BOOL:${GENVST_DEV_SERVER}>:GENVST_DEV_SERVER=1>)
+
+# --- Dev patch path (Task 04) -------------------------------------------------
+# Task 04 loads a factory .tfi from this directory at construction so the single
+# voice plays a real timbre. Superseded by the patch browser (Task 09).
+target_compile_definitions(GenVst PRIVATE
+    GENVST_DEV_PATCH_DIR="${CMAKE_SOURCE_DIR}/extern/patches")
+# ------------------------------------------------------------------------------
 
 target_link_libraries(GenVst PRIVATE
     juce::juce_audio_basics

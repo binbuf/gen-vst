@@ -227,7 +227,7 @@ FREQ = round(note_hz × 2^20 / (7670454 / 144))
 
 Choose BLK so that FREQ stays in range 0x000–0x7FF. Each BLK increment doubles the frequency (one octave up).
 
-**Middle A (440 Hz):** BLK=4, FREQ≈0x28A.
+**Middle A (440 Hz):** BLK=4, FREQ≈0x43B.
 
 **MIDI note to frequency:**
 ```cpp

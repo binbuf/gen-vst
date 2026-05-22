@@ -36,7 +36,7 @@ loaded factory `.tfi` file plays. Add the first real unit tests.
   S3, S2, S4 order) → channel params (`0xB0` ALG/FB, `0xB4` L/R/AMS/PMS) →
   frequency **HIGH byte `0xA4` before LOW byte `0xA0`** → key-on.
 - **F-number:** `FREQ = round(note_hz × 2^20 / 53267.0)`, choose `BLK` so `FREQ`
-  ∈ `0x000–0x7FF` (`02-fm-synthesis.md` *Frequency*). A4 → BLK=4, FREQ≈0x28A.
+  ∈ `0x000–0x7FF` (`02-fm-synthesis.md` *Frequency*). A4 → BLK=4, FREQ≈0x43B.
 - **DT encoding caution:** TFI stores DT as 0–6; the YM2612 register field
   encodes detune differently. Handle the conversion in the register-mapping
   layer per the `04-patch-system.md` *DT encoding note* — load TFI's value into
@@ -103,7 +103,7 @@ updates to `src/PluginProcessor.cpp` and the Task 02 render engine,
      successfully; values are within hardware ranges; a wrong-size buffer and a
      missing file each return a `PatchLoadResult` with a non-empty `error` and
      no patch.
-   - `FrequencyCalcTests`: A4 (MIDI 69) → BLK=4, FREQ within ±1 of 0x28A;
+   - `FrequencyCalcTests`: A4 (MIDI 69) → BLK=4, FREQ within ±1 of 0x43B;
      across MIDI 0–127 every result keeps FREQ in `0x000–0x7FF`; one octave up
      doubles the effective frequency.
    - `RegisterWriteTests`: for a known `Patch`, the captured note-on write
