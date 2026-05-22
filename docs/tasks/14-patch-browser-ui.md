@@ -95,7 +95,7 @@ extensions the UI needs.
    dimmed.
 2. The folder tree shows Factory (with a lock glyph), User, and any custom
    roots; expanding a folder lazily scans it and fills in its patch count.
-   Point a custom root at `extern/patches/extra/` and expand into it — no UI
+   Point a custom root at `extra/` and expand into it — no UI
    stall on the 30k-file tree.
 3. Selecting a folder lists its patches; single-click / `Enter` loads a patch
    into the currently selected part — the sound changes, the modal stays open.

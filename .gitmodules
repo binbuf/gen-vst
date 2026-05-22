@@ -1,0 +1,6 @@
+[submodule "third_party/ymfm"]
+	path = third_party/ymfm
+	url = https://github.com/aaronsgiles/ymfm.git
+[submodule "third_party/libvgm"]
+	path = third_party/libvgm
+	url = https://github.com/ValleyBell/libvgm.git

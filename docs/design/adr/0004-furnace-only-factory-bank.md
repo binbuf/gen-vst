@@ -21,7 +21,7 @@ The **only** bank bundled with the plugin is the **Furnace `tfilib` factory
 bank**. Its top-level `.tfi` files are committed directly in `extern/patches/`.
 
 The game-derived collection is **developer test material only**: kept in
-`extern/patches/extra/`, gitignored, never committed and never copied into any
+`extra/`, gitignored, never committed and never copied into any
 build artifact.
 
 ## Consequences

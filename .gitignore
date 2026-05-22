@@ -1,1 +1,17 @@
+.DS_Store
+
+# Build output
+build*/
+
+# Web UI build artifacts
+ui/node_modules/
+ui/dist/
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Developer-only patch test set — gitignored, never shipped (ADR-0004)
 extra/

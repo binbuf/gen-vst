@@ -30,7 +30,7 @@ build/packaging integration risk before any feature work.
 - Wire **factory-patch delivery** now (ADR-0005) so every later task can load
   patches at runtime. The factory bank is the **top-level** `extern/patches/*.tfi`
   files only — a non-recursive glob (ADR-0004); the gitignored
-  `extern/patches/extra/` dev test set must never enter a build artifact.
+  `extra/` dev test set must never enter a build artifact.
 
 ## Scope
 

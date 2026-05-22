@@ -284,7 +284,7 @@ out of the repo and out of every build artifact.
 
 ### Local test material (not shipped, not committed)
 
-`extern/patches/extra/` holds a large game-derived `.tfi` collection (~30k files)
+`extra/` holds a large game-derived `.tfi` collection (~30k files)
 used only as developer test input — exercising the loader, browser scrolling, and
 voice allocation under load. It is excluded from version control by
 `extern/patches/.gitignore` and is never copied into a build artifact. Developers

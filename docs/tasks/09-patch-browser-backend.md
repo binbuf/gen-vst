@@ -98,7 +98,7 @@ registration), `src/PartManager.{h,cpp}`.
 
 1. Standalone and VST3 both **resolve the factory root** at runtime — calling
    `getPatchList` for the factory root returns the 39 factory patches.
-2. Point a custom root at `extern/patches/extra/` (~30k files). Startup is
+2. Point a custom root at `extra/` (~30k files). Startup is
    **not** stalled — the immediate children appear quickly; a deep folder is
    only scanned (and its count filled) when expanded.
 3. The background search index returns correct name→path hits for factory
