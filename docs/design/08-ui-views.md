@@ -55,22 +55,88 @@ the content and structure, not the precise pixels.
 ## 1. Main window — FM section
 
 The default view. Its layout — header, left column (LFO/Algorithm), center column
-(Instruments + channel routing), right column (Presets), and the bottom row of
+(instrument rack + per-row routing), right column (Presets), and the bottom row of
 four operator panels — is specified in full in [`genny-ui.md`](../genny-ui.md).
 This section records only what `genny-ui.md` left unplaced.
 
-### Patch-list data sources
+### Center column — Instrument rack (Task 22)
 
-The three patch lists rendered by this view each pin to one of the patch
-roots from [`04-patch-system.md`](04-patch-system.md) *Patch roots*:
+The center column hosts a **user-curated instrument rack** in place of the
+fixed `INSTRUMENTS` LCD + global `FM / SQ / D` pills + global routing strip
+shown in earlier drafts. The rack is an ordered list of N loaded instruments,
+each one a typed slot (FM / SQ / D) with its own MIDI channel, transpose, range,
+detune and L/R balance. The underlying 6-FM + 3-PSG-tone + 1-noise + 1-DAC
+engine is **unchanged** (per [ADR-0013](adr/0013-multitimbral-voice-model.md));
+the rack is a UI repackaging that maps each row onto one of the fixed parts.
 
-- **INSTRUMENTS** (center column) → factory root (read-only, bundled).
-- **PRESETS** tab (right column) → user-saved root (`…/patches/saved/`).
-- **IMPORT** tab (right column) → user-imported root (`…/patches/imported/`).
+```
+┌─ INSTRUMENTS ──────────────────── + − ┐
+│ ◇  ~  GADGET BASS                ::: −│   ← FM row, slot 1
+│ ◇  ⊓  PSG 1                       ::: −│   ← SQ row, slot M1
+│ ◇  □  break_amen.wav              ::: −│   ← D row (DAC)
+│ + ADD INSTRUMENT  …                    │
+└────────────────────────────────────────┘
+TYPE  [FM / SQ / D]                ← read-only (set by row click)
+CHANS [1 2 3 4 5]                  ← read-only slot indicator
+MIDI  [ 1▾]
+TRPS  [ 0▾] [ 0▾]
+RNG   |▟───────────▙|   0–127
+DET   |─────▟────|       0 ¢
+BAL   |───────▟───|
+```
 
-Both user-side lists start empty on a fresh install and fill in as the user
-saves or imports. The full mapping, the modal's role, and the list/tab
-behaviour are specified in view 4 below.
+**Rack pool.** FM rows occupy parts 0..4 (5 slots; channel 6 is reserved per
+[ADR-0014](adr/0014-special-channel-features.md)); SQ rows occupy the three
+PSG tone channels (`M1`..`M3`) and the PSG noise channel (`M4`); the D pool
+has the single DAC slot. `+ ADD INSTRUMENT` opens a small 3-row popover
+(FM / SQ / D); the choice picks `getFreeSlot(type)` and either opens the
+patch browser (FM — scoped to FM patches), the WAV loader (D), or simply
+activates the slot (SQ, since PSG is parameter-driven). A full pool surfaces
+a toast: "All `<type>` slots are in use."
+
+**Row selection.** Clicking a row sets the active rack slot. For FM rows this
+calls the existing `selectChannel(n)` path so the bottom panel + right
+column rebind to that part's apvts parameters; for SQ rows the bottom region
+swaps to the SQ view (view 2); D rows swap to the D view (view 3). The
+`FM / SQ / D` type pills are non-interactive in this revision — section
+selection is implied by the row click.
+
+**Per-instrument routing.** The strip beneath the rack binds to the selected
+row's apvts params:
+
+- `midi_ch_*` — step field, 1..16 (or 0 = Off). Per-row MIDI channel
+  override; this is the user-facing edit point for routing. The MIDI
+  ROUTING modal (view 5) stays as the conflict-overview surface.
+- `transpose_st_*` — semitone offset (−24..+24).
+- `transpose_oct_*` — octave offset (−2..+2).
+- `note_lo_*` / `note_hi_*` — two-thumb range slider; notes outside the
+  window are silently dropped.
+- `detune_cents_*` — −100..+100 cents, applied as a fractional pitch offset
+  on top of pitch bend.
+- `balance_*` — −1..+1 stereo balance.
+
+The `_*` suffix is `_part<n>` for FM parts, `_psg_ch1..3` / `_psg_noise`
+for the PSG slots, and `_dac` for the DAC slot.
+
+**Channel slot cells.** The `CHANS` row below the type indicator is now a
+read-only slot indicator for the currently selected row's type. FM rows
+highlight one of `1..5`; SQ rows show `M1 M2 M3 M4` and highlight one of
+them; D rows show just `6` (the DAC chip channel). User-driven slot
+reassignment is a post-MVP nicety.
+
+### Right column — Patch-list data sources
+
+The two right-column lists each pin to one of the patch roots from
+[`04-patch-system.md`](04-patch-system.md) *Patch roots*:
+
+- **PRESETS** tab → user-saved root (`…/patches/saved/`).
+- **IMPORT** tab → user-imported root (`…/patches/imported/`).
+
+Both start empty on a fresh install and fill in as the user saves or
+imports. The factory bank is no longer pinned to the center column — the
+rack's `+ → FM` button opens the patch browser modal (view 4) which is the
+unified navigator for every patch root, factory included. The full mapping,
+the modal's role, and the list/tab behaviour are specified in view 4 below.
 
 ### Header meter bay
 

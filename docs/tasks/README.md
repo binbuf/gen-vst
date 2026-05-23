@@ -109,6 +109,11 @@ real host. There is no long stretch of unverifiable work.
 | 19 | [CPU profiling, resampler quality & parity QA](19-profiling-and-qa.md) | **Release-ready** | 07 |
 | 20 | [Y12 + OPM patch loaders](20-y12-opm-loaders.md) | Two more patch formats | 08 |
 | 21 | [VGM bank import (Import Bank)](21-vgm-bank-import.md) | Game-original FM patches via .vgm/.vgz | 09, 20 |
+| 22 | [Genny instrument rack & per-instrument routing](22-genny-instrument-rack.md) | User-curated rack; per-row MIDI/transpose/range/detune/balance | 16 |
+| 23 | [PSG envelope panel & software ADSR](23-psg-envelope-panel.md) | SQ section matches FM envelope layout; per-PSG-channel ADSR | 22 |
+| 24 | [IMPORT tab full action stack](24-import-tab-actions.md) | 8-button stack: Import/Export Bank+Instrument, Load/Save State, Log VGM, Import Tuning | 22 |
+| 25 | [Header polish: TRUE STEREO toggle](25-header-true-stereo.md) | TRUE STEREO toggle + mono-sum branch | 22 |
+| 26 | [Genny visual polish & algorithm-diagram audit](26-genny-visual-polish.md) | Algorithm correctness, palette, bracket glyphs, DAC restyle | 22, 23, 24, 25 |
 
 ## Task file structure
 
