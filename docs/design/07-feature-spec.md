@@ -298,15 +298,19 @@ What remains:
 1. **CPU profiling pass** — confirm 16 ymfm instances at 44,100 Hz are affordable;
    revisit the instance layout if not ([ADR-0010](adr/0010-ymfm-instance-model.md)).
    A post-skeleton implementation check.
-2. **DMP v11 byte offsets** — verify against the Furnace source
-   (`src/format/dmp.cpp`) during implementation
-   ([ADR-0012](adr/0012-dmp-version-scope.md)).
-3. **VGI TL range** — confirm whether OP2–OP4 TL is 0–63 or 0–127; cross-check
-   against the plutiedev TFI/VGI reference (see [04-patch-system.md](04-patch-system.md)).
-4. **Mono / Unison defaults** — Mono exposes both retrigger and legato; pick the
+2. **Mono / Unison defaults** — Mono exposes both retrigger and legato; pick the
    shipped default (proposed: retrigger). Pick the default Unison spread value.
-5. **Aftertouch routing default** — channel pressure is a configurable routing
+3. **Aftertouch routing default** — channel pressure is a configurable routing
    (LFO depth or carrier TL); pick the default target.
+
+Resolved during Task 08:
+
+- *DMP v11 byte offsets* — verified against Furnace's `DivEngine::loadDMP` in
+  `src/engine/fileOpsIns.cpp`; layout recorded in
+  [04-patch-system.md](04-patch-system.md) (the table in that file differed
+  from the on-disk format and has been corrected).
+- *VGI TL range* — confirmed 0–127 for all four operators against the
+  plutiedev TFI/VGI reference; no 0–63 special case for OP2–OP4.
 
 The former UI-specific open questions are now resolved: window scaling by
 [ADR-0017](adr/0017-hidpi-display-scaling.md), WebView2 runtime fallback by

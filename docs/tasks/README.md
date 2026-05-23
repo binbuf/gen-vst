@@ -125,9 +125,13 @@ Every task file follows the same shape:
 
 The design docs list a handful of implementation-time verification items
 (mono retrigger-vs-legato default, unison spread default, aftertouch routing
-default, VGI TL range for OP2–OP4, DMP v11 exact byte offsets). Each is owned
-by the task that implements that feature; the task instructs the implementer to
-verify against the cited reference and records the design's proposed default.
+default). Each is owned by the task that implements that feature; the task
+instructs the implementer to verify against the cited reference and records
+the design's proposed default. The *VGI TL range* and *DMP v11 byte offsets*
+items were resolved during Task 08 — see
+[07-feature-spec.md](../design/07-feature-spec.md) under *Resolved during
+Task 08* and the updated DMP table in
+[04-patch-system.md](../design/04-patch-system.md).
 
 ## Post-MVP backlog (not scheduled here)
 

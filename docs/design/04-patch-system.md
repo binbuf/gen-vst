@@ -81,7 +81,11 @@ VGI (VGM Music Maker) extends TFI with AMS/FMS data. One byte longer, no magic n
 
 **DR byte in VGI:** `bit7 = AMON, bits4:0 = DR value`.
 
-> **Caution:** Some sources indicate TL range for OP2–OP4 in VGI may be 0–63 rather than 0–127. Cross-check against the reference at [plutiedev.com/format-tfi](https://www.plutiedev.com/format-tfi) during implementation.
+**TL range:** 0–127 for **all four operators**, identical to TFI. Verified
+against [plutiedev.com/format-tfi](https://www.plutiedev.com/format-tfi),
+which describes VGI as "almost identical to TFI except an extra byte after
+feedback" with no per-operator TL difference. The 0–63 figure that appears in
+some secondary sources is not used.
 
 ---
 
@@ -96,22 +100,39 @@ DMP files have a variable-length header and are version-dependent.
 | 0–8              | Legacy layouts, differ per version |
 | 11 (0x0B)        | Modern format (target this) |
 
-**Byte layout for version 11, FM instrument:**
+**Byte layout for version 11, FM instrument** — verified against Furnace's
+`DivEngine::loadDMP` (see *Furnace reference* below):
 
-| Byte | Field |
-|------|-------|
-| 0    | Version (0x0B) |
-| 1    | System (0x02 = Sega Genesis, 0x42 = Genesis extended/ch3 special) |
-| 2    | Instrument type (0 = FM, 1 = PSG) |
-| 3    | LFO (AMS) |
-| 4    | LFO (FMS) |
-| 5    | ALG |
-| 6    | FB |
-| 7+   | Per-operator: for each of 4 operators in order OP1–OP4: AM, AR, DR, MUL, RR, SL, TL, DT2, RS/KS, DT, D2R/SR, SSG-EG |
+| Byte | Field | Notes |
+|------|-------|-------|
+| 0    | Version (`0x0B`) | reject if not exactly 11 |
+| 1    | System (`0x02` = Sega Genesis, `0x42` = Genesis extended / CH3 special) | reject anything else |
+| 2    | Mode (`1` = FM, `0` = STD / PSG) | reject PSG; the FM-only loader accepts mode 1 only |
+| 3    | FMS (= PMS for YM2612) | 0–7 |
+| 4    | FB | 0–7 |
+| 5    | ALG | 0–7 |
+| 6    | AMS | 0–3 |
+| 7+   | Per-operator, 11 bytes each, 4 operators in order OP1–OP4: `MUL, TL, AR, DR, SL, RR, AM, RS, DT, D2R, SSG-EG` | total operator block = 44 bytes |
 
-Reject files where byte 1 is not 0x02 or 0x42, or byte 2 is not 0. PSG instrument DMP files have an entirely different structure.
+Total file size for v11 Genesis FM: **7 header + 44 operator = 51 bytes.**
 
-> **Note:** Verify exact byte offsets against the Furnace source code (`src/format/dmp.cpp`) during implementation — the version 11 layout has subtle differences across tools. Furnace is consulted as a **local, gitignored reference checkout only** — never committed to the repo or added as a build dependency.
+**Per-operator notes.**
+- `RS` corresponds to the patch model's `ks` (key scale, 0–3).
+- The `DT` byte packs `DT2` in the upper nibble and `DT` in the lower nibble.
+  `DT2` is OPM-only and is discarded for YM2612.
+- `D2R` corresponds to the patch model's `sr` (second decay / sustain rate, 0–31).
+
+Reject files where byte 0 ≠ `0x0B`, byte 1 ∉ {`0x02`, `0x42`}, or byte 2 ≠ 1.
+The byte-2 sense is **opposite** of DefleMask's UI labelling — in the on-disk
+format, mode 1 means FM and mode 0 means STD/PSG. The PSG-instrument body has
+an entirely different structure and is never parsed by the FM loader.
+
+> **Furnace reference.** Byte offsets above were verified against
+> `tildearrow/furnace`'s `DivEngine::loadDMP` in
+> `src/engine/fileOpsIns.cpp` (older revisions called this file
+> `src/format/dmp.cpp`). Furnace is consulted as a **local, gitignored
+> reference checkout only** — never committed to the repo or added as a
+> build dependency.
 
 ---
 

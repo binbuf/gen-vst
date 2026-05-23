@@ -15,3 +15,8 @@ ui/dist/
 
 # Developer-only patch test set — gitignored, never shipped (ADR-0004)
 extra/
+
+# Local Furnace reference checkout — consulted only for DMP v11 byte-layout
+# verification (see docs/tasks/08…). Never committed, never linked into the
+# build (ADR-0012, 04-patch-system.md).
+third_party/furnace/

@@ -41,6 +41,16 @@ struct Patch
 // TFI files are a fixed 42 bytes with no header or magic number.
 inline constexpr std::size_t kTfiFileSize = 42;
 
+// VGI files are a fixed 43 bytes — TFI plus one AMS/FMS byte at offset 0x02.
+inline constexpr std::size_t kVgiFileSize = 43;
+
+// DMP version 11 Genesis FM files are 51 bytes: a 7-byte header (version,
+// system, mode, FMS, FB, ALG, AMS) followed by 4 operators × 11 bytes each.
+// Verified against the Furnace reference loader DivEngine::loadDMP in
+// third_party/furnace/src/engine/fileOpsIns.cpp (the design doc's reference
+// to src/format/dmp.cpp is the historical path).
+inline constexpr std::size_t kDmpV11FmFileSize = 51;
+
 // Result of a patch load. C++20, so no std::expected — a std::optional patch
 // plus an error string. On success `patch` holds the data and `error` is
 // empty; on failure `patch` is empty and `error` describes the problem for the
@@ -55,3 +65,24 @@ struct PatchLoadResult
 // Every value is clamped to its valid hardware range, so a corrupt or
 // wrong-size file fails gracefully instead of producing junk register writes.
 PatchLoadResult loadTFI (const std::filesystem::path& path);
+
+// Parse a 43-byte VGI file into a Patch. Message thread only. AMS/FMS are
+// unpacked from byte 0x02 (`0b00AA0FFF`); AMON is unpacked from each
+// operator's DR byte bit 7. Values are clamped to hardware ranges.
+PatchLoadResult loadVGI (const std::filesystem::path& path);
+
+// Parse a DMP file into a Patch. Only DMP version 11 (0x0B) with system 0x02
+// (Genesis) or 0x42 (Genesis extended) and an FM-type instrument is accepted;
+// every other version, system byte, or PSG-type instrument is rejected with
+// a descriptive `error` and no patch (ADR-0012). Message thread only.
+PatchLoadResult loadDMP (const std::filesystem::path& path);
+
+// Write a Patch to disk as a 42-byte TFI file. Returns an empty string on
+// success or a descriptive error message on failure. TFI carries no
+// AMS/FMS/AMON/LFO data, so those fields are silently dropped.
+std::string exportTFI (const Patch& patch, const std::filesystem::path& path);
+
+// Write a Patch to disk as a 43-byte VGI file, packing AMS/FMS into byte
+// 0x02 and AMON into each operator's DR byte (bit 7). Returns an empty
+// string on success or a descriptive error message on failure.
+std::string exportVGI (const Patch& patch, const std::filesystem::path& path);
