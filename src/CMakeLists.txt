@@ -115,6 +115,9 @@ target_sources(GenVst PRIVATE
     MidiRouter.cpp        MidiRouter.h
     FmRegisterMap.cpp     FmRegisterMap.h
     PatchSystem.cpp       PatchSystem.h
+    SN76489Wrapper.cpp    SN76489Wrapper.h
+    SN76489Engine.cpp     SN76489Engine.h
+    DACPlayer.cpp         DACPlayer.h
     GenVstYmfmInterface.h)
 
 # --- ymfm OPN2 (YM2612) FM core (ADR-0002) ------------------------------------
@@ -130,6 +133,26 @@ target_sources(GenVst PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_misc.cpp")
 target_include_directories(GenVst PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src")
+# ------------------------------------------------------------------------------
+
+# --- libvgm SN76489 core (ADR-0009) ------------------------------------------
+# Compile ONLY the MAME SN764xx core and the logging helper it depends on — not
+# the rest of libvgm. The MAME variant supports the Sega VDP PSG via its config
+# (taps 0x0009, 16-bit shift register, negate=1, segaPSG=1). All access goes
+# through SN76489Wrapper; nothing else in the codebase touches libvgm.
+set(LIBVGM_DIR "${CMAKE_SOURCE_DIR}/third_party/libvgm")
+target_sources(GenVst PRIVATE
+    "${LIBVGM_DIR}/emu/cores/sn76496.c"
+    "${LIBVGM_DIR}/emu/logging.c")
+
+# Silence the warnings JUCE's recommended flags raise against this third-party
+# C code (mostly signed/unsigned conversions and zero-sized arrays in libvgm
+# structs). The warnings are inherent to libvgm and not actionable here.
+set_source_files_properties(
+    "${LIBVGM_DIR}/emu/cores/sn76496.c"
+    "${LIBVGM_DIR}/emu/logging.c"
+    PROPERTIES COMPILE_OPTIONS
+        "$<$<C_COMPILER_ID:MSVC>:/w>$<$<NOT:$<C_COMPILER_ID:MSVC>>:-w>")
 # ------------------------------------------------------------------------------
 
 target_compile_definitions(GenVst PUBLIC
@@ -150,6 +173,14 @@ target_compile_definitions(GenVst PUBLIC
 # voice plays a real timbre. Superseded by the patch browser (Task 09).
 target_compile_definitions(GenVst PRIVATE
     GENVST_DEV_PATCH_DIR="${CMAKE_SOURCE_DIR}/extern/patches")
+# ------------------------------------------------------------------------------
+
+# --- Dev DAC sample path (Task 07) --------------------------------------------
+# If a WAV file exists at this path at runtime, the processor loads it into the
+# DAC on construction. Used for manual verification of the DAC pipeline before
+# the WAV loader UI / state-embedding work (Task 13 / Task 16).
+target_compile_definitions(GenVst PRIVATE
+    GENVST_DEV_DAC_WAV="${CMAKE_SOURCE_DIR}/extern/dac-test.wav")
 # ------------------------------------------------------------------------------
 
 target_link_libraries(GenVst PRIVATE

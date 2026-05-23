@@ -23,13 +23,21 @@ class MidiRouter
 public:
     struct Destination
     {
-        // Task 07 adds PsgSlot and Dac alongside FmPart.
-        enum class Kind { None, FmPart };
+        // Kinds:
+        //   FmPart   — index 0..5 selects one of the six FM parts.
+        //   PsgTone  — index 0..2 selects one of the three SN76489 tone
+        //              channels.
+        //   PsgNoise — the single SN76489 noise channel (index unused).
+        //   Dac      — the dedicated DAC channel (index unused).
+        enum class Kind { None, FmPart, PsgTone, PsgNoise, Dac };
 
         Kind kind  = Kind::None;
-        int  index = -1;   // FM part 0..5 when kind == FmPart
+        int  index = -1;
 
-        bool isFmPart() const noexcept { return kind == Kind::FmPart && index >= 0; }
+        bool isFmPart()   const noexcept { return kind == Kind::FmPart && index >= 0; }
+        bool isPsgTone()  const noexcept { return kind == Kind::PsgTone && index >= 0; }
+        bool isPsgNoise() const noexcept { return kind == Kind::PsgNoise; }
+        bool isDac()      const noexcept { return kind == Kind::Dac; }
     };
 
     MidiRouter();
@@ -57,8 +65,13 @@ public:
 
     // --- Routing table -------------------------------------------------------
 
-    // Default binding: MIDI channel i+1 -> FM part i for i in 0..5; channels
-    // 7..16 unbound (Destination::Kind::None) until PSG/DAC arrive (Task 07).
+    // Default binding (Task 07):
+    //   MIDI 1..6   -> FM parts 0..5
+    //   MIDI 11..13 -> PSG tone channels 0..2
+    //   MIDI 14     -> PSG noise channel
+    //   MIDI 16     -> DAC
+    // All slots are user-configurable later (07-feature-spec.md "State
+    // Persistence").
     void resetRouting() noexcept;
 
     void        setDestination (int midiChannel /* 1-16 */, Destination dest) noexcept;

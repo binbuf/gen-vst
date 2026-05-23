@@ -16,13 +16,17 @@ add_executable(GenVstTests
     RegisterWriteTests.cpp
     VoiceAllocatorTests.cpp
     MidiRoutingTests.cpp
+    PsgDacTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
     "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"
     "${CMAKE_SOURCE_DIR}/src/MidiRouter.cpp"
     "${CMAKE_SOURCE_DIR}/src/Voice.cpp"
-    "${CMAKE_SOURCE_DIR}/src/VoiceAllocator.cpp")
+    "${CMAKE_SOURCE_DIR}/src/VoiceAllocator.cpp"
+    "${CMAKE_SOURCE_DIR}/src/SN76489Wrapper.cpp"
+    "${CMAKE_SOURCE_DIR}/src/SN76489Engine.cpp"
+    "${CMAKE_SOURCE_DIR}/src/DACPlayer.cpp")
 
 # The ymfm OPN2 core — VoiceAllocatorTests drives real ymfm::ym2612 instances
 # through Voice. ymfm_opn.cpp also defines OPNA/OPNB, whose constructors pull in
@@ -33,6 +37,19 @@ target_sources(GenVstTests PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_ssg.cpp"
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_adpcm.cpp"
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src/ymfm_misc.cpp")
+
+# The libvgm SN76489 MAME core (and the logging helper it calls) — mirrors
+# the plugin's libvgm subset (see src/CMakeLists.txt). PsgDacTests drives a
+# real SN76489 chip through SN76489Wrapper.
+set(LIBVGM_DIR "${CMAKE_SOURCE_DIR}/third_party/libvgm")
+target_sources(GenVstTests PRIVATE
+    "${LIBVGM_DIR}/emu/cores/sn76496.c"
+    "${LIBVGM_DIR}/emu/logging.c")
+set_source_files_properties(
+    "${LIBVGM_DIR}/emu/cores/sn76496.c"
+    "${LIBVGM_DIR}/emu/logging.c"
+    PROPERTIES COMPILE_OPTIONS
+        "$<$<C_COMPILER_ID:MSVC>:/w>$<$<NOT:$<C_COMPILER_ID:MSVC>>:-w>")
 
 target_include_directories(GenVstTests PRIVATE
     "${CMAKE_SOURCE_DIR}/src"
@@ -45,7 +62,8 @@ target_compile_definitions(GenVstTests PRIVATE
 target_link_libraries(GenVstTests PRIVATE
     GTest::gtest_main
     juce::juce_core
-    juce::juce_audio_basics)
+    juce::juce_audio_basics
+    juce::juce_audio_formats)   # DACPlayer::loadWav
 
 include(GoogleTest)
 gtest_discover_tests(GenVstTests)

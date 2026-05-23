@@ -151,15 +151,48 @@ TEST (MidiRouting, DefaultBindingMapsChannels1To6ToFmParts)
     }
 }
 
-TEST (MidiRouting, ChannelsAbove6AreUnboundByDefault)
+TEST (MidiRouting, GapChannelsAreUnboundByDefault)
 {
+    // Channels 7-10 and 15 fall outside any default binding (FM, PSG, DAC).
     MidiRouter router;
-    for (int ch : { 7, 9, 16 })
+    for (int ch : { 7, 8, 9, 10, 15 })
     {
         SCOPED_TRACE ("channel=" + std::to_string (ch));
         EXPECT_EQ (router.destinationFor (ch).kind, MidiRouter::Destination::Kind::None);
         EXPECT_FALSE (router.destinationFor (ch).isFmPart());
     }
+}
+
+TEST (MidiRouting, DefaultBindingMapsChannels11To13ToPsgTone)
+{
+    MidiRouter router;
+    for (int slot = 0; slot < 3; ++slot)
+    {
+        const int ch = 11 + slot;
+        SCOPED_TRACE ("channel=" + std::to_string (ch));
+        const auto d = router.destinationFor (ch);
+        EXPECT_EQ (d.kind, MidiRouter::Destination::Kind::PsgTone);
+        EXPECT_EQ (d.index, slot);
+        EXPECT_TRUE (d.isPsgTone());
+    }
+}
+
+TEST (MidiRouting, DefaultBindingMapsChannel14ToPsgNoise)
+{
+    MidiRouter router;
+    const auto d = router.destinationFor (14);
+    EXPECT_EQ (d.kind, MidiRouter::Destination::Kind::PsgNoise);
+    EXPECT_TRUE (d.isPsgNoise());
+    EXPECT_FALSE (d.isFmPart());
+}
+
+TEST (MidiRouting, DefaultBindingMapsChannel16ToDac)
+{
+    MidiRouter router;
+    const auto d = router.destinationFor (16);
+    EXPECT_EQ (d.kind, MidiRouter::Destination::Kind::Dac);
+    EXPECT_TRUE (d.isDac());
+    EXPECT_FALSE (d.isFmPart());
 }
 
 TEST (MidiRouting, SetDestinationRoundtrips)

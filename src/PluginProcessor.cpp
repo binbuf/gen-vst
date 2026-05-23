@@ -144,6 +144,68 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         juce::StringArray { "Off", "LFO Depth", "Carrier TL" },
         1));   // default = LFO Depth, the MVP-chosen target
 
+    // --- PSG (SN76489) parameters --------------------------------------------
+    // 03-psg-synthesis.md: per-channel volume, pan, opt-in pitch bend; direct
+    // noise control (type/rate + optional auto-mode); global mix level; PSG
+    // layer toggle.
+    static const juce::StringArray kPsgChannelLabels { "Ch1", "Ch2", "Ch3", "Noise" };
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+    {
+        const auto suffix = kPsgChannelLabels[i].toLowerCase();
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { "psg_vol_" + suffix, 1 },
+            "PSG " + kPsgChannelLabels[i] + " Volume",
+            juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { "psg_pan_" + suffix, 1 },
+            "PSG " + kPsgChannelLabels[i] + " Pan",
+            juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { "psg_bend_" + suffix, 1 },
+            "PSG " + kPsgChannelLabels[i] + " Pitch Bend",
+            i < SN76489Engine::kNumToneChs));   // tone channels default on
+    }
+
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "psg_noise_type", 1 },
+        "PSG Noise Type",
+        juce::StringArray { "Periodic", "White" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "psg_noise_rate", 1 },
+        "PSG Noise Rate",
+        juce::StringArray { "Low (N/512)", "Mid (N/1024)", "High (N/2048)", "Tone 3" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "psg_noise_auto", 1 },
+        "PSG Noise Auto Mode", false));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "psg_mix", 1 },
+        "PSG Mix",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.8f));
+
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "psg_layer", 1 },
+        "PSG Layer on FM", false));
+
+    // --- DAC parameters ------------------------------------------------------
+    // 07-feature-spec.md "DAC Mode Specification": rate (8000/11025/22050),
+    // one-shot / loop, level, enable.
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "dac_enable", 1 },
+        "DAC Enable", true));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "dac_rate", 1 },
+        "DAC Rate",
+        juce::StringArray { "8000 Hz", "11025 Hz", "22050 Hz" }, 2));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "dac_mode", 1 },
+        "DAC Mode",
+        juce::StringArray { "One-shot", "Loop" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "dac_level", 1 },
+        "DAC Level",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f));
+
     // The full per-part FM parameter set: every part gets the per-operator and
     // per-part channel parameters, generated from the schema tables so the
     // ~300 FM parameters are declared in a loop (01-architecture.md
@@ -205,11 +267,36 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     velToTlParam          = apvts.getRawParameterValue ("vel_to_tl");
     aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
 
+    // PSG / DAC raw pointers — looked up once so the audio thread never
+    // touches the parameter map.
+    psgDacParams.mix         = apvts.getRawParameterValue ("psg_mix");
+    psgDacParams.noiseType   = apvts.getRawParameterValue ("psg_noise_type");
+    psgDacParams.noiseRate   = apvts.getRawParameterValue ("psg_noise_rate");
+    psgDacParams.noiseAuto   = apvts.getRawParameterValue ("psg_noise_auto");
+
+    static const std::array<const char*, SN76489Engine::kNumChannels> kPsgIds
+        { "ch1", "ch2", "ch3", "noise" };
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+    {
+        psgDacParams.volume[(std::size_t) i] =
+            apvts.getRawParameterValue (juce::String ("psg_vol_") + kPsgIds[(std::size_t) i]);
+        psgDacParams.pan[(std::size_t) i] =
+            apvts.getRawParameterValue (juce::String ("psg_pan_") + kPsgIds[(std::size_t) i]);
+        psgDacParams.bendOn[(std::size_t) i] =
+            apvts.getRawParameterValue (juce::String ("psg_bend_") + kPsgIds[(std::size_t) i]);
+    }
+
+    psgDacParams.dacEnable = apvts.getRawParameterValue ("dac_enable");
+    psgDacParams.dacRate   = apvts.getRawParameterValue ("dac_rate");
+    psgDacParams.dacMode   = apvts.getRawParameterValue ("dac_mode");
+    psgDacParams.dacLevel  = apvts.getRawParameterValue ("dac_level");
+
     for (auto& slot : pendingProgramChange)
         slot.store (-1, std::memory_order_relaxed);
 
     buildCcParamLookup();
     loadFactoryPatches();
+    loadDevDacSample();
 }
 
 void GenVstAudioProcessor::buildCcParamLookup()
@@ -293,6 +380,15 @@ void GenVstAudioProcessor::loadFactoryPatches()
 #endif
 }
 
+void GenVstAudioProcessor::loadDevDacSample()
+{
+#ifdef GENVST_DEV_DAC_WAV
+    const juce::File wav { GENVST_DEV_DAC_WAV };
+    if (wav.existsAsFile())
+        dacPlayer.loadWav (wav);
+#endif
+}
+
 void GenVstAudioProcessor::handleAsyncUpdate()
 {
     // Drain the per-part pending Program Change slots and apply each on the
@@ -312,7 +408,43 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     // Build the raw-pointer parameter cache (per part) and the voice pool.
     paramCache.connect (apvts);
     voiceAllocator.prepare (sampleRate, samplesPerBlock);
+    psgEngine.prepare (sampleRate, samplesPerBlock);
+    dacPlayer.prepare (sampleRate, samplesPerBlock);
     monoScratch.allocate ((size_t) juce::jmax (1, samplesPerBlock), true);
+}
+
+void GenVstAudioProcessor::pushPsgDacParameters()
+{
+    if (psgDacParams.mix == nullptr) return;
+
+    psgEngine.setMixLevel (psgDacParams.mix->load());
+    psgEngine.setNoiseType  (juce::roundToInt (psgDacParams.noiseType->load()));
+    psgEngine.setNoiseShiftRate (juce::roundToInt (psgDacParams.noiseRate->load()));
+    psgEngine.setNoiseAutoMode  (psgDacParams.noiseAuto->load() > 0.5f);
+
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+    {
+        psgEngine.setChannelVolume (i, psgDacParams.volume[(std::size_t) i]->load());
+        psgEngine.setChannelPan    (i, psgDacParams.pan[(std::size_t) i]->load());
+        psgEngine.setChannelBendEnabled (i, psgDacParams.bendOn[(std::size_t) i]->load() > 0.5f);
+    }
+
+    // DAC: enable / level on every block; rate triggers a PCM regeneration
+    // (potential allocation), so only call setDacRate if the value actually
+    // changed. Audio-thread allocation in setDacRate is documented as a
+    // best-effort: changing the rate during active playback is a non-real-time
+    // user action in practice (a UI param toggle).
+    dacPlayer.setEnabled (psgDacParams.dacEnable->load() > 0.5f);
+    dacPlayer.setLevel   (psgDacParams.dacLevel->load());
+    dacPlayer.setMode (psgDacParams.dacMode->load() > 0.5f
+                       ? DACPlayer::Mode::Loop
+                       : DACPlayer::Mode::OneShot);
+
+    static constexpr int kRates[] { 8000, 11025, 22050 };
+    const int rateIdx = juce::jlimit (0, 2, juce::roundToInt (psgDacParams.dacRate->load()));
+    const int desiredRate = kRates[rateIdx];
+    if (desiredRate != dacPlayer.getDacRate())
+        dacPlayer.setDacRate (desiredRate);
 }
 
 void GenVstAudioProcessor::releaseResources()
@@ -349,6 +481,10 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         paramCache.readPatch (part, partPatches[(size_t) part]);
     voiceAllocator.updateActiveVoices (partPatches, velToTl);
 
+    // Push PSG / DAC parameter values down once per block — the engines
+    // hold scalar mirrors so the per-sample inner loops don't re-read atomics.
+    pushPsgDacParameters();
+
     // Sample-accurate iteration (01-architecture.md "MIDI Pipeline"): for each
     // gap between consecutive MIDI events, render that exact sub-block, then
     // dispatch the event. Out-of-range timestamps (some hosts deliver events
@@ -384,7 +520,11 @@ void GenVstAudioProcessor::renderSubBlock (juce::AudioBuffer<float>& buffer,
     float* right = numChannels > 1 ? buffer.getWritePointer (1) + startSample
                                    : monoScratch.get();
 
-    voiceAllocator.render (left, right, numSamples);
+    // FM voices + DAC at native rate -> resample once to host rate.
+    voiceAllocator.render (left, right, numSamples, &dacPlayer);
+
+    // PSG mixes in at host rate (it resamples internally — ADR-0011).
+    psgEngine.renderAdd (left, right, numSamples);
 
     const float gain = masterGainParam->load();
     for (int i = 0; i < numSamples; ++i)
@@ -422,38 +562,70 @@ void GenVstAudioProcessor::handleNoteOn (int channel, int note, int velocity)
     // isNoteOn / isNoteOff already filter on this, so we treat velocity > 0
     // arrivals here as keystrikes.
     const auto dest = midiRouter.destinationFor (channel);
-    if (! dest.isFmPart()) return;
-
-    const int part = dest.index;
-    paramCache.readPatch (part, noteOnPatch);
-    voiceAllocator.noteOn (part, note, velocity,
-                           midiRouter.pitchBendSemitones (part),
-                           currentVelToTl(), noteOnPatch);
+    if (dest.isFmPart())
+    {
+        const int part = dest.index;
+        paramCache.readPatch (part, noteOnPatch);
+        voiceAllocator.noteOn (part, note, velocity,
+                               midiRouter.pitchBendSemitones (part),
+                               currentVelToTl(), noteOnPatch);
+    }
+    else if (dest.isPsgTone())
+    {
+        psgEngine.noteOnTone (note, velocity);
+    }
+    else if (dest.isPsgNoise())
+    {
+        psgEngine.noteOnNoise (note, velocity);
+    }
+    else if (dest.isDac())
+    {
+        dacPlayer.trigger (note, velocity);
+    }
 }
 
 void GenVstAudioProcessor::handleNoteOff (int channel, int note)
 {
     const auto dest = midiRouter.destinationFor (channel);
-    if (! dest.isFmPart()) return;
-
-    const int part = dest.index;
-    voiceAllocator.noteOff (part, note, midiRouter.sustainPedalHeld (part));
+    if (dest.isFmPart())
+    {
+        const int part = dest.index;
+        voiceAllocator.noteOff (part, note, midiRouter.sustainPedalHeld (part));
+    }
+    else if (dest.isPsgTone())
+    {
+        psgEngine.noteOffTone (note);
+    }
+    else if (dest.isPsgNoise())
+    {
+        psgEngine.noteOffNoise (note);
+    }
+    else if (dest.isDac())
+    {
+        dacPlayer.release();
+    }
 }
 
 void GenVstAudioProcessor::handlePitchBend (int channel, int bend14bit)
 {
     const auto dest = midiRouter.destinationFor (channel);
-    if (! dest.isFmPart()) return;
-
-    const int    part      = dest.index;
     const double semitones = MidiRouter::pitchBendToSemitones (bend14bit, currentBendRangeSemitones());
 
-    midiRouter.setPitchBendSemitones (part, semitones);
+    if (dest.isFmPart())
+    {
+        const int part = dest.index;
+        midiRouter.setPitchBendSemitones (part, semitones);
 
-    // Reflect the bend into every active voice of this part — the dirty-diff
-    // sees only the frequency registers change.
-    paramCache.readPatch (part, partPatches[(size_t) part]);
-    voiceAllocator.setPitchBend (part, semitones, partPatches[(size_t) part], currentVelToTl());
+        // Reflect the bend into every active voice of this part — the dirty-diff
+        // sees only the frequency registers change.
+        paramCache.readPatch (part, partPatches[(size_t) part]);
+        voiceAllocator.setPitchBend (part, semitones, partPatches[(size_t) part], currentVelToTl());
+    }
+    else if (dest.isPsgTone())
+    {
+        psgEngine.setPitchBendSemitones (dest.index, semitones);
+    }
+    // PSG noise has no pitch; DAC has no bend either.
 }
 
 void GenVstAudioProcessor::handleAftertouch (int channel, int pressure)
@@ -508,11 +680,31 @@ void GenVstAudioProcessor::handleControlChange (int channel, int cc, int value)
     if (cc == 123)   // All Notes Off — release naturally
     {
         voiceAllocator.allNotesOff();
+        psgEngine.reset();
+        dacPlayer.release();
         return;
     }
     if (cc == 121)   // Reset All Controllers — per channel
     {
         resetControllersForChannel (channel);
+        return;
+    }
+
+    // Global PSG / DAC CCs — work on any incoming channel
+    // (07-feature-spec.md "MIDI CC Map").
+    if (cc == 84)   // DAC enable: 0 = off, >=64 = on
+    {
+        if (psgDacParams.dacEnable != nullptr)
+            psgDacParams.dacEnable->store (value >= 64 ? 1.0f : 0.0f,
+                                           std::memory_order_relaxed);
+        return;
+    }
+    if (cc == 85)   // PSG mix level: 0..127 -> 0..1
+    {
+        if (psgDacParams.mix != nullptr)
+            psgDacParams.mix->store (juce::jlimit (0.0f, 1.0f,
+                                                   value / 127.0f),
+                                     std::memory_order_relaxed);
         return;
     }
 
@@ -546,9 +738,8 @@ void GenVstAudioProcessor::handleControlChange (int channel, int cc, int value)
     }
 
     // CC 7 (master volume) has no per-part volume parameter yet, so we
-    // accept-and-ignore it rather than rejecting the message. Likewise CC
-    // 84/85 (DAC enable / PSG mix) land in Task 07.
-    if (cc == 7 || cc == 84 || cc == 85)
+    // accept-and-ignore it rather than rejecting the message.
+    if (cc == 7)
         return;
 
     // The mapped-CC table covers the operator/channel FM parameters. Anything

@@ -138,10 +138,21 @@ void MidiRouter::resetRouting() noexcept
     for (auto& d : channelMap)
         d = { Destination::Kind::None, -1 };
 
-    // Default binding: MIDI channel i+1 -> FM part i for i = 0..5.
+    // FM parts: channels 1..6 -> parts 0..5.
     for (int part = 0; part < PartManager::kNumParts; ++part)
         channelMap[static_cast<std::size_t> (part + 1)] =
             { Destination::Kind::FmPart, part };
+
+    // PSG tone channels: MIDI 11..13 -> SN76489 tone slots 0..2.
+    for (int i = 0; i < 3; ++i)
+        channelMap[static_cast<std::size_t> (11 + i)] =
+            { Destination::Kind::PsgTone, i };
+
+    // PSG noise: MIDI 14.
+    channelMap[14] = { Destination::Kind::PsgNoise, 0 };
+
+    // DAC: MIDI 16.
+    channelMap[16] = { Destination::Kind::Dac, 0 };
 
     bendSemitones.fill (0.0);
     sustainHeld.fill (false);

@@ -8,6 +8,8 @@
 #include "PatchSystem.h"
 #include "Voice.h"
 
+class DACPlayer;
+
 // The shared 16-voice FM pool (ADR-0013).
 //
 // Voices are not statically owned by parts. On note-on the allocator takes a
@@ -72,9 +74,12 @@ public:
     // when a single CC/AT/PC event mutated just one part's patch.
     void updateActiveVoicesForPart (int part, const Patch& patch, bool velToTl);
 
-    // Render `numSamples` of host-rate stereo audio: sum all sounding voices at
-    // the native rate, then resample the mix to the host rate in one pass.
-    void render (float* outL, float* outR, int numSamples);
+    // Render `numSamples` of host-rate stereo audio: sum all sounding voices
+    // at the native rate, then resample the mix to the host rate in one
+    // pass. If `dac` is non-null, its DAC ymfm instance is also rendered
+    // into the same native mix buffer before the resample (ADR-0011,
+    // ADR-0014), so FM voices and DAC pass through a single resampler stage.
+    void render (float* outL, float* outR, int numSamples, DACPlayer* dac = nullptr);
 
     // --- Introspection (tests / telemetry) -----------------------------------
 

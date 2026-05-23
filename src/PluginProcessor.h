@@ -6,9 +6,11 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "DACPlayer.h"
 #include "MidiRouter.h"
 #include "PartManager.h"
 #include "PatchSystem.h"
+#include "SN76489Engine.h"
 #include "VoiceAllocator.h"
 
 // Raw std::atomic<float>* views of every per-part FM parameter, cached so the
@@ -78,6 +80,11 @@ private:
     // factoryPatches list used by Program Change.
     void loadFactoryPatches();
 
+    // Dev wiring: load a known WAV from GENVST_DEV_DAC_WAV (if present) into
+    // the DAC so a note on MIDI channel 16 plays an 8-bit sample without
+    // needing the WAV loader UI (Task 13) or the state-embedded PCM (Task 16).
+    void loadDevDacSample();
+
     // Resolve every per-part apvts parameter pointer needed by the CC
     // dispatch ahead of time, so the audio thread does no juce::String work.
     void buildCcParamLookup();
@@ -125,6 +132,30 @@ private:
     VoiceAllocator voiceAllocator;
     FmParamCache   paramCache;
     MidiRouter     midiRouter;
+    SN76489Engine  psgEngine;
+    DACPlayer      dacPlayer;
+
+    // Per-block PSG / DAC parameter snapshot — apvts pointers cached at
+    // prepareToPlay so the audio thread reads with no map lookup. Pushed
+    // into psgEngine / dacPlayer at the top of each processBlock.
+    struct PsgDacParams
+    {
+        std::atomic<float>* mix             = nullptr;
+        std::atomic<float>* noiseType       = nullptr;
+        std::atomic<float>* noiseRate       = nullptr;
+        std::atomic<float>* noiseAuto       = nullptr;
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> volume { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> pan    { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> bendOn { nullptr, nullptr, nullptr, nullptr };
+
+        std::atomic<float>* dacEnable = nullptr;
+        std::atomic<float>* dacRate   = nullptr;
+        std::atomic<float>* dacMode   = nullptr;
+        std::atomic<float>* dacLevel  = nullptr;
+    };
+    PsgDacParams psgDacParams;
+
+    void pushPsgDacParameters();
 
     // Pre-allocated processBlock scratch — never allocated on the audio thread.
     Patch                                    noteOnPatch;

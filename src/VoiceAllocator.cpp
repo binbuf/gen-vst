@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "DACPlayer.h"
+
 void VoiceAllocator::prepare (double hostSampleRate, int maxBlockSize)
 {
     hostRate   = hostSampleRate;
@@ -125,7 +127,7 @@ void VoiceAllocator::updateActiveVoicesForPart (int part, const Patch& patch, bo
             v.updateRegisters (patch, velToTl);
 }
 
-void VoiceAllocator::render (float* outL, float* outR, int numSamples)
+void VoiceAllocator::render (float* outL, float* outR, int numSamples, DACPlayer* dac)
 {
     if (numSamples <= 0)
         return;
@@ -147,6 +149,12 @@ void VoiceAllocator::render (float* outL, float* outR, int numSamples)
     for (auto& v : voices)
         if (! v.isIdle())
             v.renderAdd (mixL + carry, mixR + carry, toGen);
+
+    // The DAC is summed into the same native mix buffer as the FM voices so
+    // a single resample pass handles both (ADR-0011, ADR-0014). The dedicated
+    // 17th ymfm instance never consumes an FM voice slot.
+    if (dac != nullptr)
+        dac->renderAdd (mixL + carry, mixR + carry, toGen);
 
     const int available = carry + toGen;
 
