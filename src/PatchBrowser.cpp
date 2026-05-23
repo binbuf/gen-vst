@@ -668,6 +668,37 @@ PatchBrowser::importPatchFolder (const juce::String& sourcePath)
     return result;
 }
 
+PatchBrowser::VgmImportSaveResult
+PatchBrowser::saveExtractedPatches (const std::vector<Patch>& patches)
+{
+    VgmImportSaveResult result;
+    if (patches.empty())
+        return result;
+
+    const auto importedFs = resolveUserImportedRoot();
+    std::error_code ec;
+    fs::create_directories (importedFs, ec);
+
+    for (const auto& p : patches)
+    {
+        const juce::String safe = sanitiseFileName (
+            juce::String (p.name).isEmpty() ? juce::String ("patch") : juce::String (p.name));
+        const fs::path dest = importedFs / (safe.toStdString() + ".tfi");
+
+        const auto err = exportTFI (p, dest);
+        if (err.empty())
+            ++result.saved;
+        else
+            result.errors.push_back (err);
+    }
+
+    // No folder-tree mutation here — the caller hops back to the message
+    // thread and calls rescanWritableRoots() to refresh the tree and trigger
+    // the search-index rebuild. Doing both here would race against the JS
+    // patch-browser modal's tree reads.
+    return result;
+}
+
 std::string PatchBrowser::deletePatchFile (const juce::String& absolutePath)
 {
     const fs::path path { absolutePath.toRawUTF8() };

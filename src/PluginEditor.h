@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -252,6 +253,25 @@ private:
     std::unique_ptr<juce::FileChooser> importChooser;
     std::unique_ptr<juce::FileChooser> exportChooser;
     std::unique_ptr<juce::FileChooser> folderChooser;
+
+    // Task 21 — VGM bank-import chooser (`*.vgm;*.vgz`). Same lifetime
+    // contract as the others; replaced on every launch.
+    std::unique_ptr<juce::FileChooser> vgmImportChooser;
+
+    // Task 21 — VGM bank-import runner. Reads `filePath`, runs the heavy
+    // parse on a juce::Thread::launch-spawned background thread, writes each
+    // extracted patch to the user-imported root, refreshes the IMPORT-tab
+    // tree on the message thread, and finally invokes `done(savedCount,
+    // errorMessage)` on the message thread. Shared by the importBankDialog
+    // native function and the .vgm/.vgz drag-and-drop branch.
+    //
+    // If the editor is destroyed before the background thread finishes, the
+    // message-thread callback short-circuits via juce::Component::SafePointer
+    // and `done` is never invoked — safe because the JS context that owned
+    // the Promise is gone with the WebView.
+    void runVgmExtractAsync (
+        const juce::String& filePath,
+        std::function<void (int savedCount, const juce::String& error)> done);
 
     // Preview release timer: armed by the previewPatch native function so the
     // synthetic middle-C is released after ~1s without the JS side having to

@@ -274,6 +274,23 @@ public:
     std::string exportPatchToPath (const Patch&        patch,
                                    const juce::String& destinationPath);
 
+    // VGM bank-import sink (Task 21). Writes every Patch returned by
+    // VgmExtract::extractFmPatches to the user-imported root as a `.tfi`
+    // (filename = sanitiseFileName(patch.name) + ".tfi"), overwriting any
+    // existing entry with the same name.
+    //
+    // This routine **does not** touch the folder tree or the search index, so
+    // it is safe to call from the editor's background extraction thread. The
+    // caller must follow up on the message thread with rescanWritableRoots()
+    // (refresh the tree + invalidate the index) and emitPatchRootsChanged
+    // (push a UI refresh event).
+    struct VgmImportSaveResult
+    {
+        int                      saved = 0;
+        std::vector<std::string> errors;
+    };
+    VgmImportSaveResult saveExtractedPatches (const std::vector<Patch>& patches);
+
     // Delete a patch file from a writable root (UserSaved / UserImported).
     // Refreshes the containing folder and schedules a search-index rebuild.
     // Returns empty on success or an error string on failure (path not in any

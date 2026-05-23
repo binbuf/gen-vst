@@ -14,6 +14,7 @@ add_executable(GenVstTests
     PatchLoaderTests.cpp
     Y12LoaderTests.cpp
     OpmLoaderTests.cpp
+    VgmExtractTests.cpp
     PatchBrowserTests.cpp
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
@@ -23,6 +24,7 @@ add_executable(GenVstTests
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
+    "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
     "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"
     "${CMAKE_SOURCE_DIR}/src/MidiRouter.cpp"

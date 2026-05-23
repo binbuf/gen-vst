@@ -1,6 +1,10 @@
 #include "PluginEditor.h"
 
 #include <cmath>
+#include <filesystem>
+#include <utility>
+
+#include "VgmExtract.h"
 
 #if ! GENVST_DEV_SERVER
  #include <memory>
@@ -496,6 +500,53 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 });
         });
 
+    // Import Bank dialog (Task 21 / ADR-0019) — one-click .vgm/.vgz bank
+    // import. Picks a file, parses the YM2612 register stream on a background
+    // thread, writes every unique key-on snapshot to the user-imported root,
+    // refreshes the IMPORT tab, and surfaces a toast. Matches Genny VST's
+    // "Import Bank" UX: no second dialog, no per-patch checkbox modal.
+    options = options.withNativeFunction ("importBankDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            vgmImportChooser = std::make_unique<juce::FileChooser> (
+                "Import VGM bank", juce::File{}, "*.vgm;*.vgz");
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles;
+
+            vgmImportChooser->launchAsync (flags,
+                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    const juce::String fileName = file.getFileName();
+
+                    runVgmExtractAsync (file.getFullPathName(),
+                        [this, fileName, completion = std::move (completion)]
+                        (int saved, const juce::String& err) mutable
+                        {
+                            if (saved > 0)
+                                emitNotify ("info",
+                                    "Imported " + juce::String (saved)
+                                        + (saved == 1 ? " patch from " : " patches from ")
+                                        + fileName);
+                            if (err.isNotEmpty())
+                                emitNotify ("error", err);
+                            else if (saved == 0)
+                                emitNotify ("error", "No patches imported from " + fileName);
+
+                            auto* obj = new juce::DynamicObject();
+                            obj->setProperty ("ok",         (saved > 0) && err.isEmpty());
+                            obj->setProperty ("savedCount", saved);
+                            if (err.isNotEmpty())
+                                obj->setProperty ("error", err);
+                            completion (juce::var (obj));
+                        });
+                });
+        });
+
     // Export file dialog — save file; extension picks TFI vs VGI.
     options = options.withNativeFunction ("exportFileDialog",
         [this] (const juce::Array<juce::var>& args, Completion completion)
@@ -909,6 +960,67 @@ void GenVstAudioProcessorEditor::emitNotify (const juce::String& level,
     webView.emitEventIfBrowserIsVisible ("notify", juce::var (obj));
 }
 
+void GenVstAudioProcessorEditor::runVgmExtractAsync (
+    const juce::String& filePath,
+    std::function<void (int, const juce::String&)> done)
+{
+    // SafePointer keeps the callback safe across editor destruction: if the
+    // user closes the plugin window mid-extract, the message-thread bounce
+    // becomes a no-op rather than dereferencing a destroyed editor.
+    juce::Component::SafePointer<GenVstAudioProcessorEditor> safeThis (this);
+
+    // juce::Thread::launch is fire-and-forget; the thread self-cleans when its
+    // function returns. We do not need a member juce::Thread because the
+    // extraction has no cancellation hooks and the message-thread bounce
+    // handles the "editor already gone" case.
+    juce::Thread::launch (
+        [safeThis, filePath, done = std::move (done)]() mutable
+        {
+            // ---- Background thread: heavy parse ---------------------------
+            const std::filesystem::path path { filePath.toRawUTF8() };
+            std::string                  error;
+            std::vector<Patch>           patches = extractFmPatches (path, error);
+
+            // ---- Message thread: write + refresh + completion -------------
+            juce::MessageManager::callAsync (
+                [safeThis,
+                 patches = std::move (patches),
+                 error   = std::move (error),
+                 done    = std::move (done)]() mutable
+                {
+                    if (safeThis == nullptr)
+                        return;
+
+                    if (patches.empty())
+                    {
+                        done (0, juce::String (error));
+                        return;
+                    }
+
+                    auto& browser = safeThis->processor.getPatchBrowser();
+                    auto  sr      = browser.saveExtractedPatches (patches);
+
+                    if (sr.saved > 0)
+                    {
+                        // Tree + index refresh; matches the post-import path.
+                        browser.rescanWritableRoots();
+                        safeThis->emitPatchRootsChanged();
+                    }
+
+                    juce::String errMsg;
+                    if (! sr.errors.empty())
+                    {
+                        juce::StringArray es;
+                        for (const auto& e : sr.errors)
+                            es.add (juce::String (e));
+                        errMsg = es.joinIntoString ("; ");
+                    }
+
+                    done (sr.saved, errMsg);
+                });
+        });
+}
+
 void GenVstAudioProcessorEditor::emitPatchRootsChanged()
 {
     // Pushed after any root-mutating action (save / import / delete / drop /
@@ -922,15 +1034,18 @@ bool GenVstAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray
 {
     // 05-ui-ux.md "File drag-and-drop": accept directories (registered as
     // custom roots) and any patch file whose extension is in
-    // kSupportedPatchExtensions (imported). Mixed drops are fine — each item
-    // is dispatched in filesDropped.
+    // kSupportedPatchExtensions (imported). `.vgm`/`.vgz` also accepted —
+    // they run through the VGM bank-import path (Task 21). Mixed drops are
+    // fine — each item is dispatched in filesDropped.
     for (const auto& f : files)
     {
         const juce::File file (f);
         if (file.isDirectory())
             return true;
-        const auto ext = file.getFileExtension().toLowerCase().toStdString();
-        if (isSupportedPatchExtension (ext))
+        const auto ext = file.getFileExtension().toLowerCase();
+        if (ext == ".vgm" || ext == ".vgz")
+            return true;
+        if (isSupportedPatchExtension (ext.toStdString()))
             return true;
     }
     return false;
@@ -962,8 +1077,30 @@ void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
         }
         else
         {
-            const auto ext = file.getFileExtension().toLowerCase().toStdString();
-            if (! isSupportedPatchExtension (ext))
+            const auto ext = file.getFileExtension().toLowerCase();
+            if (ext == ".vgm" || ext == ".vgz")
+            {
+                // VGM bank-import branch (Task 21). Same extraction path the
+                // Import Bank button takes; the only difference is the
+                // completion message goes through a toast rather than a JS
+                // Promise. The async helper handles the root-refresh.
+                const juce::String fileName = file.getFileName();
+                runVgmExtractAsync (file.getFullPathName(),
+                    [this, fileName] (int saved, const juce::String& err)
+                    {
+                        if (saved > 0)
+                            emitNotify ("info",
+                                "Imported " + juce::String (saved)
+                                    + (saved == 1 ? " patch from " : " patches from ")
+                                    + fileName);
+                        if (err.isNotEmpty())
+                            emitNotify ("error", err);
+                        else if (saved == 0)
+                            emitNotify ("error", "No patches imported from " + fileName);
+                    });
+                continue;
+            }
+            if (! isSupportedPatchExtension (ext.toStdString()))
                 continue;   // silently skip non-patch files in a mixed drop
             const auto err = browser.importPatchFile (file.getFullPathName());
             if (! err.empty())

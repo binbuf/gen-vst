@@ -390,9 +390,34 @@ function mountRightCol(col) {
   fmViewState.presetList = presetList;
   populatePatchList(presetList, "user-saved");
 
+  // Task 21 — Import Bank button. Lives on the IMPORT tab only (ADR-0019:
+  // one-click VGM/VGZ extraction matching Genny's UX). Calls the native
+  // `importBankDialog` function which opens the file chooser, runs the
+  // extraction on a background thread, writes the patches into the
+  // user-imported root, and fires a `notify` toast. The patchRootsChanged
+  // event from the backend then refreshes this LCD list automatically.
+  const importBankBtn = document.createElement("button");
+  importBankBtn.type = "button";
+  importBankBtn.className = "pb-button bevel-raised label import-bank-btn";
+  importBankBtn.textContent = "IMPORT BANK";
+  importBankBtn.dataset.tip = "IMPORT EVERY FM PATCH FROM A VGM OR VGZ FILE";
+  importBankBtn.style.display = "none";   // shown only on the IMPORT tab
+  importBankBtn.addEventListener("click", async () => {
+    try {
+      const fn = Juce.getNativeFunction("importBankDialog");
+      await fn();
+      // Toast + IMPORT-list refresh are emitted by the C++ side via the
+      // `notify` and `patchRootsChanged` events; no JS follow-up needed.
+    } catch (e) { console.error(e); }
+  });
+  col.querySelector(".panel-body").appendChild(importBankBtn);
+  fmViewState.importBankBtn = importBankBtn;
+
   const tabs = makeLocalChoiceBinding(["PRESETS", "IMPORT"], 0, (idx) => {
     fmViewState.presetTab = idx;
     refreshPresetList();
+    // Import Bank is meaningful only when the IMPORT tab is active.
+    importBankBtn.style.display = (idx === 1) ? "block" : "none";
     // Persist the choice C++-side so reopening the DAW project picks it up.
     try {
       const setTab = Juce.getNativeFunction("setPresetTab");

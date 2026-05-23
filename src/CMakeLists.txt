@@ -120,6 +120,7 @@ target_sources(GenVst PRIVATE
     FmRegisterMap.cpp     FmRegisterMap.h
     PatchSystem.cpp       PatchSystem.h
     PatchBrowser.cpp      PatchBrowser.h
+    VgmExtract.cpp        VgmExtract.h
     SN76489Wrapper.cpp    SN76489Wrapper.h
     SN76489Engine.cpp     SN76489Engine.h
     DACPlayer.cpp         DACPlayer.h
