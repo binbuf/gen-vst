@@ -272,7 +272,7 @@
 
 .poly-group {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 38px 1fr;
   gap: 2px 4px;
   align-items: center;
   margin-top: 4px;
@@ -282,13 +282,23 @@
   text-transform: uppercase;
 }
 
-.poly-group .placeholder {
-  height: 14px;
-  background: var(--panel);
-  color: var(--label);
+/* GLIDE sub-row visible only in MONO mode, SPREAD sub-row only in UNISON.
+   The data-mode attribute is flipped from JS — fm-view.js mountPolyphonyGroup. */
+.poly-group[data-mode="poly"]   .poly-label-glide,
+.poly-group[data-mode="poly"]   #mono-glide-pills,
+.poly-group[data-mode="poly"]   .poly-label-spread,
+.poly-group[data-mode="poly"]   .spread-row,
+.poly-group[data-mode="mono"]   .poly-label-spread,
+.poly-group[data-mode="mono"]   .spread-row,
+.poly-group[data-mode="unison"] .poly-label-glide,
+.poly-group[data-mode="unison"] #mono-glide-pills {
+  display: none;
+}
+
+.poly-group .spread-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
 }
 
 /* ---- Right column — Presets / Import ------------------------------------- */

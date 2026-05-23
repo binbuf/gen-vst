@@ -26,6 +26,16 @@ public:
     // one current patch per part.
     static constexpr int kNumParts = 6;
 
+    // Per-part polyphony mode (07-feature-spec.md "Polyphony Modes", view 10).
+    struct PartPolyMode
+    {
+        enum class Mode : std::uint8_t { Poly = 0, Mono = 1, Unison = 2 };
+
+        Mode   mode        = Mode::Poly;
+        bool   monoLegato  = false;   // Mono only — false = Retrigger (MVP default), true = Legato
+        double spreadCents = 12.0;    // Unison only — symmetric F-number fan-out (view 10 default)
+    };
+
     VoiceAllocator() = default;
 
     VoiceAllocator (const VoiceAllocator&)            = delete;
@@ -33,6 +43,21 @@ public:
 
     // Allocate working buffers and reset every voice. Call from prepareToPlay.
     void prepare (double hostSampleRate, int maxBlockSize);
+
+    // --- Mode + voice-count configuration (Task 15) ---------------------------
+
+    // Per-part mode + sub-mode parameters. Pushed each block from the apvts.
+    // Affects only new note-ons; voices already sounding keep their original
+    // mode behaviour until release.
+    void setPartMode (int part, const PartPolyMode& mode) noexcept;
+
+    // Global voice-count cap from the Settings modal (8 / 12 / 16; default 16).
+    // New allocations only draw from slots [0, count); voices still sounding in
+    // a slot above the cap keep playing until their natural release tail ends.
+    void setVoiceCount (int count) noexcept;
+
+    int  voiceCount() const noexcept { return currentVoiceCount; }
+    PartPolyMode partMode (int part) const noexcept;
 
     // --- MIDI events (sample-accurate; Task 06) ------------------------------
 
@@ -93,12 +118,31 @@ public:
     // (08-ui-views.md view 1; ADR-0010).
     std::uint32_t activeVoiceMask() const noexcept;
 
+    // Read-only voice view for unit tests — used to verify per-voice Unison
+    // detune offsets. Out-of-range access is UB; callers should iterate over
+    // [0, kNumVoices).
+    const Voice& voiceAt (int index) const noexcept { return voices[(std::size_t) index]; }
+
 private:
     // Idle voice if any, else an LRU steal: oldest Released voice, else oldest
-    // Active voice.
+    // Active voice. Restricted to slots [0, currentVoiceCount) per ADR-0013 /
+    // 07-feature-spec.md "Polyphony" (the configurable global voice count).
     Voice& allocateVoice();
 
-    std::array<Voice, kNumVoices> voices;
+    // Mono / Unison note-on dispatch helpers — branched on partModes[part].
+    void noteOnMono   (int part, int note, int velocity, double bendSemitones,
+                       bool velToTl, const Patch& patch);
+    void noteOnUnison (int part, int note, int velocity, double bendSemitones,
+                       bool velToTl, const Patch& patch);
+
+    // Per-voice cents-as-semitones offset for the Nth Unison voice in a stack
+    // of given spread. Symmetric fan-out: 0, +1, -1, +2, -2, ... per
+    // 07-feature-spec.md *Unison*.
+    static double unisonVoiceDetuneSemitones (int voiceIndex, double spreadCents) noexcept;
+
+    std::array<Voice, kNumVoices>           voices;
+    std::array<PartPolyMode, kNumParts>     partModes {};
+    int                                     currentVoiceCount = kNumVoices;
 
     std::uint64_t nextTimestamp = 0;
 

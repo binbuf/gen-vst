@@ -126,6 +126,13 @@ private:
     std::vector<std::unique_ptr<juce::WebSliderRelay>> opRelays   { makeOpRelays() };
     std::vector<std::unique_ptr<juce::WebSliderRelay>> partRelays { makePartRelays() };
 
+    // View 10 — per-part polyphony controls. Single relay per control, rebound
+    // to the selected part's apvts parameter on selectChannel (same paging
+    // contract as the rest of the FM-part relays — 05-ui-ux.md).
+    juce::WebComboBoxRelay polyModeRelay      { "poly_mode" };
+    juce::WebComboBoxRelay monoGlideRelay     { "mono_glide" };
+    juce::WebSliderRelay   unisonSpreadRelay  { "unison_spread" };
+
     // Task 13 — global PSG / DAC / Settings relays.
     juce::WebSliderRelay        psgMixRelay         { "psg_mix" };
     juce::WebToggleButtonRelay  psgLayerRelay       { "psg_layer" };
@@ -207,6 +214,12 @@ private:
     // paging to a different part. Index layout mirrors the relay vectors.
     std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> opAttachments;
     std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> partAttachments;
+
+    // View 10 polyphony attachments — torn down + rebuilt against the new
+    // part's apvts parameter on selectChannel.
+    std::unique_ptr<juce::WebComboBoxParameterAttachment> polyModeAttachment;
+    std::unique_ptr<juce::WebComboBoxParameterAttachment> monoGlideAttachment;
+    std::unique_ptr<juce::WebSliderParameterAttachment>   unisonSpreadAttachment;
 
     // Scratch buffer for the per-tick telemetry scope read — sized at
     // kScopeReadSamples and reused so the timer callback does no allocation.

@@ -36,13 +36,23 @@ public:
     // Key on: apply the full note-on register sequence for `patch` at `note`,
     // seed the register shadow, and record the serving part / note / timestamp.
     // velocity / velToTl drive the carrier-TL scaling; bendSemitones is the
-    // current pitch-wheel offset for the part.
+    // current pitch-wheel offset for the part. `voiceDetuneSemitones` is the
+    // per-voice cents offset used by Unison mode — added to bend before the
+    // F-number calculation. Pass 0.0 (default) outside of Unison.
     void noteOn (int part, int note, int velocity, double bendSemitones,
-                 bool velToTl, const Patch& patch, std::uint64_t timestamp);
+                 bool velToTl, const Patch& patch, std::uint64_t timestamp,
+                 double voiceDetuneSemitones = 0.0);
 
     // Key off: release the envelope. The voice keeps sounding its release tail
     // and stays allocated (State::Released) until it is reused.
     void noteOff();
+
+    // Mono legato: update the voice's serving note / velocity / bend and
+    // refresh its frequency registers via the dirty-diff path — skipping the
+    // key-off / key-on, so the envelope continues from its current level.
+    // 07-feature-spec.md Mono "Legato".
+    void legatoTo (int note, int velocity, double bendSemitones, bool velToTl,
+                   const Patch& patch, std::uint64_t timestamp);
 
     // Dirty-diff: re-derive the param registers from `patch` (with the voice's
     // current velocity, bend and velToTl applied) and write only the ones that
@@ -75,6 +85,7 @@ public:
     int           note()      const noexcept { return midiNote; }
     int           velocity()  const noexcept { return noteVelocity; }
     double        pitchBend() const noexcept { return bendSemitones; }
+    double        voiceDetuneSemitones() const noexcept { return voiceDetune; }
     std::uint64_t timestamp() const noexcept { return lastNoteOnTime; }
 
 private:
@@ -88,6 +99,10 @@ private:
     int           midiNote       = -1;
     int           noteVelocity   = 127;
     double        bendSemitones  = 0.0;
+    // Per-voice cents-as-semitones offset (Unison F-number spread, view 10).
+    // Added to bendSemitones before the F-number calculation, so the part's
+    // pitch wheel and the per-voice detune stay independent.
+    double        voiceDetune    = 0.0;
     bool          sustained      = false;
     std::uint64_t lastNoteOnTime = 0;
 

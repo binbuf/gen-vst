@@ -206,6 +206,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         juce::StringArray { "1x", "2x", "3x" },
         0));   // default = 1x (ADR-0017)
 
+    // Per-part polyphony controls (Task 15 / view 10). Each FM part is
+    // independently Poly / Mono / Unison; Mono picks Retrigger vs Legato;
+    // Unison takes a cents spread (0..50, default 12 — view 10 spec). The
+    // MVP-chosen Mono default is Retrigger (07-feature-spec.md open question).
+    for (int part = 0; part < PartManager::kNumParts; ++part)
+    {
+        const juce::String suffix = "_part" + juce::String (part + 1);
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { "poly_mode" + suffix, 1 },
+            "Poly Mode Part " + juce::String (part + 1),
+            juce::StringArray { "Poly", "Mono", "Unison" },
+            0));
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { "mono_glide" + suffix, 1 },
+            "Mono Glide Part " + juce::String (part + 1),
+            juce::StringArray { "Retrigger", "Legato" },
+            0));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { "unison_spread" + suffix, 1 },
+            "Unison Spread Part " + juce::String (part + 1),
+            juce::NormalisableRange<float> (0.0f, 50.0f),
+            12.0f));
+    }
+
     // --- PSG (SN76489) parameters --------------------------------------------
     // 03-psg-synthesis.md: per-channel volume, pan, opt-in pitch bend; direct
     // noise control (type/rate + optional auto-mode); global mix level; PSG
@@ -362,6 +386,16 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     bendRangeParam        = apvts.getRawParameterValue ("bend_range");
     velToTlParam          = apvts.getRawParameterValue ("vel_to_tl");
     aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
+    voiceCountParam       = apvts.getRawParameterValue ("voice_count");
+
+    // Per-part polyphony pointers (Task 15 / view 10).
+    for (int part = 0; part < PartManager::kNumParts; ++part)
+    {
+        const juce::String suffix = "_part" + juce::String (part + 1);
+        polyModeParam[(std::size_t) part]     = apvts.getRawParameterValue ("poly_mode"     + suffix);
+        monoGlideParam[(std::size_t) part]    = apvts.getRawParameterValue ("mono_glide"    + suffix);
+        unisonSpreadParam[(std::size_t) part] = apvts.getRawParameterValue ("unison_spread" + suffix);
+    }
 
     // PSG / DAC raw pointers — looked up once so the audio thread never
     // touches the parameter map.
@@ -524,6 +558,36 @@ void GenVstAudioProcessor::pushPsgDacParameters()
         dacPlayer.setDacRate (desiredRate);
 }
 
+void GenVstAudioProcessor::pushPolyphonyParameters() noexcept
+{
+    using Mode = VoiceAllocator::PartPolyMode::Mode;
+
+    for (int part = 0; part < PartManager::kNumParts; ++part)
+    {
+        VoiceAllocator::PartPolyMode m;
+        if (polyModeParam[(std::size_t) part] != nullptr)
+        {
+            const int idx = juce::jlimit (0, 2,
+                                juce::roundToInt (polyModeParam[(std::size_t) part]->load()));
+            m.mode = static_cast<Mode> (idx);
+        }
+        if (monoGlideParam[(std::size_t) part] != nullptr)
+            m.monoLegato = monoGlideParam[(std::size_t) part]->load() > 0.5f;
+        if (unisonSpreadParam[(std::size_t) part] != nullptr)
+            m.spreadCents = juce::jlimit (0.0, 50.0,
+                                (double) unisonSpreadParam[(std::size_t) part]->load());
+
+        voiceAllocator.setPartMode (part, m);
+    }
+
+    if (voiceCountParam != nullptr)
+    {
+        static constexpr int kVoiceCounts[] { 8, 12, 16 };
+        const int idx = juce::jlimit (0, 2, juce::roundToInt (voiceCountParam->load()));
+        voiceAllocator.setVoiceCount (kVoiceCounts[idx]);
+    }
+}
+
 void GenVstAudioProcessor::releaseResources()
 {
 }
@@ -580,6 +644,11 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Push PSG / DAC parameter values down once per block — the engines
     // hold scalar mirrors so the per-sample inner loops don't re-read atomics.
     pushPsgDacParameters();
+
+    // Push per-part polyphony mode + global voice-count cap before any MIDI
+    // note dispatch — note-ons later in this block use the freshly-pushed
+    // values (Task 15 / view 10; 07-feature-spec.md "Polyphony Modes").
+    pushPolyphonyParameters();
 
     // Sample-accurate iteration (01-architecture.md "MIDI Pipeline"): for each
     // gap between consecutive MIDI events, render that exact sub-block, then

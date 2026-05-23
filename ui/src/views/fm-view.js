@@ -21,7 +21,7 @@ import {
   SegDisplay, AlgoButtons, AlgoDiagram, OperatorPanel, Wordmark, GearIcon,
   FolderIcon,
   Oscilloscope, VuMeter, VoiceLeds, ClipLed,
-  bindSlider,
+  bindSlider, bindCombo,
 } from "../widgets/index.js";
 
 import * as Juce from "../juce/index.js";
@@ -140,7 +140,60 @@ function mountCenter(col) {
   // are visual placeholders pending Task 13 (routing modal) and beyond.
   mountPanSlider(col.querySelector("#pan-slider"));
 
-  // Polyphony group — view 10 placeholder; Task 15 adds the live controls.
+  // View 10 — per-part polyphony controls. All three relays (poly_mode,
+  // mono_glide, unison_spread) re-bind on selectChannel via the standard
+  // FM paging contract, so a part change repaints them automatically.
+  mountPolyphonyGroup(col);
+}
+
+function mountPolyphonyGroup(col) {
+  const modeBinding   = bindCombo("poly_mode");
+  const glideBinding  = bindCombo("mono_glide");
+  const spreadBinding = bindSlider("unison_spread");
+
+  // Mode pill row: POLY / MONO / UNISON. Uses the same pill widget as the
+  // FM/SQ/D section pills so the visual idiom stays consistent.
+  const modeCanvas = col.querySelector("#poly-mode-pills");
+  if (modeCanvas) {
+    new SectionTabs(modeCanvas, modeBinding, {
+      style: "pill", fontSize: 8, labels: ["POLY", "MONO", "UNISON"],
+    });
+  }
+
+  // Mono glide pill row — visible only in MONO mode.
+  const glideCanvas = col.querySelector("#mono-glide-pills");
+  if (glideCanvas) {
+    new SectionTabs(glideCanvas, glideBinding, {
+      style: "pill", fontSize: 8, labels: ["RETRIG", "LEGATO"],
+    });
+  }
+
+  // Unison spread slider + readout in cents — visible only in UNISON mode.
+  const spreadCanvas = col.querySelector("#unison-spread-slider");
+  if (spreadCanvas)
+    new Slider(spreadCanvas, spreadBinding, { defaultNormalised: 12.0 / 50.0 });
+
+  const spreadReadout = col.querySelector("#unison-spread-readout");
+  if (spreadReadout) {
+    new LedReadout(spreadReadout, {
+      binding: spreadBinding,
+      widthChars: 2,
+      offWhenZero: false,
+    });
+  }
+
+  // Show / hide the GLIDE and SPREAD sub-rows based on the current mode.
+  // The "poly-sub-label" spans are paired with their following control via
+  // CSS grid; we toggle data attributes on the parent group so the CSS hides
+  // the correct rows together.
+  const group = col.querySelector(".poly-group");
+  const applyVisibility = () => {
+    if (!group) return;
+    const idx = modeBinding.getIndex();
+    group.dataset.mode = ["poly", "mono", "unison"][idx] ?? "poly";
+  };
+  modeBinding.onChange(() => applyVisibility());
+  applyVisibility();
 }
 
 // Populate `lcd` with the top-level patches of the given root kind.

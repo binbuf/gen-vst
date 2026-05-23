@@ -161,6 +161,18 @@ private:
     std::atomic<float>* bendRangeParam        = nullptr;
     std::atomic<float>* velToTlParam          = nullptr;
     std::atomic<float>* aftertouchTargetParam = nullptr;
+    std::atomic<float>* voiceCountParam       = nullptr;
+
+    // Per-part polyphony (Task 15 / view 10): mode (Poly / Mono / Unison),
+    // mono glide (Retrigger / Legato) and unison F-number spread in cents.
+    std::array<std::atomic<float>*, PartManager::kNumParts> polyModeParam     {};
+    std::array<std::atomic<float>*, PartManager::kNumParts> monoGlideParam    {};
+    std::array<std::atomic<float>*, PartManager::kNumParts> unisonSpreadParam {};
+
+    // Snapshot the apvts poly-mode params into the VoiceAllocator + cap the
+    // pool to the Settings voice count. Called once per block from
+    // processBlock, before any note-on / note-off dispatch.
+    void pushPolyphonyParameters() noexcept;
 
     // CC -> cached apvts parameter pointer, indexed [part][cc]. Built once in
     // the constructor (off the audio thread) so the CC dispatch never has to

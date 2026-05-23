@@ -29,6 +29,7 @@ void Voice::reset()
     midiNote       = -1;
     noteVelocity   = 127;
     bendSemitones  = 0.0;
+    voiceDetune    = 0.0;
     sustained      = false;
     lastNoteOnTime = 0;
 }
@@ -46,13 +47,14 @@ void Voice::writeReg (std::uint8_t reg, std::uint8_t value)
 }
 
 void Voice::noteOn (int part, int note, int velocity, double bend,
-                    bool velToTl, const Patch& patch, std::uint64_t timestamp)
+                    bool velToTl, const Patch& patch, std::uint64_t timestamp,
+                    double voiceDetuneSemitones)
 {
     // Apply the full note-on sequence unconditionally — a stolen voice's chip
     // still holds the previous patch — and seed the shadow with every param
     // register so later dirty-diffs have a baseline. The two 0x28 key writes
     // are never shadowed: they are events, not state.
-    const FmRegisterMap::NoteParams np { velocity, velToTl, bend };
+    const FmRegisterMap::NoteParams np { velocity, velToTl, bend + voiceDetuneSemitones };
     for (const auto& w : FmRegisterMap::buildNoteOn (patch, note, np))
     {
         writeReg (w.reg, w.value);
@@ -65,8 +67,23 @@ void Voice::noteOn (int part, int note, int velocity, double bend,
     midiNote       = note;
     noteVelocity   = velocity;
     bendSemitones  = bend;
+    voiceDetune    = voiceDetuneSemitones;
     sustained      = false;
     lastNoteOnTime = timestamp;
+}
+
+void Voice::legatoTo (int note, int velocity, double bend, bool velToTl,
+                      const Patch& patch, std::uint64_t timestamp)
+{
+    // Mono Legato: update the serving note / velocity / bend in place and let
+    // the dirty-diff push the new frequency (and any TL change from a different
+    // velocity) onto the chip — no key-off / key-on, so the envelope continues
+    // from its current level (07-feature-spec.md Mono "Legato").
+    midiNote       = note;
+    noteVelocity   = velocity;
+    bendSemitones  = bend;
+    lastNoteOnTime = timestamp;
+    updateRegisters (patch, velToTl);
 }
 
 void Voice::noteOff()
@@ -83,8 +100,9 @@ void Voice::updateRegisters (const Patch& patch, bool velToTl)
     // shadow. The 0x28 key events are skipped — re-sending them would retrigger
     // the envelope. The frequency registers fall out of the diff naturally for
     // a static note; a pitch-bend or note change updates them through this same
-    // path.
-    const FmRegisterMap::NoteParams np { noteVelocity, velToTl, bendSemitones };
+    // path. Per-voice Unison detune is folded into the bend so each voice in a
+    // stack lands on its own F-number.
+    const FmRegisterMap::NoteParams np { noteVelocity, velToTl, bendSemitones + voiceDetune };
     for (const auto& w : FmRegisterMap::buildNoteOn (patch, midiNote, np))
     {
         if (w.reg == 0x28)

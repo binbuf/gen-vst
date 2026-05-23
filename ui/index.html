@@ -86,8 +86,16 @@
                   <span>PAN</span><canvas id="pan-slider" width="90" height="14"></canvas>
                 </div>
 
+                <!-- View 10 — per-part polyphony. The mode selector is always
+                     visible; GLIDE shows only in MONO, SPREAD only in UNISON. -->
                 <div class="poly-group">
-                  <span>POLY</span><div class="placeholder">POLY</div>
+                  <span class="poly-label-mode">POLY</span><canvas id="poly-mode-pills" width="120" height="14"></canvas>
+                  <span class="poly-label-glide">GLIDE</span><canvas id="mono-glide-pills" width="120" height="14"></canvas>
+                  <span class="poly-label-spread">SPREAD</span>
+                  <div class="spread-row">
+                    <canvas id="unison-spread-slider" width="90" height="14"></canvas>
+                    <canvas id="unison-spread-readout" class="led" width="28" height="14"></canvas>
+                  </div>
                 </div>
               </div>
             </div>

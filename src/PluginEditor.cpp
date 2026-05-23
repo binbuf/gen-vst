@@ -283,6 +283,11 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         .withOptionsFrom (aftertouchTargetRelay)
         .withOptionsFrom (voiceCountRelay)
         .withOptionsFrom (uiScaleRelay)
+        // View 10 polyphony relays — names are stripped (`poly_mode`,
+        // `mono_glide`, `unison_spread`); the attachments rebind on selectChannel.
+        .withOptionsFrom (polyModeRelay)
+        .withOptionsFrom (monoGlideRelay)
+        .withOptionsFrom (unisonSpreadRelay)
        #if GENVST_DEV_SERVER
         // Widget gallery relays (Task 10) — dev-server builds only.
         .withOptionsFrom (galleryKnobRelay)
@@ -971,6 +976,9 @@ GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
     // the lifetime contract auditable.
     opAttachments.clear();
     partAttachments.clear();
+    polyModeAttachment.reset();
+    monoGlideAttachment.reset();
+    unisonSpreadAttachment.reset();
     for (auto& a : psgVolAttachments)  a.reset();
     for (auto& a : psgPanAttachments)  a.reset();
     for (auto& a : psgBendAttachments) a.reset();
@@ -986,6 +994,9 @@ void GenVstAudioProcessorEditor::rebuildFmAttachments (int part)
     // correct order (avoids two attachments fighting over the same relay).
     for (auto& a : opAttachments)   a.reset();
     for (auto& a : partAttachments) a.reset();
+    polyModeAttachment.reset();
+    monoGlideAttachment.reset();
+    unisonSpreadAttachment.reset();
 
     for (int op = 0; op < kNumOps; ++op)
     {
@@ -1011,6 +1022,20 @@ void GenVstAudioProcessorEditor::rebuildFmAttachments (int part)
             std::make_unique<juce::WebSliderParameterAttachment> (
                 *param, relay, undoManager);
     }
+
+    // View 10 polyphony controls — same paging contract as the FM-part
+    // relays. The IDs follow the `<base>_part<n>` convention used by the
+    // PluginProcessor parameter layout.
+    const juce::String suffix = "_part" + juce::String (part + 1);
+    polyModeAttachment = std::make_unique<juce::WebComboBoxParameterAttachment> (
+        *apvts.getParameter ("poly_mode" + suffix),
+        polyModeRelay, undoManager);
+    monoGlideAttachment = std::make_unique<juce::WebComboBoxParameterAttachment> (
+        *apvts.getParameter ("mono_glide" + suffix),
+        monoGlideRelay, undoManager);
+    unisonSpreadAttachment = std::make_unique<juce::WebSliderParameterAttachment> (
+        *apvts.getParameter ("unison_spread" + suffix),
+        unisonSpreadRelay, undoManager);
 }
 
 void GenVstAudioProcessorEditor::paint (juce::Graphics& g)

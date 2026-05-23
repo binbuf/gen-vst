@@ -283,3 +283,207 @@ TEST (PartManager, LoadPatchStoresPerPart)
     EXPECT_EQ (static_cast<int> (pm.getPatch (0).alg), 5);
     EXPECT_EQ (static_cast<int> (pm.getPatch (1).alg), 2);
 }
+
+// --- Task 15 — Polyphony modes & voice count --------------------------------
+
+namespace
+{
+    VoiceAllocator::PartPolyMode polyMode()
+    {
+        return { VoiceAllocator::PartPolyMode::Mode::Poly, false, 12.0 };
+    }
+    VoiceAllocator::PartPolyMode monoMode (bool legato)
+    {
+        return { VoiceAllocator::PartPolyMode::Mode::Mono, legato, 12.0 };
+    }
+    VoiceAllocator::PartPolyMode unisonMode (double spreadCents)
+    {
+        return { VoiceAllocator::PartPolyMode::Mode::Unison, false, spreadCents };
+    }
+}
+
+TEST (VoiceAllocator, MonoModeLimitsPartToOneVoice)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, monoMode (false));   // retrigger
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    alloc.noteOn (0, 64, 100, 0.0, false, p);
+    alloc.noteOn (0, 67, 100, 0.0, false, p);
+
+    // After three Mono note-ons on the same part the part owns exactly one
+    // active voice — Retrigger reuses the same slot, so no extra Released
+    // voices stack up either.
+    EXPECT_EQ (alloc.numActiveVoices(), 1);
+    EXPECT_EQ (alloc.numReleasingVoices(), 0);
+    EXPECT_TRUE (alloc.isNoteActive (0, 67));    // last note wins
+    EXPECT_FALSE (alloc.isNoteActive (0, 60));
+    EXPECT_FALSE (alloc.isNoteActive (0, 64));
+}
+
+TEST (VoiceAllocator, MonoLegatoKeepsVoiceWithoutRetrigger)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, monoMode (true));    // legato
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    EXPECT_EQ (alloc.numActiveVoices(), 1);
+
+    // Legato to a new note: the voice should stay Active (no Released tail
+    // would mean key-off was issued) and its note number tracks the new note.
+    alloc.noteOn (0, 64, 100, 0.0, false, p);
+
+    EXPECT_EQ (alloc.numActiveVoices(), 1);
+    EXPECT_EQ (alloc.numReleasingVoices(), 0);
+    EXPECT_TRUE  (alloc.isNoteActive (0, 64));
+    EXPECT_FALSE (alloc.isNoteActive (0, 60));
+}
+
+TEST (VoiceAllocator, MonoModeIsPerPart)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, monoMode (false));
+    alloc.setPartMode (1, polyMode());
+    const Patch p = makePatch();
+
+    // Mono on part 0, Poly on part 1 — part 1 should stack voices freely.
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    alloc.noteOn (0, 64, 100, 0.0, false, p);
+    alloc.noteOn (1, 70, 100, 0.0, false, p);
+    alloc.noteOn (1, 72, 100, 0.0, false, p);
+
+    EXPECT_EQ (alloc.numActiveVoices(), 3);   // 1 mono + 2 poly
+    EXPECT_TRUE (alloc.isNoteActive (0, 64));
+    EXPECT_TRUE (alloc.isNoteActive (1, 70));
+    EXPECT_TRUE (alloc.isNoteActive (1, 72));
+}
+
+TEST (VoiceAllocator, UnisonStackAllocatesAllVoices)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, unisonMode (12.0));
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+
+    // One unison note-on fills the full pool (default voice count = 16).
+    EXPECT_EQ (alloc.numActiveVoices(), VoiceAllocator::kNumVoices);
+}
+
+TEST (VoiceAllocator, UnisonDetuneOffsetsAreSymmetric)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, unisonMode (10.0));   // 10 cents = 0.1 semitone
+    alloc.setVoiceCount (8);                    // 8-voice stack for clean math
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+
+    // Collect each sounding voice's detune offset (cents-as-semitones).
+    std::vector<double> detunes;
+    for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+    {
+        const auto& v = alloc.voiceAt (i);
+        if (v.isActive() && v.part() == 0 && v.note() == 60)
+            detunes.push_back (v.voiceDetuneSemitones());
+    }
+
+    ASSERT_EQ ((int) detunes.size(), 8);
+
+    // 8-voice symmetric fan-out at 10 cents: 0, +10, -10, +20, -20, +30, -30, +40
+    // (cents -> semitones is /100). The order in which voices were filled is
+    // 0, 1, 2, ... so detunes[i] = unisonVoiceDetuneSemitones(i, 10).
+    constexpr double kExpected[] {
+         0.0,
+         0.10, -0.10,
+         0.20, -0.20,
+         0.30, -0.30,
+         0.40,
+    };
+    for (int i = 0; i < 8; ++i)
+        EXPECT_NEAR (detunes[(std::size_t) i], kExpected[i], 1e-9);
+}
+
+TEST (VoiceAllocator, UnisonNoteOffReleasesEveryStackVoice)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, unisonMode (12.0));
+    alloc.setVoiceCount (8);
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    EXPECT_EQ (alloc.numActiveVoices(), 8);
+
+    alloc.noteOff (0, 60, false);
+
+    // All 8 voices for (part 0, note 60) move to Released.
+    EXPECT_EQ (alloc.numActiveVoices(), 0);
+    EXPECT_EQ (alloc.numReleasingVoices(), 8);
+}
+
+TEST (VoiceAllocator, VoiceCountCapLimitsAllocation)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setVoiceCount (8);
+    const Patch p = makePatch();
+
+    // Fill the cap, then try a ninth note — the cap-restricted LRU steal
+    // must kick in even though slots 8..15 are still Idle.
+    for (int i = 0; i < 8; ++i)
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
+    EXPECT_EQ (alloc.numActiveVoices(), 8);
+
+    alloc.noteOn (0, 90, 100, 0.0, false, p);   // steals the oldest in [0,7]
+
+    EXPECT_EQ (alloc.numActiveVoices(), 8);     // not 9
+    EXPECT_FALSE (alloc.isNoteActive (0, 60));  // stolen
+    EXPECT_TRUE  (alloc.isNoteActive (0, 90));
+}
+
+TEST (VoiceAllocator, VoiceCountResetToFullPoolAllowsAllVoices)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setVoiceCount (16);
+    const Patch p = makePatch();
+
+    for (int i = 0; i < 16; ++i)
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
+
+    EXPECT_EQ (alloc.numActiveVoices(), 16);
+}
+
+TEST (VoiceAllocator, UnisonPitchBendKeepsStackCoherent)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, unisonMode (12.0));
+    alloc.setVoiceCount (4);
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    alloc.setPitchBend (0, 1.0, p, false);   // +1 semitone bend
+
+    // Every active voice for part 0 must reflect the bend (pitchBend() == 1.0)
+    // while keeping its own detune offset.
+    int activeCount = 0;
+    for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+    {
+        const auto& v = alloc.voiceAt (i);
+        if (v.isActive() && v.part() == 0)
+        {
+            EXPECT_NEAR (v.pitchBend(), 1.0, 1e-9);
+            ++activeCount;
+        }
+    }
+    EXPECT_EQ (activeCount, 4);
+}
