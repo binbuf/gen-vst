@@ -78,15 +78,11 @@
 #gear {
   grid-column: 4;
   grid-row: 1 / span 2;
-  width: 28px;
-  height: 36px;
-  background: var(--panel);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: "Press Start 2P", monospace;
-  font-size: 8px;
-  color: var(--label);
+  width: 18px;
+  height: 18px;
+  align-self: center;
+  justify-self: center;
+  cursor: pointer;
 }
 
 /* =========================================================================

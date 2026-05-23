@@ -18,7 +18,7 @@
 
 import {
   Knob, Slider, LedReadout, LcdList, SectionTabs,
-  SegDisplay, AlgoButtons, AlgoDiagram, OperatorPanel, Wordmark,
+  SegDisplay, AlgoButtons, AlgoDiagram, OperatorPanel, Wordmark, GearIcon,
   Oscilloscope, VuMeter, VoiceLeds, ClipLed,
   bindSlider,
 } from "../widgets/index.js";
@@ -58,6 +58,9 @@ function mountHeader(header) {
   const scope     = new Oscilloscope (header.querySelector("#scope"));
   const voiceLeds = new VoiceLeds    (header.querySelector("#voice-leds"));
   const clipLed   = new ClipLed      (header.querySelector("#clip-led"));
+
+  // Gear icon (Settings modal entry point — wiring is Task 13).
+  new GearIcon(header.querySelector("#gear"));
 
   // 7-segment patch-name display — the FM-view module exposes a refreshable
   // hook so the channel-selector can repaint it when paging parts.
@@ -120,7 +123,7 @@ function mountCenter(col) {
       fmViewState.seg?.setText(item.label);
     },
   });
-  populateInstrumentsList(lcd);
+  populatePatchList(lcd, "factory");
 
   // FM / SQ / D section pills. The selector calls selectSection(); for this
   // task only FM is live, so a non-FM choice tags the bottom region for the
@@ -137,26 +140,24 @@ function mountCenter(col) {
   // Polyphony group — view 10 placeholder; Task 15 adds the live controls.
 }
 
-function populateInstrumentsList(lcd) {
+// Populate `lcd` with the top-level patches of the given root kind
+// ("factory" or "user"). Per 08-ui-views.md view 4 the main-window lists
+// are quick-access views: INSTRUMENTS and PRESETS both currently feed off
+// the factory bank; IMPORT/the modal browser surface the user root and
+// custom roots in Task 14.
+function populatePatchList(lcd, kindFilter) {
   const getPatchList = Juce.getNativeFunction("getPatchList");
-  // No-arg form returns the registered roots; we flatten the factory root's
-  // top-level patches as the quick-access view (full browser modal is Task 14).
   getPatchList().then((roots) => {
-    const items = [];
-    const factory = roots?.find?.((r) => r.kind === "factory");
-    if (factory) {
-      const folderPath = factory.path;
-      const getFolder = Juce.getNativeFunction("getPatchList");
-      getFolder(folderPath).then((folder) => {
-        if (Array.isArray(folder?.patches)) {
-          for (const p of folder.patches)
-            items.push({ id: p.path, label: p.name });
-        }
-        lcd.setItems(items, 0);
-      });
-    } else {
-      lcd.setItems([], 0);
-    }
+    const root = roots?.find?.((r) => r.kind === kindFilter);
+    if (!root) { lcd.setItems([], 0); return; }
+    getPatchList(root.path).then((folder) => {
+      const items = [];
+      if (Array.isArray(folder?.patches)) {
+        for (const p of folder.patches)
+          items.push({ id: p.path, label: p.name });
+      }
+      lcd.setItems(items, 0);
+    }).catch(() => lcd.setItems([], 0));
   }).catch(() => lcd.setItems([], 0));
 }
 
@@ -217,15 +218,11 @@ function mountPanSlider(canvas) {
 /* -------------------------------------------------------------------------- */
 
 function mountRightCol(col) {
-  // The tabs widget needs a binding; use a local proxy since the tabs choice
-  // is not currently an apvts parameter. (The PRESETS list and the IMPORT
-  // list are both quick-access views per ADR-0006.)
-  const tabs = makeLocalChoiceBinding(["PRESETS", "IMPORT"], 0, (idx) => {
-    fmViewState.presetTab = idx;
-  });
-  new SectionTabs(col.querySelector("#preset-tabs"), tabs, { style: "tab" });
-
-  new LcdList(col.querySelector("#preset-list"), {
+  // The PRESETS list is mounted first so the PRESETS/IMPORT tab callback
+  // (declared below) can swap its contents between the factory bank and the
+  // user root without a temporal dead-zone reference. Both are quick-access
+  // views per ADR-0006; the full modal browser is Task 14.
+  const presetList = new LcdList(col.querySelector("#preset-list"), {
     items: [],
     onSelect: async (item) => {
       const loadPreset = Juce.getNativeFunction("loadPreset");
@@ -233,6 +230,15 @@ function mountRightCol(col) {
       fmViewState.seg?.setText(item.label);
     },
   });
+  populatePatchList(presetList, "factory");
+
+  // The tabs widget needs a binding; use a local proxy since the tabs choice
+  // is not currently an apvts parameter.
+  const tabs = makeLocalChoiceBinding(["PRESETS", "IMPORT"], 0, (idx) => {
+    fmViewState.presetTab = idx;
+    populatePatchList(presetList, idx === 0 ? "factory" : "user");
+  });
+  new SectionTabs(col.querySelector("#preset-tabs"), tabs, { style: "tab" });
 }
 
 /* -------------------------------------------------------------------------- */

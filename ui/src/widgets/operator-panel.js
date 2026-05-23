@@ -53,7 +53,8 @@ export class OperatorPanel {
     const host = this.host;
     host.classList.add("op-panel");
 
-    // Top row — badge + status dot + label.
+    // Top row — badge + red status dot (genny-ui.md "Bottom Row" — the badge
+    // and dot ARE the operator identifier; no separate "OPn" text).
     const top = document.createElement("div");
     top.className = "op-top";
     const badge = document.createElement("span");
@@ -63,10 +64,6 @@ export class OperatorPanel {
     const dot = document.createElement("span");
     dot.className = "status-dot";
     top.appendChild(dot);
-    const oplabel = document.createElement("span");
-    oplabel.className = "label";
-    oplabel.textContent = `OP${this.opNumber}`;
-    top.appendChild(oplabel);
     host.appendChild(top);
 
     // ADSR graph — wide LCD inset. Sized for the 4-panel grid: each bottom

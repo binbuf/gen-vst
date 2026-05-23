@@ -20,14 +20,26 @@ const PALETTE_VARS = [
 
 let paletteCache = null;
 
-/** Read every palette CSS custom property once and cache. */
+/** Read every palette CSS custom property once and cache. Refuses to cache
+ *  partial results — if any var resolves to an empty string (the stylesheet
+ *  hasn't been parsed yet, or the variable was renamed and is missing), the
+ *  read is treated as a miss and a magenta sentinel is returned for that
+ *  slot so the bug is visible instead of silently misrendering, and the
+ *  cache is left null so the next call retries. Without this guard the
+ *  first widget to call palette() during page bootstrap could poison the
+ *  cache for everyone (notably Wordmark, which mounts first). */
 export function palette() {
   if (paletteCache !== null) return paletteCache;
   const styles = getComputedStyle(document.documentElement);
-  paletteCache = {};
-  for (const name of PALETTE_VARS)
-    paletteCache[name] = styles.getPropertyValue(`--${name}`).trim();
-  return paletteCache;
+  const fresh = {};
+  let anyMissing = false;
+  for (const name of PALETTE_VARS) {
+    const v = styles.getPropertyValue(`--${name}`).trim();
+    if (v === "") { anyMissing = true; fresh[name] = "#ff00ff"; }
+    else fresh[name] = v;
+  }
+  if (!anyMissing) paletteCache = fresh;
+  return fresh;
 }
 
 /** Force the next palette() call to re-read CSS (used by the gallery's theme

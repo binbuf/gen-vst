@@ -23,7 +23,14 @@ export class Wordmark {
     this.w = setup.width;
     this.h = setup.height;
 
+    // Wordmark is the first widget mounted (fm-view.js mountHeader), which
+    // historically meant it could render before Press Start 2P had loaded
+    // and before getComputedStyle had a chance to resolve the palette CSS
+    // vars. document.fonts.ready resolves after both font loading and the
+    // initial style recalc, so this single deferred render guarantees a
+    // correct first paint.
     this.render();
+    if (document.fonts?.ready) document.fonts.ready.then(() => this.render());
   }
 
   render() {
