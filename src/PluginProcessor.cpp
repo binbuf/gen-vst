@@ -442,6 +442,7 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     voiceAllocator.prepare (sampleRate, samplesPerBlock);
     psgEngine.prepare (sampleRate, samplesPerBlock);
     dacPlayer.prepare (sampleRate, samplesPerBlock);
+    telemetry.prepare (sampleRate);
     monoScratch.allocate ((size_t) juce::jmax (1, samplesPerBlock), true);
 
     // The patch browser needs the plugin's wrapperType to find the factory
@@ -534,6 +535,11 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Still consume MIDI so events don't pile up across silent blocks.
         for (const auto metadata : midiMessages)
             dispatchMidi (metadata.getMessage());
+
+        // Step the VU envelope on the silent block too, so the meter falls to
+        // zero rather than freezing at its last value when the host pumps
+        // empty blocks (e.g. transport stopped).
+        telemetry.finishBlock (voiceAllocator.activeVoiceMask());
         return;
     }
 
@@ -578,6 +584,11 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Silence any output channels beyond the stereo pair.
     for (int ch = 2; ch < numChannels; ++ch)
         buffer.clear (ch, 0, numSamples);
+
+    // Commit per-block telemetry: step the VU envelope, publish the snapshot,
+    // record the voice-activity mask. Audio-thread → message-thread handoff
+    // is via atomics inside telemetry — no allocation, no locks.
+    telemetry.finishBlock (voiceAllocator.activeVoiceMask());
 }
 
 void GenVstAudioProcessor::renderSubBlock (juce::AudioBuffer<float>& buffer,
@@ -597,13 +608,39 @@ void GenVstAudioProcessor::renderSubBlock (juce::AudioBuffer<float>& buffer,
     // PSG mixes in at host rate (it resamples internally — ADR-0011).
     psgEngine.renderAdd (left, right, numSamples);
 
+    // Apply master gain + soft-clip. The clip indicator (Task 12) lights when
+    // the pre-soft-clip signal exceeds 0 dBFS — i.e., the soft-clipper is
+    // actively saturating, the audible "clipping" condition the user cares
+    // about.
     const float gain = masterGainParam->load();
+    bool clipDetected = false;
     for (int i = 0; i < numSamples; ++i)
-        left[i] = softClip (left[i] * gain);
+    {
+        const float pre = left[i] * gain;
+        if (std::fabs (pre) > 1.0f) clipDetected = true;
+        left[i] = softClip (pre);
+    }
 
     if (numChannels > 1)
+    {
         for (int i = 0; i < numSamples; ++i)
-            right[i] = softClip (right[i] * gain);
+        {
+            const float pre = right[i] * gain;
+            if (std::fabs (pre) > 1.0f) clipDetected = true;
+            right[i] = softClip (pre);
+        }
+    }
+    else
+    {
+        // Mono output: still write the mono channel into right so the scope
+        // and VU read identical L/R rather than zeros on the right.
+        for (int i = 0; i < numSamples; ++i)
+            right[i] = left[i];
+    }
+
+    // Lock-free telemetry write — feeds the editor's ~30 Hz "meterData" push
+    // (08-ui-views.md "Header meter bay").
+    telemetry.pushSamples (left, right, numSamples, clipDetected);
 }
 
 void GenVstAudioProcessor::dispatchMidi (const juce::MidiMessage& msg)

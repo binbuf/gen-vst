@@ -210,3 +210,12 @@ bool VoiceAllocator::isNoteActive (int part, int note) const
             return true;
     return false;
 }
+
+std::uint32_t VoiceAllocator::activeVoiceMask() const noexcept
+{
+    std::uint32_t m = 0;
+    for (int i = 0; i < kNumVoices; ++i)
+        if (voices[(std::size_t) i].isActive())
+            m |= (std::uint32_t {1} << i);
+    return m;
+}

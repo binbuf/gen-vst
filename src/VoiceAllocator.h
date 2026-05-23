@@ -88,6 +88,11 @@ public:
     int  numIdleVoices()      const;   // free
     bool isNoteActive (int part, int note) const;
 
+    // 16-bit voice-activity bitmap: bit i = voice slot i is Active (keyed on,
+    // not yet released). Used by the editor's header telemetry feed
+    // (08-ui-views.md view 1; ADR-0010).
+    std::uint32_t activeVoiceMask() const noexcept;
+
 private:
     // Idle voice if any, else an LRU steal: oldest Released voice, else oldest
     // Active voice.

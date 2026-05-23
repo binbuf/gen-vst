@@ -1,9 +1,18 @@
 /*
- * Gen VST static chassis layout
- * -----------------------------
- * The four-region 960x560 frame from docs/genny-ui.md / docs/design/08-ui-views.md
- * view 1: header bar, left/center/right columns, bottom operator-panel strip.
- * Static placeholders only — the live widgets arrive in Tasks 10/11.
+ * Gen VST FM-view chassis layout — Task 11.
+ *
+ * Implements the four-region 960x560 frame from docs/genny-ui.md /
+ * docs/design/08-ui-views.md view 1:
+ *   - top header (~80px): wordmark, VU + scope meter bay, 7-seg patch
+ *     display, voice-LED row, clip LED, gear icon.
+ *   - middle row, three columns: left (LFO/ALG), center (Instruments +
+ *     channel routing), right (Presets/Import).
+ *   - bottom row (~220px): four operator panels side-by-side.
+ *
+ * Sizes & paddings snap to the 8px base grid where possible (05-ui-ux.md
+ * "Pixel-Art Style Rules"). All bevels are hard borders, never box-shadow
+ * blur. The live widgets (knobs, sliders, LCDs, ADSR graphs, etc.) draw
+ * themselves into <canvas> children placed by the JS layout in fm-view.js.
  */
 
 #chassis {
@@ -19,64 +28,65 @@
  * ========================================================================= */
 
 #header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 132px 220px 1fr 32px;
+  grid-template-rows: 1fr 12px;
+  gap: 0 8px;
+  padding: 6px 8px;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
 }
 
-.wordmark {
-  font-family: "Press Start 2P", monospace;
-  font-size: 16px;
-  color: var(--logo);
-  text-transform: uppercase;
-  text-shadow: 1px 1px 0 var(--logo-shadow); /* hard 1px offset — no blur */
-  border-bottom: 2px solid var(--logo-underline);
-  padding: 0 8px 4px 0;
-  flex: 0 0 auto;
+#wordmark {
+  grid-column: 1;
+  grid-row: 1 / span 2;
 }
 
 .meter-bay {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   display: flex;
-  gap: 8px;
-  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
 }
 
-.meter {
-  height: 56px;
-  background: var(--lcd-base);
-}
 
-.meter.vu {
-  width: 40px;
-}
-
-.meter.scope {
-  width: 112px;
-}
-
-.patch-display {
-  flex: 1 1 auto;
-  height: 56px;
-  min-width: 0;
-  background: var(--led-base);
-  color: var(--led-on);
-  font-family: "Segment7", monospace;
-  font-size: 28px;
+.header-right {
+  grid-column: 3;
+  grid-row: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
-  overflow: hidden;
 }
 
-.gear {
-  width: 40px;
-  height: 56px;
+
+.header-right-bottom {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+#voice-leds {
+  /* sized by the widget itself */
+}
+
+#clip-led {
+  /* sized by the widget itself */
+}
+
+#gear {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 36px;
   background: var(--panel);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--label);
 }
 
 /* =========================================================================
@@ -120,77 +130,175 @@
   gap: 8px;
 }
 
-/* ---- Left column — MASTER ------------------------------------------------ */
+/* ---- Left column — LFO / ALGORITHM / FEEDBACK ---------------------------- */
 
-.master-body {
-  align-items: center;
+#col-left .panel-body {
+  gap: 6px;
 }
 
-.knob {
-  width: 72px;
-  height: 72px;
-  margin-top: 16px;
-  cursor: ns-resize;
-}
-
-.readout {
-  background: var(--led-base);
-  padding: 5px 8px;
-  min-width: 72px;
-  text-align: center;
-}
-
-.readout-text {
-  font-family: "Press Start 2P", monospace;
-  font-size: 8px;
-  color: var(--led-on);
-}
-
-.master-note {
-  margin-top: 8px;
-  color: var(--label);
-}
-
-/* ---- Center / right columns — green-LCD lists ---------------------------- */
-
-.lcd {
-  flex: 1 1 auto;
-  min-height: 0;
-  background: var(--lcd-base);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-}
-
-.lcd-row {
-  font-family: "Press Start 2P", monospace;
-  font-size: 8px;
-  line-height: 1;
-  color: var(--lcd-pixel);
-  padding: 2px;
-  white-space: nowrap;
-}
-
-.lcd-row.selected {
-  background: var(--lcd-pixel);
-  color: var(--lcd-base); /* inverse-video selection (genny-ui.md) */
-}
-
-.tabs {
-  display: flex;
+.lfo-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
 }
 
-.tab {
+.lfo-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.lfo-cell canvas.knob {
+  width: 28px;
+  height: 28px;
+}
+
+.lfo-cell canvas.led {
+  width: 30px;
+  height: 16px;
+}
+
+.algo-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.algo-buttons-row {
+  display: flex;
+  justify-content: center;
+}
+
+#algo-buttons {
+  /* sized by widget */
+}
+
+.algo-bottom {
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.feedback-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.feedback-cell canvas.knob {
+  width: 36px;
+  height: 36px;
+}
+
+.feedback-cell canvas.led {
+  width: 30px;
+  height: 16px;
+}
+
+
+.knob {
+  cursor: ns-resize;
+}
+
+/* ---- Center column — Instruments + routing ------------------------------- */
+
+#col-center .panel-body {
+  display: grid;
+  grid-template-columns: 268px 124px;
+  gap: 8px;
+}
+
+.center-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+
+.center-label {
   font-family: "Press Start 2P", monospace;
   font-size: 8px;
   color: var(--label);
+  text-transform: uppercase;
+  margin-top: 2px;
 }
 
-.tab.active {
+#channels-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+}
+
+.channel-cell {
+  height: 16px;
+  background: var(--panel);
+  color: var(--label);
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.channel-cell.selected {
+  background: var(--select);
+  color: var(--label);
+}
+
+.routing-group {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 2px 4px;
+  align-items: center;
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--label);
+  text-transform: uppercase;
+}
+
+.routing-group .placeholder {
+  height: 14px;
+  background: var(--led-base);
   color: var(--led-on);
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 4px;
+}
+
+
+.poly-group {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 2px 4px;
+  align-items: center;
+  margin-top: 4px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--label);
+  text-transform: uppercase;
+}
+
+.poly-group .placeholder {
+  height: 14px;
+  background: var(--panel);
+  color: var(--label);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Right column — Presets / Import ------------------------------------- */
+
+#col-right .panel-body {
+  gap: 4px;
 }
 
 /* =========================================================================
@@ -198,25 +306,26 @@
  * ========================================================================= */
 
 #bottom {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
   padding: 8px;
 }
 
+.op-host,
 .op-panel {
-  flex: 1 1 0;
-  min-width: 0;
   background: var(--panel);
   display: flex;
   flex-direction: column;
+  padding: 4px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .op-top {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px;
 }
 
 .badge {
@@ -240,17 +349,41 @@
 }
 
 .op-env {
-  height: 88px;
-  flex: 0 0 auto;
-  margin: 0 8px;
   background: var(--lcd-base);
 }
 
-.op-knobs {
-  flex: 1 1 auto;
-  margin: 8px;
+.op-knob-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  padding: 4px 2px;
   background: var(--panel);
+}
+
+.op-knob-col {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-around;
+  gap: 1px;
+}
+
+.op-knob {
+  cursor: ns-resize;
+}
+
+.op-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.op-slider-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 4px;
+  align-items: center;
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--label);
+  text-transform: uppercase;
 }

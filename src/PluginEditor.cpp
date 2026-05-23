@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 
+#include <cmath>
+
 #if ! GENVST_DEV_SERVER
  #include <memory>
  #include <optional>
@@ -8,6 +10,35 @@
 
  #include "GenVstWebData.h"
 #endif
+
+namespace
+{
+    // The per-operator FM parameter IDs, in the relay-array order. Matches the
+    // kOpParams table in PluginProcessor.cpp; the per-part suffix is built into
+    // the apvts parameter ID but stripped from the relay name (the FM channel
+    // paging contract — 05-ui-ux.md).
+    constexpr std::array<const char*, GenVstAudioProcessorEditor::kNumOpParams>
+        kFmOpParamIds {
+            "dt", "mul", "tl", "ks", "ar", "dr", "sr", "rr", "sl", "ssg", "amon"
+        };
+
+    // The per-part FM parameter IDs, same convention.
+    constexpr std::array<const char*, GenVstAudioProcessorEditor::kNumPartParams>
+        kFmPartParamIds {
+            "alg", "fb", "ams", "pms", "lr", "lfo_enable", "lfo_rate"
+        };
+
+    juce::String opParamIdForPart (const char* base, int op, int part)
+    {
+        return juce::String (base) + "_op" + juce::String (op + 1)
+                                   + "_part" + juce::String (part + 1);
+    }
+
+    juce::String partParamIdForPart (const char* base, int part)
+    {
+        return juce::String (base) + "_part" + juce::String (part + 1);
+    }
+}
 
 #if ! GENVST_DEV_SERVER
 namespace
@@ -110,6 +141,30 @@ namespace
     }
 }
 
+std::vector<std::unique_ptr<juce::WebSliderRelay>>
+GenVstAudioProcessorEditor::makeOpRelays()
+{
+    std::vector<std::unique_ptr<juce::WebSliderRelay>> result;
+    result.reserve (kNumOps * kNumOpParams);
+    for (int op = 0; op < kNumOps; ++op)
+        for (int p = 0; p < kNumOpParams; ++p)
+            result.push_back (std::make_unique<juce::WebSliderRelay> (
+                juce::String (kFmOpParamIds[(std::size_t) p])
+                    + "_op" + juce::String (op + 1)));
+    return result;
+}
+
+std::vector<std::unique_ptr<juce::WebSliderRelay>>
+GenVstAudioProcessorEditor::makePartRelays()
+{
+    std::vector<std::unique_ptr<juce::WebSliderRelay>> result;
+    result.reserve (kNumPartParams);
+    for (int p = 0; p < kNumPartParams; ++p)
+        result.push_back (std::make_unique<juce::WebSliderRelay> (
+            juce::String (kFmPartParamIds[(std::size_t) p])));
+    return result;
+}
+
 juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
 {
     auto options = juce::WebBrowserComponent::Options{}
@@ -137,6 +192,14 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         {
             juce::Logger::writeToLog ("Gen VST: uiReady received from WebView");
         });
+
+    // Register every FM relay. They're already pinned on the heap via the
+    // unique_ptr vector, so the references handed in here stay valid for the
+    // editor's lifetime.
+    for (auto& r : opRelays)
+        options = options.withOptionsFrom (*r);
+    for (auto& r : partRelays)
+        options = options.withOptionsFrom (*r);
 
     using Completion = juce::WebBrowserComponent::NativeFunctionCompletion;
 
@@ -263,12 +326,27 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             { completion (makeStatusVar ("part index required")); return; }
             const int n = juce::jlimit (0, PartManager::kNumParts - 1, (int) args[0]);
             selectedPart = n;
-            // Task 14 owns the attachment-rebind that paints the new part's
-            // values into the UI relays. For now we just track the index — the
-            // patch-load native functions target it correctly.
+            rebuildFmAttachments (n);
             auto* obj = new juce::DynamicObject();
             obj->setProperty ("ok",   true);
             obj->setProperty ("part", n);
+            completion (juce::var (obj));
+        });
+
+    // --- Section switch (FM / SQ / D) ---------------------------------------
+    // The FM region is built in this task; SQ and D land in Task 13. Until
+    // then this function records the selection and reports it back so the JS
+    // can render the placeholder regions, but it has no effect on the C++
+    // side (no attachments to rebuild — the SQ/D relays are part of the
+    // global set and bind once).
+    options = options.withNativeFunction ("selectSection",
+        [] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            juce::String section = (! args.isEmpty() && args[0].isString())
+                                       ? args[0].toString() : juce::String ("FM");
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",      true);
+            obj->setProperty ("section", section);
             completion (juce::var (obj));
         });
 
@@ -316,6 +394,13 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
     setOpaque (true);
     addAndMakeVisible (webView);
 
+    // Initial FM-part binding: every FM relay attaches to part 0 (CHANNELS
+    // button 1 in the layout). selectChannel rebuilds these on every part
+    // switch.
+    opAttachments.resize ((std::size_t) (kNumOps * kNumOpParams));
+    partAttachments.resize ((std::size_t) kNumPartParams);
+    rebuildFmAttachments (0);
+
    #if GENVST_DEV_SERVER
     // Hot-reload workflow: load the Vite dev server (npm run dev in ui/)
     // instead of the embedded bundle. Vite is pinned to port 5173. The page
@@ -334,6 +419,64 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
    #endif
 
     setSize (960, 560);   // fixed window — ADR-0007
+
+    // ~30 Hz telemetry pump (08-ui-views.md "Header meter bay"). The interval
+    // is 33 ms — close enough to 30 Hz; the audio thread runs an independent
+    // VU release envelope so an occasional missed tick doesn't visibly freeze
+    // the meter.
+    startTimerHz (30);
+}
+
+GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
+{
+    // Stop the telemetry pump before any of its dependencies vanish. The
+    // base-class destructor would do this on its own, but doing it first
+    // makes the "no callbacks during teardown" contract obvious.
+    stopTimer();
+
+    // Attachments must be destroyed before their relays. The vector cleanup is
+    // explicit so the order is obvious; the unique_ptrs would do this on their
+    // own destruction in the field-destructor order, but writing it out makes
+    // the lifetime contract auditable.
+    opAttachments.clear();
+    partAttachments.clear();
+}
+
+void GenVstAudioProcessorEditor::rebuildFmAttachments (int part)
+{
+    auto& apvts        = processor.getValueTreeState();
+    auto* undoManager  = apvts.undoManager;
+
+    // Tear down old attachments first — each one holds a parameter listener
+    // registered with the apvts, so destroying-before-constructing is the
+    // correct order (avoids two attachments fighting over the same relay).
+    for (auto& a : opAttachments)   a.reset();
+    for (auto& a : partAttachments) a.reset();
+
+    for (int op = 0; op < kNumOps; ++op)
+    {
+        for (int p = 0; p < kNumOpParams; ++p)
+        {
+            const auto id = opParamIdForPart (kFmOpParamIds[(std::size_t) p], op, part);
+            auto* param = apvts.getParameter (id);
+            jassert (param != nullptr);
+            auto& relay = *opRelays[(std::size_t) (op * kNumOpParams + p)];
+            opAttachments[(std::size_t) (op * kNumOpParams + p)] =
+                std::make_unique<juce::WebSliderParameterAttachment> (
+                    *param, relay, undoManager);
+        }
+    }
+
+    for (int p = 0; p < kNumPartParams; ++p)
+    {
+        const auto id = partParamIdForPart (kFmPartParamIds[(std::size_t) p], part);
+        auto* param = apvts.getParameter (id);
+        jassert (param != nullptr);
+        auto& relay = *partRelays[(std::size_t) p];
+        partAttachments[(std::size_t) p] =
+            std::make_unique<juce::WebSliderParameterAttachment> (
+                *param, relay, undoManager);
+    }
 }
 
 void GenVstAudioProcessorEditor::paint (juce::Graphics& g)
@@ -346,4 +489,53 @@ void GenVstAudioProcessorEditor::paint (juce::Graphics& g)
 void GenVstAudioProcessorEditor::resized()
 {
     webView.setBounds (getLocalBounds());
+}
+
+void GenVstAudioProcessorEditor::timerCallback()
+{
+    // Snapshot the audio-thread telemetry (atomics + lossy ring read), build
+    // one combined event payload, push it to JS. emitEventIfBrowserIsVisible
+    // is a no-op when the window is hidden, so the cost when the editor is
+    // closed or occluded is just the snapshot read.
+    auto& tel = processor.getTelemetry();
+
+    const int n = tel.readScope (scopeScratch.data(), kScopeReadSamples);
+
+    // Downsample by averaging contiguous chunks. If the ring hasn't filled
+    // yet (cold start), we still emit a same-sized array — leading zeros
+    // make the scope start flat-line and "fill in" rather than display a
+    // jagged garbage trace.
+    juce::Array<juce::var> scope;
+    scope.ensureStorageAllocated (kScopeOutPoints);
+    if (n > 0)
+    {
+        const double bucketSize = (double) n / (double) kScopeOutPoints;
+        for (int i = 0; i < kScopeOutPoints; ++i)
+        {
+            const int lo = juce::jlimit (0, n,     (int) std::floor (i       * bucketSize));
+            const int hi = juce::jlimit (0, n,     (int) std::floor ((i + 1) * bucketSize));
+            if (hi <= lo)
+            {
+                scope.add (juce::var ((float) scopeScratch[(std::size_t) lo]));
+                continue;
+            }
+            float sum = 0.0f;
+            for (int s = lo; s < hi; ++s) sum += scopeScratch[(std::size_t) s];
+            scope.add (juce::var (sum / (float) (hi - lo)));
+        }
+    }
+    else
+    {
+        for (int i = 0; i < kScopeOutPoints; ++i)
+            scope.add (juce::var (0.0f));
+    }
+
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty ("scope",     juce::var (scope));
+    payload->setProperty ("vuL",       juce::var (tel.vuLeft()));
+    payload->setProperty ("vuR",       juce::var (tel.vuRight()));
+    payload->setProperty ("clip",      juce::var (tel.consumeClip()));
+    payload->setProperty ("voiceMask", juce::var ((int) tel.voiceMask()));
+
+    webView.emitEventIfBrowserIsVisible ("meterData", juce::var (payload));
 }

@@ -12,6 +12,7 @@
 #include "PatchBrowser.h"
 #include "PatchSystem.h"
 #include "SN76489Engine.h"
+#include "Telemetry.h"
 #include "VoiceAllocator.h"
 
 // Raw std::atomic<float>* views of every per-part FM parameter, cached so the
@@ -71,6 +72,11 @@ public:
     genvst::PatchBrowser& getPatchBrowser() noexcept       { return patchBrowser; }
     PartManager&          getPartManager()  noexcept       { return partManager;  }
     const PartManager&    getPartManager()  const noexcept { return partManager;  }
+
+    // Exposed for the editor's ~30 Hz telemetry timer (08-ui-views.md "Header
+    // meter bay"). The audio thread writes lock-free; the editor reads
+    // snapshots and emits a combined "meterData" event.
+    Telemetry&            getTelemetry()    noexcept       { return telemetry;    }
 
     // Snapshot a part's live patch from the apvts (the audio-thread source of
     // truth — kept fresher than PartManager's stored copy, which only updates
@@ -149,6 +155,7 @@ private:
     SN76489Engine        psgEngine;
     DACPlayer            dacPlayer;
     genvst::PatchBrowser patchBrowser;
+    Telemetry            telemetry;
 
     // Per-block PSG / DAC parameter snapshot — apvts pointers cached at
     // prepareToPlay so the audio thread reads with no map lookup. Pushed

@@ -9,47 +9,86 @@
     <div id="chassis">
       <!-- ============================ HEADER ============================ -->
       <header id="header">
-        <div class="wordmark">GEN VST</div>
+        <canvas id="wordmark" width="128" height="36"></canvas>
         <div class="meter-bay">
-          <div class="meter vu bevel-inset"></div>
-          <div class="meter scope bevel-inset"></div>
+          <canvas id="vu-meter" class="bevel-inset" width="56" height="36"></canvas>
+          <canvas id="scope" class="bevel-inset" width="160" height="36"></canvas>
         </div>
-        <div class="patch-display bevel-inset">GEN VST</div>
-        <div class="gear bevel-raised"><span class="label">Set</span></div>
+        <div class="header-right">
+          <canvas id="seg-display" class="bevel-inset" width="536" height="44"></canvas>
+        </div>
+        <div class="header-right-bottom">
+          <canvas id="voice-leds"></canvas>
+          <canvas id="clip-led"></canvas>
+        </div>
+        <div id="gear">SET</div>
       </header>
 
       <!-- =========================== MIDDLE ============================= -->
       <div id="middle">
-        <!-- Left column — MASTER (hosts the one working control) -->
+        <!-- Left column — LFO / Algorithm / Feedback -->
         <section class="column" id="col-left">
           <div class="panel bevel-raised">
-            <div class="panel-header"><span class="label">Master</span></div>
-            <div class="panel-body master-body">
-              <canvas
-                id="master-knob"
-                class="knob"
-                width="72"
-                height="72"
-                title="Master Gain — drag vertically (Shift = fine, double-click = reset)"
-              ></canvas>
-              <div class="readout bevel-inset">
-                <span id="master-readout" class="readout-text">0.00</span>
+            <div class="panel-header"><span class="label">LFO &middot; ALG</span></div>
+            <div class="panel-body">
+              <div class="lfo-row">
+                <div class="lfo-cell">
+                  <canvas id="lfo-knob" class="knob" width="28" height="28"></canvas>
+                  <canvas id="lfo-readout" class="led" width="36" height="18"></canvas>
+                  <span class="label">LFO</span>
+                </div>
+                <div class="lfo-cell">
+                  <canvas id="ams-knob" class="knob" width="28" height="28"></canvas>
+                  <canvas id="ams-readout" class="led" width="36" height="18"></canvas>
+                  <span class="label">AMS</span>
+                </div>
+                <div class="lfo-cell">
+                  <canvas id="fms-knob" class="knob" width="28" height="28"></canvas>
+                  <canvas id="fms-readout" class="led" width="36" height="18"></canvas>
+                  <span class="label">FMS</span>
+                </div>
               </div>
-              <span class="label master-note">Volume</span>
+
+              <div class="algo-block">
+                <span class="label">ALGORITHM</span>
+                <div class="algo-buttons-row">
+                  <canvas id="algo-buttons"></canvas>
+                </div>
+                <div class="algo-bottom">
+                  <div class="feedback-cell">
+                    <canvas id="fb-knob" class="knob" width="36" height="36"></canvas>
+                    <canvas id="fb-readout" class="led" width="36" height="18"></canvas>
+                    <span class="label">FB</span>
+                  </div>
+                  <canvas id="algo-diagram" class="bevel-inset" width="146" height="70"></canvas>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- Center column — Instruments -->
+        <!-- Center column — Instruments + channel routing -->
         <section class="column" id="col-center">
           <div class="panel bevel-raised">
             <div class="panel-header"><span class="label">Instruments</span></div>
             <div class="panel-body">
-              <div class="lcd bevel-inset">
-                <div class="lcd-row">Sine Lead</div>
-                <div class="lcd-row selected">Gadget Bass</div>
-                <div class="lcd-row">Perc Kit</div>
-                <div class="lcd-row">Brass Stab</div>
+              <canvas id="instruments-list" width="268" height="210"></canvas>
+              <div class="center-controls">
+                <canvas id="section-pills" width="120" height="16"></canvas>
+                <span class="center-label">Channels</span>
+                <div id="channels-row"></div>
+
+                <div class="routing-group">
+                  <span>MIDI</span><div class="placeholder">1</div>
+                  <span>TRPS</span><div class="placeholder">0 0</div>
+                  <span>RNG</span><div class="placeholder">0&ndash;127</div>
+                  <span>DEL</span><div class="placeholder">0</div>
+                  <span>PAN</span><canvas id="pan-slider" width="90" height="10"></canvas>
+                </div>
+
+                <div class="poly-group">
+                  <span>POLY</span><div class="placeholder">POLY</div>
+                </div>
               </div>
             </div>
           </div>
@@ -58,16 +97,11 @@
         <!-- Right column — Presets / Import -->
         <section class="column" id="col-right">
           <div class="panel bevel-raised">
-            <div class="panel-header tabs">
-              <span class="tab active">Presets</span>
-              <span class="tab">Import</span>
+            <div class="panel-header">
+              <canvas id="preset-tabs" width="160" height="16"></canvas>
             </div>
             <div class="panel-body">
-              <div class="lcd bevel-inset">
-                <div class="lcd-row selected">Gadget Bass 01</div>
-                <div class="lcd-row">Shinobi Bass</div>
-                <div class="lcd-row">Perc Hat 01</div>
-              </div>
+              <canvas id="preset-list" width="256" height="220"></canvas>
             </div>
           </div>
         </section>
@@ -75,66 +109,8 @@
 
       <!-- =========================== BOTTOM ============================= -->
       <div id="bottom">
-        <div class="op-panel bevel-raised">
-          <div class="op-top">
-            <span class="badge">1</span>
-            <span class="status-dot"></span>
-            <span class="label">Operator 1</span>
-          </div>
-          <div class="op-env bevel-inset"></div>
-          <div class="op-knobs bevel-inset">
-            <span class="label">Atk</span>
-            <span class="label">Dr1</span>
-            <span class="label">Sus</span>
-            <span class="label">Dr2</span>
-            <span class="label">Rr</span>
-          </div>
-        </div>
-        <div class="op-panel bevel-raised">
-          <div class="op-top">
-            <span class="badge">2</span>
-            <span class="status-dot"></span>
-            <span class="label">Operator 2</span>
-          </div>
-          <div class="op-env bevel-inset"></div>
-          <div class="op-knobs bevel-inset">
-            <span class="label">Atk</span>
-            <span class="label">Dr1</span>
-            <span class="label">Sus</span>
-            <span class="label">Dr2</span>
-            <span class="label">Rr</span>
-          </div>
-        </div>
-        <div class="op-panel bevel-raised">
-          <div class="op-top">
-            <span class="badge">3</span>
-            <span class="status-dot"></span>
-            <span class="label">Operator 3</span>
-          </div>
-          <div class="op-env bevel-inset"></div>
-          <div class="op-knobs bevel-inset">
-            <span class="label">Atk</span>
-            <span class="label">Dr1</span>
-            <span class="label">Sus</span>
-            <span class="label">Dr2</span>
-            <span class="label">Rr</span>
-          </div>
-        </div>
-        <div class="op-panel bevel-raised">
-          <div class="op-top">
-            <span class="badge">4</span>
-            <span class="status-dot"></span>
-            <span class="label">Operator 4</span>
-          </div>
-          <div class="op-env bevel-inset"></div>
-          <div class="op-knobs bevel-inset">
-            <span class="label">Atk</span>
-            <span class="label">Dr1</span>
-            <span class="label">Sus</span>
-            <span class="label">Dr2</span>
-            <span class="label">Rr</span>
-          </div>
-        </div>
+        <!-- Operator panels are appended by fm-view.js so the layout stays
+             in lockstep with kNumOps (4) without duplicating markup. -->
       </div>
     </div>
 

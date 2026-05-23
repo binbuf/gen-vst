@@ -1,19 +1,50 @@
 #pragma once
 
+#include <array>
+#include <memory>
+#include <vector>
+
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include "PartManager.h"
 #include "PluginProcessor.h"
+#include "Telemetry.h"
 
 // Hosts the Gen VST web UI: a juce::WebBrowserComponent filling the fixed
-// 960x560 window, configured with native integration, the master_gain
-// parameter relay, and — in release builds — a resource provider serving the
-// embedded Vite bundle. Under GENVST_DEV_SERVER it loads the Vite dev server
-// instead. See docs/design/05-ui-ux.md "C++ Integration Contract".
-class GenVstAudioProcessorEditor : public juce::AudioProcessorEditor
+// 960x560 window, configured with native integration, every FM/global parameter
+// relay, and — in release builds — a resource provider serving the embedded
+// Vite bundle. Under GENVST_DEV_SERVER it loads the Vite dev server instead.
+// See docs/design/05-ui-ux.md "C++ Integration Contract".
+//
+// FM channel paging (05-ui-ux.md "FM channel paging"): the FM relays are named
+// **without** the `_part<n>` suffix (e.g. `atk_op1`). selectChannel(n) tears
+// down every FM attachment and rebuilds it against part `n`'s parameter, so
+// every FM widget repaints to the new part's values in one batch. Global, PSG
+// and DAC relays bind once at construction and never rebind.
+class GenVstAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                   private juce::Timer
 {
 public:
+    static constexpr int kNumOps        = 4;
+    static constexpr int kNumOpParams   = 11;   // per-operator FM params
+    static constexpr int kNumPartParams = 7;    // per-part FM params
+
+    // Resolution of the scope payload pushed to the JS oscilloscope. ~768
+    // points is what the design (05-ui-ux.md / 08-ui-views.md) calls for; the
+    // payload is built once per timer tick and packed into the "meterData"
+    // event's `scope` array.
+    static constexpr int kScopeOutPoints = 768;
+
+    // Source window into the telemetry ring: how many of the most recent
+    // host-rate samples we read before downsampling to kScopeOutPoints.
+    // 2048 samples ~ 43 ms at 48 kHz — enough history for low-frequency
+    // periodicity to be visible.
+    static constexpr int kScopeReadSamples = 2048;
+    static_assert (kScopeReadSamples <= Telemetry::kScopeBufferSize,
+                   "scope read window must fit in the telemetry ring");
+
     explicit GenVstAudioProcessorEditor (GenVstAudioProcessor&);
-    ~GenVstAudioProcessorEditor() override = default;
+    ~GenVstAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -21,19 +52,51 @@ public:
 private:
     juce::WebBrowserComponent::Options makeOptions();
 
+    // juce::Timer — runs at ~30 Hz on the message thread, builds the
+    // "meterData" event payload from the processor's telemetry, and emits it
+    // via emitEventIfBrowserIsVisible (08-ui-views.md "Header meter bay"). The
+    // timer is started in the editor's constructor and stopped on destruction
+    // so it never outlives the WebView and never runs when no editor is open.
+    void timerCallback() override;
+
+    // Rebuild every FM attachment so each FM relay re-binds to part `n`'s
+    // apvts parameter. Pushes the new values into the relays as a side effect,
+    // which fires valueChangedEvent on the JS side -> every FM widget repaints.
+    void rebuildFmAttachments (int part);
+
+    // Build relays for the 4 x 11 per-operator FM params with names stripped
+    // of the `_part<n>` suffix ("dt_op1", "mul_op1", ...). The unique_ptr
+    // indirection is mandated by the relays themselves: WebSliderRelay is
+    // marked JUCE_DECLARE_NON_MOVEABLE, so std::vector<WebSliderRelay> cannot
+    // exist; the pointers keep the relay objects pinned on the heap so the
+    // `withOptionsFrom` references handed to the WebBrowserComponent stay
+    // valid for the editor's lifetime.
+    static std::vector<std::unique_ptr<juce::WebSliderRelay>> makeOpRelays();
+
+    // Build relays for the 7 per-part FM params ("alg", "fb", "ams", "pms",
+    // "lr", "lfo_enable", "lfo_rate") with the same stripped-name convention.
+    static std::vector<std::unique_ptr<juce::WebSliderRelay>> makePartRelays();
+
     GenVstAudioProcessor& processor;
 
-    // The "currently selected part" loaded patches target (ADR-0013). The JS
-    // UI moves it via the `selectChannel` native function (Task 14 owns the
-    // UI; we own the C++ state). Default to 0 (Part 1) — matches the Genny
-    // layout's "CH 1" initial selection.
+    // The currently edited FM part. The JS UI moves it via selectChannel; the
+    // C++ editor uses it to target patch-load operations and to rebuild the
+    // FM attachments.
     int selectedPart = 0;
 
+    // --- Global relays (bound once, never rebind) ----------------------------
     // Declaration order is load-bearing: each relay registers as a WebView
     // lifetime listener (via withOptionsFrom), so relays must outlive webView;
     // attachments bind a relay to its apvts parameter, so they must be torn
     // down first. Hence relays -> webView -> attachments.
     juce::WebSliderRelay masterGainRelay { "master_gain" };
+
+    // FM-part-scoped relays — stripped names, rebound on selectChannel.
+    // Per-op relays indexed [op * kNumOpParams + paramIndex]; param order
+    // matches kFmOpParamIds in the .cpp. Per-part relays indexed by
+    // kFmPartParamIds order.
+    std::vector<std::unique_ptr<juce::WebSliderRelay>> opRelays   { makeOpRelays() };
+    std::vector<std::unique_ptr<juce::WebSliderRelay>> partRelays { makePartRelays() };
 
    #if GENVST_DEV_SERVER
     // Widget-gallery scratch relays (Task 10). One per core widget kind, all
@@ -51,6 +114,8 @@ private:
    #endif
 
     juce::WebBrowserComponent webView;
+
+    // --- Global attachments (bound once) ------------------------------------
     juce::WebSliderParameterAttachment masterGainAttachment;
 
    #if GENVST_DEV_SERVER
@@ -63,6 +128,16 @@ private:
     juce::WebComboBoxParameterAttachment     galleryTabsAttachment;
     juce::WebComboBoxParameterAttachment     galleryListAttachment;
    #endif
+
+    // --- FM attachments (rebuilt on every selectChannel) --------------------
+    // Owned via unique_ptr so they can be torn down + reconstructed when
+    // paging to a different part. Index layout mirrors the relay vectors.
+    std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> opAttachments;
+    std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> partAttachments;
+
+    // Scratch buffer for the per-tick telemetry scope read — sized at
+    // kScopeReadSamples and reused so the timer callback does no allocation.
+    std::array<float, kScopeReadSamples> scopeScratch {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessorEditor)
 };

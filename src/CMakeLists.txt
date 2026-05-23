@@ -122,6 +122,7 @@ target_sources(GenVst PRIVATE
     SN76489Wrapper.cpp    SN76489Wrapper.h
     SN76489Engine.cpp     SN76489Engine.h
     DACPlayer.cpp         DACPlayer.h
+    Telemetry.cpp         Telemetry.h
     GenVstYmfmInterface.h)
 
 # --- ymfm OPN2 (YM2612) FM core (ADR-0002) ------------------------------------
