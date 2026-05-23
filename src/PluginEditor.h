@@ -58,10 +58,11 @@ public:
     void resized() override;
 
     // juce::FileDragAndDropTarget — accepts directories (registered as a
-    // custom root) and any .tfi/.vgi/.dmp file (copied into the user-imported
-    // root). Other files are rejected, so dropping a random WAV onto the
-    // plugin window does nothing. The patch-browser modal's tree refreshes
-    // via the patchRootsChanged event emitted afterwards.
+    // custom root) and any patch file whose extension is in
+    // kSupportedPatchExtensions (copied into the user-imported root). Other
+    // files are rejected, so dropping a random WAV onto the plugin window does
+    // nothing. The patch-browser modal's tree refreshes via the
+    // patchRootsChanged event emitted afterwards.
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped           (const juce::StringArray& files, int x, int y) override;
 

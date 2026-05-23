@@ -465,13 +465,16 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             completion (makeStatusVar (err));
         });
 
-    // Import file dialog — open file, filter to .tfi/.vgi/.dmp, copy into the
-    // user-imported root via importPatchFile.
+    // Import file dialog — open file, filter to the supported patch extensions,
+    // copy into the user-imported root via importPatchFile. The filter literal
+    // is built from kSupportedPatchExtensions so the IMPORT tab automatically
+    // picks up any new format added to that constant.
     options = options.withNativeFunction ("importFileDialog",
         [this] (const juce::Array<juce::var>&, Completion completion)
         {
             importChooser = std::make_unique<juce::FileChooser> (
-                "Import patch file", juce::File{}, "*.tfi;*.vgi;*.dmp");
+                "Import patch file", juce::File{},
+                juce::String (buildPatchExtensionFilter()));
 
             const auto flags = juce::FileBrowserComponent::openMode
                              | juce::FileBrowserComponent::canSelectFiles;
@@ -918,15 +921,16 @@ void GenVstAudioProcessorEditor::emitPatchRootsChanged()
 bool GenVstAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
     // 05-ui-ux.md "File drag-and-drop": accept directories (registered as
-    // custom roots) and any .tfi/.vgi/.dmp file (imported). Mixed drops are
-    // fine — each item is dispatched in filesDropped.
+    // custom roots) and any patch file whose extension is in
+    // kSupportedPatchExtensions (imported). Mixed drops are fine — each item
+    // is dispatched in filesDropped.
     for (const auto& f : files)
     {
         const juce::File file (f);
         if (file.isDirectory())
             return true;
-        const auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".tfi" || ext == ".vgi" || ext == ".dmp")
+        const auto ext = file.getFileExtension().toLowerCase().toStdString();
+        if (isSupportedPatchExtension (ext))
             return true;
     }
     return false;
@@ -945,8 +949,8 @@ void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
         const juce::File file (f);
         if (file.isDirectory())
         {
-            // Folder drop: recursively copy every .tfi/.vgi/.dmp inside the
-            // folder into the user-imported root so the patches appear in
+            // Folder drop: recursively copy every supported patch file inside
+            // the folder into the user-imported root so the patches appear in
             // the IMPORT tab. This was previously addCustomRoot — registering
             // a browser-only custom root made dropped patches invisible to
             // the main UI's pinned lists. Users explicitly wanting a custom
@@ -958,8 +962,8 @@ void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
         }
         else
         {
-            const auto ext = file.getFileExtension().toLowerCase();
-            if (ext != ".tfi" && ext != ".vgi" && ext != ".dmp")
+            const auto ext = file.getFileExtension().toLowerCase().toStdString();
+            if (! isSupportedPatchExtension (ext))
                 continue;   // silently skip non-patch files in a mixed drop
             const auto err = browser.importPatchFile (file.getFullPathName());
             if (! err.empty())

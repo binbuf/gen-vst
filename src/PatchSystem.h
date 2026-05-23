@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 // All YM2612 parameters for ONE FM part, stored as plain integers matching the
 // hardware register ranges (04-patch-system.md "Patch Data Model"). The final
@@ -51,6 +53,35 @@ inline constexpr std::size_t kVgiFileSize = 43;
 // to src/format/dmp.cpp is the historical path).
 inline constexpr std::size_t kDmpV11FmFileSize = 51;
 
+// Y12 files are a fixed 128-byte single-channel YM2612 register dump emitted by
+// SMPS-style ROM-hacking tools (Gens KMod and TFM Music Maker). Per-operator
+// byte ordering verified against Furnace's DivEngine::loadY12; see the source
+// comment on loadY12 for the offset table.
+inline constexpr std::size_t kY12FileSize = 128;
+
+// File extensions the patch system imports. Used by the patch browser, the
+// import file chooser, and the drag-and-drop handler — one source of truth so
+// the supported-format list stays consistent across UI surfaces.
+//
+// Extensions are stored lower-case with the leading dot. Callers comparing
+// against them must lower-case their own input first.
+inline constexpr std::array<std::string_view, 5> kSupportedPatchExtensions {
+    ".tfi", ".vgi", ".dmp", ".y12", ".opm"
+};
+
+// True if `ext` (a file extension like ".tfi", case-insensitive, must include
+// the leading dot) is in kSupportedPatchExtensions. The drag-and-drop handler
+// and the patch browser's extension check both go through this so the set
+// stays in one place.
+bool isSupportedPatchExtension (std::string_view ext);
+
+// Build the juce::FileChooser filter literal from kSupportedPatchExtensions —
+// e.g. "*.tfi;*.vgi;*.dmp;*.y12;*.opm". Returned as std::string so this header
+// stays JUCE-free; the caller wraps it in juce::String. PluginEditor.cpp's
+// import file chooser uses this so widening the supported-format list is a
+// one-line change to kSupportedPatchExtensions.
+std::string buildPatchExtensionFilter();
+
 // Result of a patch load. C++20, so no std::expected — a std::optional patch
 // plus an error string. On success `patch` holds the data and `error` is
 // empty; on failure `patch` is empty and `error` describes the problem for the
@@ -76,6 +107,21 @@ PatchLoadResult loadVGI (const std::filesystem::path& path);
 // every other version, system byte, or PSG-type instrument is rejected with
 // a descriptive `error` and no patch (ADR-0012). Message thread only.
 PatchLoadResult loadDMP (const std::filesystem::path& path);
+
+// Parse a 128-byte Y12 file into a Patch. Message thread only. Y12 carries no
+// L/R enables, so `lr` defaults to 3 (both enabled) — matching loadTFI/loadVGI.
+// Per-operator bytes are hardware-register-encoded; the DT field is converted
+// from YM2612 register encoding (0-7) to the patch model's TFI 0-6 encoding.
+PatchLoadResult loadY12 (const std::filesystem::path& path);
+
+// Parse a YM2151 OPM/VOPM text instrument file into a Patch. Message thread
+// only. Multi-instrument OPM files load the first `@:` block only; subsequent
+// blocks are ignored (multi-instrument bank import is post-MVP). YM2151's DT2
+// has no YM2612 equivalent and is silently dropped; SSG-EG defaults to 0 (off)
+// because OPM has no SSG-EG field. LFO enable is derived from whether any of
+// LFRQ/AMD/PMD is non-zero. Missing required lines (LFO/CH/M1/C1/M2/C2) or
+// non-integer / too-few-token operator lines are load errors.
+PatchLoadResult loadOPM (const std::filesystem::path& path);
 
 // Write a Patch to disk as a 42-byte TFI file. Returns an empty string on
 // success or a descriptive error message on failure. TFI carries no

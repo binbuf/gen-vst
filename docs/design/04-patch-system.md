@@ -147,30 +147,49 @@ factory content (ADR-0004).
 **File size:** exactly 128 bytes. Reject any other size with a clear error
 message via the UI notification toast.
 
-**Byte layout (verified against the TFM Music Maker reference):**
+**Byte layout (verified against Furnace's `DivEngine::loadY12`):**
 
-| Offset | Field | Range | Notes |
-|--------|-------|-------|-------|
-| 0x00–0x0F | OP1 MUL/DT/TL/KS/AR/DR/SR/RR/SL/SSG-EG, then padding | per-field hardware ranges | One operator block; field ordering matches TFI |
-| 0x10–0x1F | OP2 (same layout) | | |
-| 0x20–0x2F | OP3 (same layout) | | |
-| 0x30–0x3F | OP4 (same layout) | | |
-| 0x40 | ALG | 0–7 | |
-| 0x41 | FB  | 0–7 | |
-| 0x42 | AMS | 0–3 | |
-| 0x43 | PMS | 0–7 | |
-| 0x44 | AMON packed (one bit per op) | 0–15 | bit0=OP1 … bit3=OP4 |
-| 0x45 | LFO enable / rate | bit3=enable, bits0:2=rate | |
-| 0x46–0x7F | reserved / pad | — | ignored |
+| Offset | Field | Notes |
+|--------|-------|-------|
+| 0x00–0x3F | Four 16-byte operator blocks (OP1..OP4) | Each block mirrors the YM2612's per-operator register order; see below |
+| 0x40 | ALG | 0–7 |
+| 0x41 | FB  | 0–7 |
+| 0x42 | AMS | 0–3 |
+| 0x43 | PMS | 0–7 |
+| 0x44 | reserved | Legacy "AMON-packed" slot; **not read** — see operator block |
+| 0x45 | LFO enable / rate | bit 3 = enable, bits 0:2 = rate |
+| 0x46–0x7F | reserved / pad | ignored |
 
-The exact register byte ordering inside each operator block must be verified
-against the TFM Music Maker spec at implementation time — the loader cross-
-references the TFM Music Maker source or Furnace's Y12 loader for byte offsets,
-the same pattern that resolved DMP v11 offsets (see ADR-0012). Recorded here
-once verified.
+**Per-operator block (16 bytes; first 7 bytes mirror YM2612 registers
+0x30/0x40/0x50/0x60/0x70/0x80/0x90 for the operator; the remaining 9 bytes
+are padding):**
+
+| Byte | YM2612 reg | Bit layout |
+|------|------------|------------|
+| +0 | 0x30+off | DT\[6:4\] \| MUL\[3:0\] — DT is HW 0–7, converted to TFI 0–6 by the loader (see [ADR-0020](adr/0020-dt-register-encoding-y12-opm.md)) |
+| +1 | 0x40+off | TL\[6:0\] (bit 7 unused) |
+| +2 | 0x50+off | KS\[7:6\] \| AR\[4:0\] |
+| +3 | 0x60+off | AMON\[7\] \| DR\[4:0\] — this is the authoritative AMON source |
+| +4 | 0x70+off | SR\[4:0\] (AKA D2R) |
+| +5 | 0x80+off | SL\[7:4\] \| RR\[3:0\] |
+| +6 | 0x90+off | SSG-EG\[3:0\] |
+| +7..+15 | — | padding, ignored |
+
+> **Furnace reference.** Layout verified against `tildearrow/furnace`'s
+> `DivEngine::loadY12` in `src/engine/fileOpsIns.cpp`. Furnace is consulted
+> as a **local, gitignored reference checkout only** — never committed to the
+> repo or added as a build dependency, matching ADR-0012's pattern. Furnace's
+> own loader marks its DT transform `// ???`; Gen VST uses the project's
+> canonical HW→TFI conversion instead — see ADR-0020.
 
 **LR enables:** Y12 carries no L/R; the loader defaults to `lr=3` (both
 enabled), matching the existing TFI/VGI loaders' rationale.
+
+**Verified vs. inferred bytes.** Furnace only reads 0x00–0x41; the channel-
+level AMS/PMS/LFO offsets at 0x42/0x43/0x45 are taken from this spec table
+and have not been cross-checked against the TFM Music Maker source. The
+loader clamps each one to its hardware range so garbage padding becomes a
+benign 0 default rather than a corrupted patch (see ADR-0020).
 
 ---
 
@@ -210,7 +229,7 @@ determines which operators are carriers vs. modulators.
 | `TL`  | `tl[op]`  | 0–127 — same dB-per-step as YM2612, no rescaling |
 | `KS`  | `ks[op]`  | 0–3 |
 | `MUL` | `mul[op]` | 0–15 |
-| `DT1` | `dt[op]`  | 0–7 — OPM uses bits 6:4 of the hardware register; the loader takes the 0–7 source value directly |
+| `DT1` | `dt[op]`  | OPM stores the raw 3-bit YM2151 detune register (0–7). The loader converts to the patch model's TFI 0–6 encoding via the inverse of `FmRegisterMap::detuneToRegister` so the patch round-trips through `detuneToRegister` correctly. See [ADR-0020](adr/0020-dt-register-encoding-y12-opm.md) |
 | `DT2` | — | **Silently dropped.** YM2151-only field; YM2612 has no DT2 register |
 | `AMS-EN` | `amon[op]` | 0/1 |
 

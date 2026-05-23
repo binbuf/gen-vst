@@ -257,15 +257,15 @@ public:
     // Result of a recursive folder import.
     struct FolderImportResult
     {
-        int          imported = 0;       // .tfi/.vgi/.dmp files copied
+        int          imported = 0;       // supported patch files copied
         int          skipped  = 0;       // non-patch files encountered
         std::vector<std::string> errors; // per-file copy failures
     };
 
-    // Recursively copy every .tfi/.vgi/.dmp file under `sourcePath` into the
-    // user-imported root, preserving filenames (no directory hierarchy is
-    // re-created). Non-patch files are silently skipped. Returns counts +
-    // per-file errors; never throws.
+    // Recursively copy every supported patch file (see kSupportedPatchExtensions
+    // in PatchSystem.h) under `sourcePath` into the user-imported root,
+    // preserving filenames (no directory hierarchy is re-created). Non-patch
+    // files are silently skipped. Returns counts + per-file errors; never throws.
     FolderImportResult importPatchFolder (const juce::String& sourcePath);
 
     // Write `patch` to `destinationPath`, format selected by extension

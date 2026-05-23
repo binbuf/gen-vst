@@ -12,6 +12,8 @@ FetchContent_MakeAvailable(googletest)
 add_executable(GenVstTests
     SmokeTest.cpp
     PatchLoaderTests.cpp
+    Y12LoaderTests.cpp
+    OpmLoaderTests.cpp
     PatchBrowserTests.cpp
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
@@ -58,8 +60,11 @@ target_include_directories(GenVstTests PRIVATE
     "${CMAKE_SOURCE_DIR}/third_party/ymfm/src")
 
 # PatchLoaderTests loads every factory .tfi straight from the source tree.
+# Y12LoaderTests / OpmLoaderTests load on-disk Y12 + OPM fixtures from
+# tests/fixtures/patches/ to exercise the full file-read path.
 target_compile_definitions(GenVstTests PRIVATE
-    GENVST_FACTORY_PATCHES_DIR="${CMAKE_SOURCE_DIR}/extern/patches")
+    GENVST_FACTORY_PATCHES_DIR="${CMAKE_SOURCE_DIR}/extern/patches"
+    GENVST_FIXTURES_PATCHES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/patches")
 
 target_link_libraries(GenVstTests PRIVATE
     GTest::gtest_main

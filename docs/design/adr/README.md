@@ -28,3 +28,4 @@ pending sign-off), `Superseded` (replaced by a later ADR).
 | [0017](0017-hidpi-display-scaling.md) | HiDPI / display scaling across platforms | Accepted |
 | [0018](0018-additional-patch-formats.md) | Additional patch formats (Y12, OPM, VGM extraction) are post-MVP | Superseded by 0019 |
 | [0019](0019-additional-patch-formats-in-mvp.md) | Y12, OPM, and VGM bank import are in MVP scope | Accepted |
+| [0020](0020-dt-register-encoding-y12-opm.md) | DT register encoding conversions for Y12 and OPM loaders | Accepted |

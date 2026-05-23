@@ -14,15 +14,13 @@ namespace genvst
 
 namespace
 {
-    // Patch file extensions the browser recognises. Lower-case match.
+    // Patch file extensions the browser recognises. Delegates to PatchSystem's
+    // isSupportedPatchExtension so the list lives at exactly one place
+    // (kSupportedPatchExtensions in PatchSystem.h).
     bool isPatchExtension (const fs::path& p) noexcept
     {
         const auto ext = p.extension().string();
-        if (ext.empty()) return false;
-        std::string lower (ext.size(), '\0');
-        std::transform (ext.begin(), ext.end(), lower.begin(),
-                        [] (char c) { return static_cast<char> (std::tolower ((unsigned char) c)); });
-        return lower == ".tfi" || lower == ".vgi" || lower == ".dmp";
+        return isSupportedPatchExtension (ext);
     }
 
     // Cross-platform path -> juce::String. std::filesystem::path's native
@@ -54,14 +52,21 @@ namespace
     }
 
     // Single dispatch point so loadIntoPart and the indexer pick the right
-    // parser for any patch file by extension.
+    // parser for any patch file by extension. Lower-cases the input so the
+    // comparison is case-insensitive on all platforms.
     PatchLoadResult dispatchLoad (const fs::path& path)
     {
-        const auto ext = path.extension().string();
-        if (ext == ".tfi" || ext == ".TFI") return loadTFI (path);
-        if (ext == ".vgi" || ext == ".VGI") return loadVGI (path);
-        if (ext == ".dmp" || ext == ".DMP") return loadDMP (path);
-        return { std::nullopt, "unrecognised patch extension: " + ext };
+        const auto rawExt = path.extension().string();
+        std::string ext (rawExt.size(), '\0');
+        std::transform (rawExt.begin(), rawExt.end(), ext.begin(),
+                        [] (char c)
+                        { return static_cast<char> (std::tolower ((unsigned char) c)); });
+        if (ext == ".tfi") return loadTFI (path);
+        if (ext == ".vgi") return loadVGI (path);
+        if (ext == ".dmp") return loadDMP (path);
+        if (ext == ".y12") return loadY12 (path);
+        if (ext == ".opm") return loadOPM (path);
+        return { std::nullopt, "unrecognised patch extension: " + rawExt };
     }
 }
 
@@ -588,7 +593,7 @@ std::string PatchBrowser::importPatchFile (const juce::String& sourcePath)
     if (! fs::is_regular_file (src, ec))
         return "import source is not a regular file: " + sourcePath.toStdString();
     if (! isPatchExtension (src))
-        return "import source is not a .tfi/.vgi/.dmp file";
+        return "import source is not a supported patch file (" + buildPatchExtensionFilter() + ")";
 
     // 04-patch-system.md: importPatch() and drag-and-drop both land in the
     // user-imported root.
@@ -670,7 +675,7 @@ std::string PatchBrowser::deletePatchFile (const juce::String& absolutePath)
     if (! fs::is_regular_file (path, ec))
         return "delete target is not a regular file: " + absolutePath.toStdString();
     if (! isPatchExtension (path))
-        return "delete target is not a .tfi/.vgi/.dmp file";
+        return "delete target is not a supported patch file (" + buildPatchExtensionFilter() + ")";
 
     // Only allow deletes inside a writable root. We resolve once and compare
     // canonical paths so a path like `…/saved/../saved/foo.tfi` still matches.
