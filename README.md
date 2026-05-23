@@ -73,11 +73,9 @@ Additional patches can be loaded through the plugin's Import tab or by dragging 
 
 ---
 
-## Legal & Attribution
+## Notes
 
-### Independent development
-
-Gen VST was designed and implemented from scratch. It takes **no source code, compiled binaries, assets, graphics, patch data, or other material** from [Genny VST](https://www.facebook.com/GennySynth/) by Sam Gossner. The only similarity is the concept (a Sega Genesis VST instrument); all architecture and implementation decisions are documented in [`docs/design/adr/`](docs/design/adr/).
+Gen VST was inspired from **Genny VST** user interface but uses none of its source code, assets, or patch data from that project. This project wanted to make a modernized cross platform VST3.
 
 ### Factory patches
 
