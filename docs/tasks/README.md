@@ -23,7 +23,7 @@ lower-numbered tasks is complete and verified.
 ## Design source of truth
 
 - `docs/design/01-architecture.md` … `08-ui-views.md` — the design docs.
-- `docs/design/adr/0001`…`0017` — Architecture Decision Records (all Accepted).
+- `docs/design/adr/0001`…`0019` — Architecture Decision Records (all Accepted; 0018 superseded by 0019).
 - `docs/genny-ui.md` — authoritative visual-style spec for the main window.
 
 If a task file and a design doc ever disagree, the design doc + ADRs win —
@@ -107,6 +107,8 @@ real host. There is no long stretch of unverifiable work.
 | 17 | [WebView fallback panel & HiDPI scaling](17-webview-fallback-hidpi.md) | Editor robustness | 03 |
 | 18 | [Cross-platform bring-up, installer & CI](18-cross-platform-installer-ci.md) | macOS/Linux + packaging | 01 |
 | 19 | [CPU profiling, resampler quality & parity QA](19-profiling-and-qa.md) | **Release-ready** | 07 |
+| 20 | [Y12 + OPM patch loaders](20-y12-opm-loaders.md) | Two more patch formats | 08 |
+| 21 | [VGM bank import (Import Bank)](21-vgm-bank-import.md) | Game-original FM patches via .vgm/.vgz | 09, 20 |
 
 ## Task file structure
 
@@ -142,6 +144,8 @@ These are explicitly deferred by the design/ADRs and have **no task file**:
 - Chord mode — note-range zones triggering part configurations (07-feature-spec).
 - Resizable window (ADR-0007 — currently fixed 960×640).
 - Legacy DMP version 8 import (ADR-0012 — v11 only for MVP).
+- Multi-instrument OPM bank import (Task 20 loads the first `@:` block only).
+- VGM extraction with timeline scrub / per-channel preview (Task 21 is one-click bank import only).
 - Per-part voice reservations / caps (ADR-0013).
 - PSG Option B auto-layer refinements; bank-select for user/custom roots.
 - Signed/notarized macOS `.pkg`; `.deb`/AppImage for Linux (ADR-0016).

@@ -1,6 +1,6 @@
 # ADR-0018: Additional patch format support is post-MVP
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0019](0019-additional-patch-formats-in-mvp.md) on 2026-05-23
 - **Date:** 2026-05-22
 - **Related:** [04-patch-system.md](../04-patch-system.md), [ADR-0004](0004-furnace-only-factory-bank.md), [ADR-0012](0012-dmp-version-scope.md)
 

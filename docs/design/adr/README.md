@@ -26,4 +26,5 @@ pending sign-off), `Superseded` (replaced by a later ADR).
 | [0015](0015-webview-backend-support.md) | WebView backend support matrix & minimum versions | Accepted |
 | [0016](0016-webview2-runtime-distribution.md) | WebView2 runtime distribution & Windows installer | Accepted |
 | [0017](0017-hidpi-display-scaling.md) | HiDPI / display scaling across platforms | Accepted |
-| [0018](0018-additional-patch-formats.md) | Additional patch formats (Y12, OPM, VGM extraction) are post-MVP | Accepted |
+| [0018](0018-additional-patch-formats.md) | Additional patch formats (Y12, OPM, VGM extraction) are post-MVP | Superseded by 0019 |
+| [0019](0019-additional-patch-formats-in-mvp.md) | Y12, OPM, and VGM bank import are in MVP scope | Accepted |

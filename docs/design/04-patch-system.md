@@ -136,6 +136,179 @@ an entirely different structure and is never parsed by the FM loader.
 
 ---
 
+## Y12 Format (128 Bytes)
+
+Y12 is a flat single-channel YM2612 register dump emitted by SMPS-style
+Mega Drive ROM-hacking tools (TFM Music Maker and similar). It captures the
+exact register state the channel had in the game, so it is the closest format
+to raw hardware state. Y12 patches are user-supplied only — never bundled as
+factory content (ADR-0004).
+
+**File size:** exactly 128 bytes. Reject any other size with a clear error
+message via the UI notification toast.
+
+**Byte layout (verified against the TFM Music Maker reference):**
+
+| Offset | Field | Range | Notes |
+|--------|-------|-------|-------|
+| 0x00–0x0F | OP1 MUL/DT/TL/KS/AR/DR/SR/RR/SL/SSG-EG, then padding | per-field hardware ranges | One operator block; field ordering matches TFI |
+| 0x10–0x1F | OP2 (same layout) | | |
+| 0x20–0x2F | OP3 (same layout) | | |
+| 0x30–0x3F | OP4 (same layout) | | |
+| 0x40 | ALG | 0–7 | |
+| 0x41 | FB  | 0–7 | |
+| 0x42 | AMS | 0–3 | |
+| 0x43 | PMS | 0–7 | |
+| 0x44 | AMON packed (one bit per op) | 0–15 | bit0=OP1 … bit3=OP4 |
+| 0x45 | LFO enable / rate | bit3=enable, bits0:2=rate | |
+| 0x46–0x7F | reserved / pad | — | ignored |
+
+The exact register byte ordering inside each operator block must be verified
+against the TFM Music Maker spec at implementation time — the loader cross-
+references the TFM Music Maker source or Furnace's Y12 loader for byte offsets,
+the same pattern that resolved DMP v11 offsets (see ADR-0012). Recorded here
+once verified.
+
+**LR enables:** Y12 carries no L/R; the loader defaults to `lr=3` (both
+enabled), matching the existing TFI/VGI loaders' rationale.
+
+---
+
+## OPM Format (Text — VOPM / YM2151)
+
+OPM is Yamaha's YM2151 line-based ASCII instrument format used by VOPM and the
+YM2151 MML community. The YM2151 and YM2612 share enough register semantics
+that OPM patches load meaningfully on Gen VST, with one field dropped and one
+defaulted.
+
+**File structure:** one or more `@:<num> <name>` header lines followed by these
+parameter lines (whitespace-separated integers):
+
+```
+@:0 Lead 1
+LFO: <LFRQ> <AMD> <PMD> <WF> <NFRQ>
+CH:  <PAN> <FL> <CON> <AMS> <PMS> <SLOT> <NE>
+M1:  <AR> <D1R> <D2R> <RR> <D1L> <TL> <KS> <MUL> <DT1> <DT2> <AMS-EN>
+C1:  <AR> <D1R> <D2R> <RR> <D1L> <TL> <KS> <MUL> <DT1> <DT2> <AMS-EN>
+M2:  <AR> <D1R> <D2R> <RR> <D1L> <TL> <KS> <MUL> <DT1> <DT2> <AMS-EN>
+C2:  <AR> <D1R> <D2R> <RR> <D1L> <TL> <KS> <MUL> <DT1> <DT2> <AMS-EN>
+```
+
+**Operator mapping:** `M1 → OP1`, `C1 → OP2`, `M2 → OP3`, `C2 → OP4`. The
+M/C naming describes the OPM signal flow; on the YM2612 the algorithm field
+determines which operators are carriers vs. modulators.
+
+**Field mapping per operator:**
+
+| OPM field | Patch field | Notes |
+|-----------|-------------|-------|
+| `AR`  | `ar[op]`  | 0–31 |
+| `D1R` | `dr[op]`  | 0–31 (first decay) |
+| `D2R` | `sr[op]`  | 0–31 (second decay / sustain rate) |
+| `RR`  | `rr[op]`  | 0–15 |
+| `D1L` | `sl[op]`  | 0–15 (sustain level) |
+| `TL`  | `tl[op]`  | 0–127 — same dB-per-step as YM2612, no rescaling |
+| `KS`  | `ks[op]`  | 0–3 |
+| `MUL` | `mul[op]` | 0–15 |
+| `DT1` | `dt[op]`  | 0–7 — OPM uses bits 6:4 of the hardware register; the loader takes the 0–7 source value directly |
+| `DT2` | — | **Silently dropped.** YM2151-only field; YM2612 has no DT2 register |
+| `AMS-EN` | `amon[op]` | 0/1 |
+
+**Channel-level mapping:**
+
+| OPM field | Patch field | Notes |
+|-----------|-------------|-------|
+| `CON` | `alg` | 0–7 |
+| `FL`  | `fb`  | 0–7 (feedback) |
+| `AMS` | `ams` | 0–3 |
+| `PMS` | `pms` | 0–7 |
+| `LFRQ` | `lfo_rate` | 0–7 (top bits truncated if source exceeds range) |
+| `AMD` / `PMD` / `WF` / `NFRQ` / `PAN` / `SLOT` / `NE` | — | OPM-specific, ignored |
+
+**SSG-EG:** OPM has no SSG-EG field. Defaults to 0 (off) for all operators.
+
+**LFO enable:** OPM has no explicit LFO enable. The loader sets
+`lfo_enable = 1` if `LFRQ`, `AMD`, or `PMD` is non-zero, else `0`.
+
+**Name:** parsed from the `@:<num> <name>` header line, trimmed.
+
+**Parsing rules:**
+- Read the file as text (UTF-8 / ASCII). Split on lines.
+- Tokenize by whitespace. Lines starting with `//` or empty lines are skipped.
+- A missing parameter line (`LFO`, `CH`, `M1`-`C2`) is a load error with a
+  descriptive message.
+- A line with too few integers is a load error.
+- Out-of-range integers are clamped to the hardware range (same approach as
+  TFI/VGI/DMP).
+- Multi-instrument OPM files (more than one `@:` block) load the first block
+  only; subsequent blocks are ignored. (Multi-instrument bank import for OPM
+  is post-MVP.)
+
+---
+
+## VGM Bank Import
+
+VGM (`.vgm`) and VGZ (`.vgz`, gzipped VGM) files are register-log captures of a
+chip session — primarily used to archive game soundtracks for the Genesis. Bank
+import opens such a file, walks the YM2612 register-write stream, and emits one
+`Patch` per unique register state captured at each FM key-on event. This is the
+copyright-clean path to game-original FM timbres: the user supplies the file
+from public archives (vgmrips.net, Project2612), and Gen VST extracts patches
+from the register log without touching ROM content.
+
+### UX
+
+Matches Genny VST's "Import Bank" — **one click, no second dialog**:
+
+1. User clicks **Import Bank** on the IMPORT tab.
+2. Native file picker opens (`*.vgm;*.vgz`).
+3. C++ extracts all patches on a background thread and writes each as a `.tfi`
+   into `<userAppData>/GenVst/patches/imported/`.
+4. A toast surfaces `"Imported N patches from <filename>"` (or the parse error).
+5. The IMPORT list refreshes immediately; patches are loadable right away.
+
+No per-patch checkbox/preview modal. See [[reference-genny-vst-features]] —
+this UX matches the Genny parity bar by intent, recorded in ADR-0019.
+
+### Parser scope
+
+The parser handles only what bank import needs from the VGM 1.50+ spec:
+
+| Command | Bytes | Action |
+|---------|-------|--------|
+| `0x52 rr dd` | 3 | YM2612 port 0 write — apply to shadow state |
+| `0x53 rr dd` | 3 | YM2612 port 1 write — apply to shadow state (CH4-6 registers) |
+| `0x61 nn nn` | 3 | Wait N samples — advance internal sample clock |
+| `0x62` | 1 | Wait 735 samples (one 60 Hz frame) |
+| `0x63` | 1 | Wait 882 samples (one 50 Hz frame) |
+| `0x70`–`0x7F` | 1 | Wait (n+1) samples |
+| `0x66` | 1 | End of sound data — stop |
+| any other | varies — skip per spec length tables | Ignore (SN76489, PCM, other chips) |
+
+`.vgz` files are decompressed in memory via `juce::GZIPDecompressorInputStream`
+before parsing. No new third-party dependency is added; the existing libvgm
+submodule (used only for the SN76489 emulation core per ADR-0009) is **not**
+expanded to provide VGM parsing — the dependency boundary stays narrow.
+
+### State tracker
+
+The parser maintains shadow register state for each of the six FM channels.
+A key-on event is a write to register `0x28` whose data byte has any of the
+top four bits set; the low three bits identify the channel.
+
+On each key-on:
+1. Assemble a `Patch` from the channel's current shadow register state.
+2. Hash the patch's content.
+3. If the hash is new, append the patch to the result list. Otherwise skip
+   (dedupe).
+
+Patches are named `"<filename-stem> #<n>"` where `n` starts at 1.
+
+The parser ignores writes to PSG / PCM / other-chip commands but still advances
+their byte cursor correctly per the VGM spec's per-command length table.
+
+---
+
 ## Loading Code Sketch
 
 ```cpp
@@ -182,6 +355,13 @@ PatchLoadResult loadTFI(const std::filesystem::path& path) {
 
 PatchLoadResult loadVGI(const std::filesystem::path& path);  // size == 43; AMS/FMS in byte 2; AMON in DR bit 7
 PatchLoadResult loadDMP(const std::filesystem::path& path);  // version 11 only (ADR-0012); reject other versions with an error
+PatchLoadResult loadY12(const std::filesystem::path& path);  // size == 128; flat single-channel register dump; lr defaults to 3 (both)
+PatchLoadResult loadOPM(const std::filesystem::path& path);  // line-based ASCII; DT2 dropped; SSG-EG defaults to 0; multi-instrument files load first block only
+
+// Bank import — only path that returns multiple patches. Used by Import Bank.
+// Reads .vgm or .vgz, walks YM2612 register writes, snapshots on each key-on,
+// dedupes by content hash. Names patches "<filename-stem> #<n>".
+std::vector<Patch> extractFmPatches(const std::filesystem::path& vgmPath, std::string& error);
 ```
 
 Clamp all loaded values to their valid hardware ranges to handle corrupted files gracefully.
@@ -288,10 +468,21 @@ is shown to the user via the UI notification toast (see [05-ui-ux.md](05-ui-ux.m
 - **Add Folder:** a folder picker registers a new custom root. The folder is
   scanned lazily; its directory structure becomes the navigable tree. The path is
   persisted across sessions.
-- **Import file:** a file picker filtered to `*.tfi;*.vgi;*.dmp` copies a single
-  patch into the **user-imported root** (`…/patches/imported/`).
-- **Drag-and-drop:** dropping `.tfi`/`.vgi`/`.dmp` files imports them into the
-  user-imported root; dropping a *folder* registers it as a new custom root.
+- **Import file:** a file picker filtered to `*.tfi;*.vgi;*.dmp;*.y12;*.opm`
+  copies a single patch into the **user-imported root**
+  (`…/patches/imported/`). The supported extension list lives at
+  `kSupportedPatchExtensions` in `src/PatchSystem.h`; the picker and the
+  drag-and-drop handler both consume it so the set stays in one place.
+- **Import Bank:** a separate button with its own picker filtered to
+  `*.vgm;*.vgz`. Extracts every unique FM channel state captured at each
+  key-on event into the user-imported root, one `.tfi` per patch, named
+  `<filename-stem> #<n>`. Implemented in `src/VgmExtract/` (ADR-0019).
+  One-click flow: pick file → all patches written → toast → IMPORT list
+  refreshes.
+- **Drag-and-drop:** dropping any file whose extension is in
+  `kSupportedPatchExtensions` imports it into the user-imported root;
+  dropping a `.vgm` or `.vgz` runs Import Bank on that file; dropping a
+  *folder* registers it as a new custom root.
 - **Save patch:** `savePatch()` writes a TFI into the **user-saved root**
   (`…/patches/saved/`). This is the only path that populates the PRESETS tab.
 - **Export TFI:** construct a 42-byte buffer from the current `Patch` struct and write to file.
