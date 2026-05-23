@@ -1097,4 +1097,13 @@ void GenVstAudioProcessorEditor::timerCallback()
     payload->setProperty ("voiceMask", juce::var ((int) tel.voiceMask()));
 
     webView.emitEventIfBrowserIsVisible ("meterData", juce::var (payload));
+
+    // Task 16: drain any notifications setStateInformation queued before the
+    // editor existed (or while the WebView wasn't visible) and surface each
+    // as a toast. The queue lives on the processor so it survives editor
+    // open/close cycles; this drain is idempotent when empty.
+    processor.drainPendingNotifications ([this] (const auto& n)
+    {
+        emitNotify (n.level, n.message);
+    });
 }

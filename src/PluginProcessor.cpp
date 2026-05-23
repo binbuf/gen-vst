@@ -6,8 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <utility>
 
 #include "PatchSystem.h"
+#include "PluginState.h"
 
 namespace
 {
@@ -505,23 +507,31 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 
         // Dev wiring (Task 05/06 parity): until the patch browser UI ships
         // (Task 14), seed every part with "organ" if present and override
-        // part 1 with "bass" — so a fresh launch sounds multitimbral. This
-        // is a message-thread call (we're in prepareToPlay), so going
-        // through setValueNotifyingHost via applyPatchToPart is fine.
-        const auto findFactory = [this] (const juce::String& name) -> const Patch*
+        // part 1 with "bass" — so a fresh launch sounds multitimbral. Skip
+        // this when state was restored (Task 16) — the project's saved
+        // patches must not be clobbered by the dev fallback.
+        if (! stateRestored)
         {
-            for (int i = 0; i < patchBrowser.numFactoryPatches(); ++i)
-                if (auto* p = patchBrowser.factoryPatchByIndex (i);
-                    p != nullptr && juce::String (p->name).equalsIgnoreCase (name))
-                    return p;
-            return nullptr;
-        };
-        if (const Patch* organ = findFactory ("organ"))
-            for (int part = 0; part < PartManager::kNumParts; ++part)
-                applyPatchToPart (part, *organ);
-        if (const Patch* bass = findFactory ("bass"))
-            applyPatchToPart (1, *bass);
+            const auto findFactory = [this] (const juce::String& name) -> const Patch*
+            {
+                for (int i = 0; i < patchBrowser.numFactoryPatches(); ++i)
+                    if (auto* p = patchBrowser.factoryPatchByIndex (i);
+                        p != nullptr && juce::String (p->name).equalsIgnoreCase (name))
+                        return p;
+                return nullptr;
+            };
+            if (const Patch* organ = findFactory ("organ"))
+                for (int part = 0; part < PartManager::kNumParts; ++part)
+                    applyPatchToPart (part, *organ);
+            if (const Patch* bass = findFactory ("bass"))
+                applyPatchToPart (1, *bass);
+        }
     }
+
+    // Task 16: a setStateInformation that ran before the patch browser was
+    // initialised stashed its custom-root + per-part patch reloads in
+    // pendingStateRestore. Replay them now that the browser is ready.
+    genvst::state::applyPendingPatchAndRootRestore (*this);
 }
 
 void GenVstAudioProcessor::pushPsgDacParameters()
@@ -1031,15 +1041,33 @@ void GenVstAudioProcessor::changeProgramName (int, const juce::String&) {}
 
 void GenVstAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = apvts.copyState().createXml())
+    // Full Task-16 state: apvts + per-part patch paths & MIDI channels +
+    // routing table + DAC PCM (base64) + custom roots. See PluginState.h.
+    if (auto xml = genvst::state::save (*this))
         copyXmlToBinary (*xml, destData);
 }
 
 void GenVstAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        if (xml->hasTagName (apvts.state.getType()))
-            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr) return;
+
+    // PluginState parses the format (legacy bare-apvts vs Task-16 wrapper),
+    // restores apvts immediately and either applies or defers the patch
+    // browser-dependent steps. Unresolved patch / custom-root paths are
+    // enqueued via addPendingNotification — the editor's timer drains them.
+    genvst::state::restore (*this, *xml);
+
+    // Tell prepareToPlay's first-run path to skip the dev-patch fallback,
+    // so the restored patches are not overwritten the next time the host
+    // re-prepares the plugin.
+    stateRestored = true;
+}
+
+void GenVstAudioProcessor::addPendingNotification (juce::String level, juce::String message)
+{
+    const std::lock_guard<std::mutex> lk (pendingNotificationsMutex);
+    pendingNotifications.push_back ({ std::move (level), std::move (message) });
 }
 
 void GenVstAudioProcessor::queuePreviewNoteOn (int part, int note, int velocity) noexcept

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <mutex>
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -112,6 +113,57 @@ public:
     // Public so unit tests and the MidiRoutingTests fixture can build the
     // full layout standalone (no AudioProcessor instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // --- Task 16: state-restore notify channel --------------------------------
+    // Notifications queued during setStateInformation (unresolved patch paths
+    // / unresolved custom roots) live here until the editor drains them on
+    // its next timer tick — the editor may not even exist yet when state is
+    // first restored, so we cannot push events into the WebView directly.
+    // Message thread only (JUCE setStateInformation + editor::timerCallback
+    // both live there); no mutex required.
+    struct PendingNotification
+    {
+        juce::String level;     // "info" / "warning" / "error"
+        juce::String message;
+    };
+    void addPendingNotification (juce::String level, juce::String message);
+
+    // Drain every pending notification into `sink` (in FIFO order) and clear
+    // the queue. Returns true if anything was drained. The brief mutex keeps
+    // pluginval --strictness 8's threaded state-save fuzzers safe even if a
+    // host happens to violate the message-thread-only invariant.
+    template <typename Sink>
+    bool drainPendingNotifications (Sink&& sink)
+    {
+        std::vector<PendingNotification> snapshot;
+        {
+            const std::lock_guard<std::mutex> lk (pendingNotificationsMutex);
+            if (pendingNotifications.empty()) return false;
+            snapshot.swap (pendingNotifications);
+        }
+        for (auto& n : snapshot)
+            sink (n);
+        return true;
+    }
+
+    // Deferred state-restore data: setStateInformation may run before the
+    // patch browser is initialised (some DAWs load project state before the
+    // first prepareToPlay). The apvts / routing / DAC parts run immediately;
+    // the patch reloads + custom-root re-register need the browser and are
+    // recorded here for the next prepareToPlay to replay (Task 16).
+    struct PendingStateRestore
+    {
+        bool                                                   active = false;
+        std::vector<juce::String>                              customRootPaths;
+        std::array<juce::String, PartManager::kNumParts>       patchPaths {};
+    };
+    PendingStateRestore&       pendingStateRestoreData()       noexcept { return pendingStateRestore; }
+    const PendingStateRestore& pendingStateRestoreData() const noexcept { return pendingStateRestore; }
+
+    // Did setStateInformation run on this instance? prepareToPlay's first-time
+    // dev-patch loading skips when this is true so a restored project's
+    // patches survive instead of being clobbered by the dev fallback.
+    bool wasStateRestored() const noexcept { return stateRestored; }
 
 private:
     // Store `patch` on `part` and push its values into the apvts parameter
@@ -238,6 +290,12 @@ private:
     // by the plugin client wrapper after the constructor returns), so its
     // initialisation is deferred to the first prepareToPlay call.
     bool patchBrowserInitialised = false;
+
+    // Task 16 state-restore bookkeeping.
+    std::vector<PendingNotification> pendingNotifications;
+    std::mutex                       pendingNotificationsMutex;
+    PendingStateRestore              pendingStateRestore;
+    bool                             stateRestored = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

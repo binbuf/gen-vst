@@ -41,13 +41,29 @@ public:
 
     // Load a WAV via juce::AudioFormatManager / juce::AudioFormatReader, mix
     // to mono, convert to 8-bit unsigned PCM at the current dacRate, and
-    // store. Returns true on success. Embedding the PCM in plugin state is
-    // Task 16; this loader is enough for the dev/manual verification path.
+    // store. Returns true on success.
     bool loadWav (const juce::File& file);
+
+    // Restore PCM directly from raw 8-bit unsigned bytes at the given dacRate
+    // (the Task 16 state-restore path — bypasses the WAV decoder so a project
+    // is self-contained without an external WAV file). `name` is the display
+    // filename the D-view (08-ui-views.md view 3) shows.
+    void loadRawPcm (const std::uint8_t* bytes, std::size_t numBytes,
+                     int dacRateHz, const juce::String& name);
 
     // Clear the loaded PCM and stop any in-flight playback.
     void clearPcm();
     bool hasPcm() const noexcept;
+
+    // --- Raw PCM accessors (Task 16 state save) ------------------------------
+    // The stored 8-bit unsigned PCM (resampled to `dacRate`). Empty when no
+    // sample is loaded. Pointer is invalidated by clearPcm / loadWav /
+    // loadRawPcm / setDacRate — read on the message thread only.
+    const std::uint8_t* getRawPcmData() const noexcept
+    {
+        return pcm.empty() ? nullptr : pcm.data();
+    }
+    std::size_t         getRawPcmSize() const noexcept { return pcm.size(); }
 
     // --- Sample-info accessors (Task 13 D-view) ------------------------------
 

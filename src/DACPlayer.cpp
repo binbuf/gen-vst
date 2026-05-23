@@ -91,6 +91,39 @@ bool DACPlayer::loadWav (const juce::File& file)
     return ! pcm.empty();
 }
 
+void DACPlayer::loadRawPcm (const std::uint8_t* bytes, std::size_t numBytes,
+                            int dacRateHz, const juce::String& name)
+{
+    if (bytes == nullptr || numBytes == 0)
+    {
+        clearPcm();
+        return;
+    }
+
+    dacRate = normaliseDacRate (dacRateHz);
+    samplesPerWrite = static_cast<double> (nativeSampleRate())
+                      / static_cast<double> (dacRate);
+
+    pcm.assign (bytes, bytes + numBytes);
+
+    // Reconstruct a mono float source from the 8-bit PCM so the D-view's
+    // waveform peaks render and a later DAC-rate change can resample without
+    // needing the original WAV. The reconstruction is exact-ish to the 8-bit
+    // granularity the chip actually plays — good enough for both purposes.
+    srcRate = static_cast<double> (dacRate);
+    srcFloat.assign (numBytes, 0.0f);
+    for (std::size_t i = 0; i < numBytes; ++i)
+        srcFloat[i] = (static_cast<int> (bytes[i]) - 128) / 127.0f;
+
+    sampleName = name;
+
+    playing          = false;
+    playPos          = 0;
+    writeAccumulator = 0.0;
+
+    writeReg (0x2A, 0x80);   // park the chip at silence
+}
+
 void DACPlayer::clearPcm()
 {
     pcm.clear();

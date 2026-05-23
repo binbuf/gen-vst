@@ -84,10 +84,11 @@ struct PatchRoot
 class PatchBrowser : private juce::Thread
 {
 public:
-    // The audio-thread delivery queue is capacity 4 — the UI typically loads
-    // one patch per click and the audio thread drains every block, so a tiny
-    // ring is enough (04-patch-system.md "Audio Thread Delivery").
-    static constexpr int kQueueCapacity = 4;
+    // The audio-thread delivery queue is sized so a full state restore can
+    // push all 6 parts' patches at once (Task 16); the UI per-click load is a
+    // single push that the audio thread drains every block, so this is plenty
+    // of headroom (04-patch-system.md "Audio Thread Delivery").
+    static constexpr int kQueueCapacity = 8;
 
     PatchBrowser();
     ~PatchBrowser() override;

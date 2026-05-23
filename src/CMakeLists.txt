@@ -112,6 +112,7 @@ install(FILES ${FACTORY_PATCHES} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
 target_sources(GenVst PRIVATE
     PluginProcessor.cpp   PluginProcessor.h
     PluginEditor.cpp      PluginEditor.h
+    PluginState.cpp       PluginState.h
     Voice.cpp             Voice.h
     VoiceAllocator.cpp    VoiceAllocator.h
     PartManager.cpp       PartManager.h
