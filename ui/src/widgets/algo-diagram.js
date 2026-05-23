@@ -111,13 +111,15 @@ export class AlgoDiagram {
     ctx.fillRect(0, 0, this.w, this.h);
     drawBevel(ctx, 0, 0, this.w, this.h, false);
 
-    // 4-column x 4-row cell grid laid out within the bezel insets. Boxes are
-    // ~18x12; lines connect their centres on integer pixels.
-    const padX = 6, padY = 6;
+    // 4-column x 4-row cell grid laid out within the bezel insets. Bigger
+    // boxes than the previous draft so the labels read at small sizes;
+    // lines are 2px thick to stand out against the LCD-green base. Lines
+    // are drawn first, then the boxes sit on top.
+    const padX = 8, padY = 6;
     const cellW = Math.floor((this.w - padX * 2 - 12) / 4);   // last col is "out"
     const cellH = Math.floor((this.h - padY * 2) / 4);
-    const boxW = Math.min(cellW - 4, 18);
-    const boxH = Math.min(cellH - 2, 12);
+    const boxW = Math.min(cellW - 2, 22);
+    const boxH = Math.min(cellH + 2, 16);
 
     const cellCenter = (col, row) => ({
       x: padX + col * cellW + Math.floor(cellW / 2),
@@ -134,9 +136,12 @@ export class AlgoDiagram {
         this._hLine(a.x, outX, a.y);
       } else {
         const b = cellCenter(layout[to][0], layout[to][1]);
-        // L-shaped polyline: horizontal then vertical (or vice versa).
+        // L-shaped polyline: horizontal then vertical. The L corner is
+        // covered by a small junction dot so the two 2px segments meet
+        // cleanly without a pixel notch.
         this._hLine(a.x, b.x, a.y);
         this._vLine(b.x, a.y, b.y);
+        this._junctionDot(b.x, a.y);
       }
     }
 
@@ -167,14 +172,22 @@ export class AlgoDiagram {
     const ctx = this.ctx;
     const xa = Math.min(x1, x2);
     const xb = Math.max(x1, x2);
-    ctx.fillRect(snap(xa), snap(y), xb - xa + 1, 1);
+    // 2-px-thick horizontal line — readable against the LCD-green base.
+    ctx.fillRect(snap(xa), snap(y), xb - xa + 1, 2);
   }
 
   _vLine(x, y1, y2) {
     const ctx = this.ctx;
     const ya = Math.min(y1, y2);
     const yb = Math.max(y1, y2);
-    ctx.fillRect(snap(x), snap(ya), 1, yb - ya + 1);
+    // 2-px-thick vertical line — matches _hLine.
+    ctx.fillRect(snap(x), snap(ya), 2, yb - ya + 1);
+  }
+
+  // Small 3x3 dot at L-junctions so the two 2px segments visibly meet.
+  _junctionDot(x, y) {
+    const ctx = this.ctx;
+    ctx.fillRect(snap(x) - 1, snap(y) - 1, 3, 3);
   }
 
   destroy() {

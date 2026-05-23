@@ -128,15 +128,22 @@ export class AdsrGraph {
     x += Math.round(wRelease);
     points.push([Math.min(this.w - PAD_X - 1, x), baseY]);
 
-    // Plot the polyline as 1px segments (Bresenham-style) for crisp 1-pixel
-    // pixel-art strokes — no antialiased curves.
+    // Plot the polyline. The trace is drawn in two passes so a phosphor
+    // "afterglow" sits one pixel below the bright trace, giving the curve
+    // weight without violating the no-anti-aliasing rule.
+    ctx.fillStyle = pal["lcd-pixel-hi"];
+    for (let i = 0; i < points.length - 1; ++i)
+      this._line(points[i][0], points[i][1] + 1, points[i + 1][0], points[i + 1][1] + 1, 1);
+
     ctx.fillStyle = pal["lcd-pixel"];
-    for (let i = 0; i < points.length - 1; ++i) {
-      this._line(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1]);
-    }
+    for (let i = 0; i < points.length - 1; ++i)
+      this._line(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], 2);
   }
 
-  _line(x0, y0, x1, y1) {
+  // Plot the line segment using Bresenham, but stamp a `thickness`-tall block
+  // at each step so the trace reads as a 2px-thick stroke. The afterglow
+  // pass calls this with thickness=1.
+  _line(x0, y0, x1, y1, thickness) {
     const ctx = this.ctx;
     let X0 = snap(x0), Y0 = snap(y0);
     const X1 = snap(x1), Y1 = snap(y1);
@@ -146,7 +153,7 @@ export class AdsrGraph {
     const sy = Y0 < Y1 ? 1 : -1;
     let err = dx + dy;
     while (true) {
-      ctx.fillRect(X0, Y0, 1, 1);
+      ctx.fillRect(X0, Y0, 1, thickness);
       if (X0 === X1 && Y0 === Y1) break;
       const e2 = 2 * err;
       if (e2 >= dy) { err += dy; X0 += sx; }

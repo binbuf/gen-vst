@@ -21,9 +21,10 @@ export class AlgoButtons {
     this.canvas = canvas;
     this.binding = binding;
 
-    // Size canvas to fit the full row plus a 2px ring border on each side.
-    const totalW = NUM_BUTTONS * BUTTON_W + (NUM_BUTTONS - 1) * GAP + 4;
-    const totalH = BUTTON_H + 4;
+    // Size canvas to fit the full row plus a 4px (= 2px ring on each side)
+    // border so the selected-ring stamp is not clipped at the row edges.
+    const totalW = NUM_BUTTONS * BUTTON_W + (NUM_BUTTONS - 1) * GAP + 8;
+    const totalH = BUTTON_H + 8;
     canvas.style.width = totalW + "px";
     canvas.style.height = totalH + "px";
 
@@ -46,8 +47,8 @@ export class AlgoButtons {
 
   _rectFor(i) {
     return {
-      x: 2 + i * (BUTTON_W + GAP),
-      y: 2,
+      x: 4 + i * (BUTTON_W + GAP),
+      y: 4,
       w: BUTTON_W,
       h: BUTTON_H,
     };
@@ -97,14 +98,14 @@ export class AlgoButtons {
       const labelY = r.y + Math.floor((r.h - 8) / 2);
       drawLabel(ctx, labelX, labelY, text, 8, pal["label"]);
 
-      // Selected: stamped red ring around the button (1px outline 1px outside
-      // the button rect). Drawn as 4 fills so it stays a hard square.
+      // Selected: stamped red ring 2px thick around the button — visibly
+      // brighter than a 1-pixel outline at small sizes.
       if (i === sel) {
         ctx.fillStyle = pal["select"];
-        ctx.fillRect(r.x - 1, r.y - 1, r.w + 2, 1);              // top
-        ctx.fillRect(r.x - 1, r.y + r.h, r.w + 2, 1);            // bottom
-        ctx.fillRect(r.x - 1, r.y - 1, 1, r.h + 2);              // left
-        ctx.fillRect(r.x + r.w, r.y - 1, 1, r.h + 2);            // right
+        ctx.fillRect(r.x - 2, r.y - 2, r.w + 4, 2);              // top
+        ctx.fillRect(r.x - 2, r.y + r.h, r.w + 4, 2);            // bottom
+        ctx.fillRect(r.x - 2, r.y - 2, 2, r.h + 4);              // left
+        ctx.fillRect(r.x + r.w, r.y - 2, 2, r.h + 4);            // right
       }
     }
   }

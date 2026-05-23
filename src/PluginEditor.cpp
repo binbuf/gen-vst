@@ -283,6 +283,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         .withOptionsFrom (aftertouchTargetRelay)
         .withOptionsFrom (voiceCountRelay)
         .withOptionsFrom (uiScaleRelay)
+        .withOptionsFrom (tooltipsEnabledRelay)
         // View 10 polyphony relays — names are stripped (`poly_mode`,
         // `mono_glide`, `unison_spread`); the attachments rebind on selectChannel.
         .withOptionsFrom (polyModeRelay)
@@ -623,11 +624,39 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             { completion (makeStatusVar ("part index required")); return; }
             const int n = juce::jlimit (0, PartManager::kNumParts - 1, (int) args[0]);
             selectedPart = n;
+            processor.setUiSelectedPart (n);  // persisted across project save/load
             rebuildFmAttachments (n);
             auto* obj = new juce::DynamicObject();
             obj->setProperty ("ok",   true);
             obj->setProperty ("part", n);
             completion (juce::var (obj));
+        });
+
+    // --- Editor UI state (persisted across DAW project save/load) ------------
+    // getInitialUiState: read once by the JS view at mount time. Returns the
+    // values restored from the plugin XML state so the UI lands on the same
+    // FM part + preset/import tab the user was on when the project was saved.
+    options = options.withNativeFunction ("getInitialUiState",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",           true);
+            obj->setProperty ("selectedPart", processor.uiSelectedPart());
+            obj->setProperty ("presetTab",    processor.uiPresetTab());
+            completion (juce::var (obj));
+        });
+
+    // setPresetTab: called by JS when the PRESETS / IMPORT tabs are toggled
+    // so the choice survives a project save. Mirror to the processor's
+    // uiPresetTabIndex which getStateInformation persists.
+    options = options.withNativeFunction ("setPresetTab",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isInt())
+            { completion (makeStatusVar ("tab index required")); return; }
+            const int t = (int) args[0];
+            processor.setUiPresetTab (t);
+            completion (makeStatusVar ({}));
         });
 
     // --- Section switch (FM / SQ / D) ---------------------------------------
@@ -699,6 +728,112 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         {
             processor.getMidiRouter().resetRouting();
             completion (makeStatusVar ({}));
+        });
+
+    // --- Reset to defaults ---------------------------------------------------
+    // Two scopes are exposed:
+    //  - resetCurrentPart: snap every FM parameter for the currently selected
+    //    part (operator + part + polyphony) back to its juce::AudioParameter
+    //    default and clear the active patch path. The relays' valueChangedEvent
+    //    then repaints every FM widget in one batch via the standard channel-
+    //    paging contract (05-ui-ux.md "FM channel paging").
+    //  - resetAllToDefaults: resets every per-part param across all 6 parts
+    //    AND the global / PSG / DAC parameters PLUS routing. Used by the
+    //    Settings modal's RESET ALL button.
+    //
+    // Both helpers walk the known apvts parameter IDs (PluginProcessor.cpp's
+    // createParameterLayout). Looking up by ID rather than dynamic_casting
+    // raw AudioProcessor::getParameters() keeps the dev-server gallery scratch
+    // params out of the reset, and survives a JUCE-API change to private
+    // members of RangedAudioParameter.
+    auto resetParam = [this] (const juce::String& id)
+    {
+        if (auto* p = processor.getValueTreeState().getParameter (id))
+            p->setValueNotifyingHost (p->getDefaultValue());
+    };
+
+    auto resetPartParams = [&resetParam] (int part)
+    {
+        for (int op = 0; op < kNumOps; ++op)
+            for (int i = 0; i < kNumOpParams; ++i)
+                resetParam (opParamIdForPart (kFmOpParamIds[(std::size_t) i], op, part));
+        for (int i = 0; i < kNumPartParams; ++i)
+            resetParam (partParamIdForPart (kFmPartParamIds[(std::size_t) i], part));
+        const juce::String suffix = "_part" + juce::String (part + 1);
+        resetParam ("poly_mode"    + suffix);
+        resetParam ("mono_glide"   + suffix);
+        resetParam ("unison_spread" + suffix);
+    };
+
+    options = options.withNativeFunction ("resetCurrentPart",
+        [this, resetPartParams] (const juce::Array<juce::var>&, Completion completion)
+        {
+            resetPartParams (selectedPart);
+            processor.getPatchBrowser().clearActivePatchPath (selectedPart);
+            completion (makeStatusVar ({}));
+        });
+
+    options = options.withNativeFunction ("resetAllToDefaults",
+        [this, resetParam, resetPartParams] (const juce::Array<juce::var>&, Completion completion)
+        {
+            // Per-part FM parameters across all 6 parts.
+            for (int p = 0; p < PartManager::kNumParts; ++p)
+                resetPartParams (p);
+
+            // Global controls.
+            resetParam ("master_gain");
+            resetParam ("bend_range");
+            resetParam ("vel_to_tl");
+            resetParam ("aftertouch_target");
+            resetParam ("voice_count");
+            resetParam ("ui_scale");
+
+            // PSG controls.
+            const juce::StringArray psgIds { "ch1", "ch2", "ch3", "noise" };
+            for (const auto& id : psgIds)
+            {
+                resetParam ("psg_vol_"  + id);
+                resetParam ("psg_pan_"  + id);
+                resetParam ("psg_bend_" + id);
+            }
+            resetParam ("psg_noise_type");
+            resetParam ("psg_noise_rate");
+            resetParam ("psg_noise_auto");
+            resetParam ("psg_mix");
+            resetParam ("psg_layer");
+
+            // DAC controls.
+            resetParam ("dac_enable");
+            resetParam ("dac_rate");
+            resetParam ("dac_mode");
+            resetParam ("dac_level");
+
+            // Routing + DAC sample + active patch paths.
+            processor.getMidiRouter().resetRouting();
+            processor.getDacPlayer().clearPcm();
+            for (int p = 0; p < PartManager::kNumParts; ++p)
+                processor.getPatchBrowser().clearActivePatchPath (p);
+
+            completion (makeStatusVar ({}));
+        });
+
+    // --- Active patch path query ---------------------------------------------
+    // The UI uses this after a selectChannel or a patchRootsChanged refresh to
+    // figure out which pinned list (Instruments / Presets / Import) currently
+    // holds the loaded patch and therefore which row should be highlighted.
+    options = options.withNativeFunction ("getActivePatchPath",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            const int part = (! args.isEmpty() && args[0].isInt())
+                                ? juce::jlimit (0, PartManager::kNumParts - 1,
+                                                 (int) args[0])
+                                : selectedPart;
+            const auto path = processor.getPatchBrowser().activePatchPath (part);
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",   true);
+            obj->setProperty ("path", path);
+            obj->setProperty ("part", part);
+            completion (juce::var (obj));
         });
 
     // --- DAC (Task 13 D view) ------------------------------------------------
@@ -802,8 +937,7 @@ void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
 {
     auto& browser = processor.getPatchBrowser();
     bool changed = false;
-    int  imported = 0;
-    int  folders  = 0;
+    int  imported = 0;     // patch files copied (from both file + folder drops)
     juce::StringArray errors;
 
     for (const auto& f : files)
@@ -811,10 +945,16 @@ void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
         const juce::File file (f);
         if (file.isDirectory())
         {
-            const auto id = browser.addCustomRoot (file.getFullPathName());
-            if (id.isEmpty())
-                errors.add ("Could not register folder: " + file.getFileName());
-            else { ++folders; changed = true; }
+            // Folder drop: recursively copy every .tfi/.vgi/.dmp inside the
+            // folder into the user-imported root so the patches appear in
+            // the IMPORT tab. This was previously addCustomRoot — registering
+            // a browser-only custom root made dropped patches invisible to
+            // the main UI's pinned lists. Users explicitly wanting a custom
+            // root use the Patch Browser's "Add Folder..." button instead.
+            const auto r = browser.importPatchFolder (file.getFullPathName());
+            imported += r.imported;
+            for (const auto& e : r.errors) errors.add (juce::String (e));
+            if (r.imported > 0) changed = true;
         }
         else
         {
@@ -833,18 +973,10 @@ void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
 
     if (! errors.isEmpty())
         emitNotify ("error", errors.joinIntoString ("; "));
-    else if (imported > 0 || folders > 0)
-    {
-        juce::String msg;
-        if (imported > 0) msg << "Imported " << imported << " patch"
-                              << (imported == 1 ? "" : "es");
-        if (folders > 0)
-        {
-            if (msg.isNotEmpty()) msg << "; ";
-            msg << "Added " << folders << " folder" << (folders == 1 ? "" : "s");
-        }
-        emitNotify ("info", msg);
-    }
+    else if (imported > 0)
+        emitNotify ("info",
+            juce::String ("Imported ") + juce::String (imported)
+                + " patch" + (imported == 1 ? "" : "es"));
 }
 
 GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& proc)
@@ -881,7 +1013,9 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
       voiceCountAttachment       (*proc.getValueTreeState().getParameter ("voice_count"),
                                   voiceCountRelay, proc.getValueTreeState().undoManager),
       uiScaleAttachment          (*proc.getValueTreeState().getParameter ("ui_scale"),
-                                  uiScaleRelay, proc.getValueTreeState().undoManager)
+                                  uiScaleRelay, proc.getValueTreeState().undoManager),
+      tooltipsEnabledAttachment  (*proc.getValueTreeState().getParameter ("tooltips_enabled"),
+                                  tooltipsEnabledRelay, proc.getValueTreeState().undoManager)
      #if GENVST_DEV_SERVER
       , galleryKnobAttachment    (*proc.getValueTreeState().getParameter ("gallery_knob"),
                                   galleryKnobRelay,
@@ -912,12 +1046,16 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
     setOpaque (true);
     addAndMakeVisible (webView);
 
-    // Initial FM-part binding: every FM relay attaches to part 0 (CHANNELS
-    // button 1 in the layout). selectChannel rebuilds these on every part
-    // switch.
+    // Initial FM-part binding: pick up the persisted UI state so a project
+    // reload returns to the user's last-edited part. State defaults to part 0
+    // on a fresh instance; setStateInformation populates uiSelectedPart()
+    // when restoring a saved project. selectChannel rebuilds these on every
+    // subsequent part switch.
     opAttachments.resize ((std::size_t) (kNumOps * kNumOpParams));
     partAttachments.resize ((std::size_t) kNumPartParams);
-    rebuildFmAttachments (0);
+    selectedPart = juce::jlimit (0, PartManager::kNumParts - 1,
+                                 processor.uiSelectedPart());
+    rebuildFmAttachments (selectedPart);
 
     // Per-PSG-channel attachments — one psg_vol_*, psg_pan_*, psg_bend_*
     // per channel. Heap-pinned to match the relays' NON_MOVEABLE storage.
@@ -954,12 +1092,25 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
     webView.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
    #endif
 
-    setSize (960, 560);   // fixed window — ADR-0007
+    setSize (960, 640);   // fixed window — ADR-0007
+
+    // Cross-instance refresh: if another plugin instance imported / saved
+    // patches into the shared user-roots while this instance's editor was
+    // closed, our PatchBrowser still holds the stale tree. Re-scan once here
+    // so the lists are correct from the first paint. The mtime-poll Timer
+    // tracks subsequent changes while the editor is open.
+    {
+        auto& browser = processor.getPatchBrowser();
+        browser.rescanWritableRoots();
+        lastSavedMtime    = browser.userSavedRootMtime();
+        lastImportedMtime = browser.userImportedRootMtime();
+    }
 
     // ~30 Hz telemetry pump (08-ui-views.md "Header meter bay"). The interval
     // is 33 ms — close enough to 30 Hz; the audio thread runs an independent
     // VU release envelope so an occasional missed tick doesn't visibly freeze
-    // the meter.
+    // the meter. Doubles as the cadence for the cross-instance mtime poll,
+    // which runs every ~60 ticks (= ~2 s) via mtimePollTickCounter.
     startTimerHz (30);
 }
 
@@ -1106,4 +1257,29 @@ void GenVstAudioProcessorEditor::timerCallback()
     {
         emitNotify (n.level, n.message);
     });
+
+    // Every ~2 s (60 timer ticks at 30 Hz), check whether another plugin
+    // instance has imported / saved patches into the shared user roots and
+    // refresh our PatchBrowser cache if so. See pollWritableRootsForExternalChanges().
+    if (++mtimePollTickCounter >= 60)
+    {
+        mtimePollTickCounter = 0;
+        pollWritableRootsForExternalChanges();
+    }
+}
+
+void GenVstAudioProcessorEditor::pollWritableRootsForExternalChanges()
+{
+    auto& browser = processor.getPatchBrowser();
+    const auto savedMtime    = browser.userSavedRootMtime();
+    const auto importedMtime = browser.userImportedRootMtime();
+
+    if (savedMtime == lastSavedMtime && importedMtime == lastImportedMtime)
+        return;   // unchanged since last poll
+
+    lastSavedMtime    = savedMtime;
+    lastImportedMtime = importedMtime;
+
+    if (browser.rescanWritableRoots())
+        emitPatchRootsChanged();
 }

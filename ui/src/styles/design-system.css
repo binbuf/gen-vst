@@ -19,15 +19,10 @@
   font-display: block;
 }
 
-@font-face {
-  font-family: "Segment7";
-  src:
-    url("/7-segment/7segment.woff") format("woff"),
-    url("/7-segment/7segment.ttf") format("truetype");
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
+/* The Segment7 7-segment font was removed once the patch-name display moved to
+ * the 5x7 dot-matrix renderer (a 7-segment alphabet renders ambiguously — T
+ * collapses onto 7, B onto 8). The font files remain in extern/fonts/ for
+ * possible future use; nothing in the build loads them. */
 
 /* ---- Palette (docs/genny-ui.md) ------------------------------------------- */
 
@@ -43,6 +38,7 @@
   --lcd-base-hi: #4a6b38;    /* lighter olive band */
   --lcd-pixel: #a8d878;      /* phosphor-green active pixel */
   --lcd-pixel-hi: #c8e89a;   /* bright phosphor highlight */
+  --lcd-text-dark: #1a2818;  /* dark olive ink for labels printed on the LCD */
 
   /* Red LED segment / dot-matrix readouts */
   --led-base: #2a0808;       /* dark red-black segment base */
@@ -84,8 +80,8 @@
 html,
 body {
   width: 960px;
-  height: 560px;
-  overflow: hidden; /* fixed 960x560 window — ADR-0007 */
+  height: 640px;
+  overflow: hidden; /* fixed 960x640 window — ADR-0007 */
   background: var(--chassis);
   color: var(--label);
   image-rendering: pixelated; /* no anti-aliased upscaling */

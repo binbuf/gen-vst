@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=960, height=560, initial-scale=1" />
+    <meta name="viewport" content="width=960, height=640, initial-scale=1" />
     <title>Gen VST</title>
   </head>
   <body>
@@ -11,17 +11,17 @@
       <header id="header">
         <canvas id="wordmark" width="128" height="36"></canvas>
         <div class="meter-bay">
-          <canvas id="vu-meter" class="bevel-inset" width="56" height="36"></canvas>
-          <canvas id="scope" class="bevel-inset" width="160" height="36"></canvas>
+          <canvas id="vu-meter" class="bevel-inset" width="56" height="36" data-tip="STEREO OUTPUT LEVEL"></canvas>
+          <canvas id="scope" class="bevel-inset" width="160" height="36" data-tip="MIXED OUTPUT WAVEFORM"></canvas>
         </div>
         <div class="header-right">
-          <canvas id="seg-display" class="bevel-inset" width="536" height="44"></canvas>
+          <canvas id="seg-display" class="bevel-inset" width="536" height="44" data-tip="CURRENT PATCH NAME"></canvas>
         </div>
         <div class="header-right-bottom">
           <canvas id="voice-leds"></canvas>
           <canvas id="clip-led"></canvas>
         </div>
-        <canvas id="gear" width="18" height="18"></canvas>
+        <canvas id="gear" width="18" height="18" data-tip="OPEN SETTINGS"></canvas>
       </header>
 
       <!-- =========================== MIDDLE ============================= -->
@@ -32,18 +32,18 @@
             <div class="panel-header"><span class="label">LFO &middot; ALG</span></div>
             <div class="panel-body">
               <div class="lfo-row">
-                <div class="lfo-cell">
-                  <canvas id="lfo-knob" class="knob" width="28" height="28"></canvas>
+                <div class="lfo-cell" data-tip="LFO RATE (GLOBAL LOW FREQ OSCILLATOR)">
+                  <canvas id="lfo-knob" class="knob" width="32" height="32"></canvas>
                   <canvas id="lfo-readout" class="led" width="36" height="18"></canvas>
                   <span class="label">LFO</span>
                 </div>
-                <div class="lfo-cell">
-                  <canvas id="ams-knob" class="knob" width="28" height="28"></canvas>
+                <div class="lfo-cell" data-tip="AMPLITUDE MODULATION SENSITIVITY">
+                  <canvas id="ams-knob" class="knob" width="32" height="32"></canvas>
                   <canvas id="ams-readout" class="led" width="36" height="18"></canvas>
                   <span class="label">AMS</span>
                 </div>
-                <div class="lfo-cell">
-                  <canvas id="fms-knob" class="knob" width="28" height="28"></canvas>
+                <div class="lfo-cell" data-tip="FREQUENCY MODULATION SENSITIVITY">
+                  <canvas id="fms-knob" class="knob" width="32" height="32"></canvas>
                   <canvas id="fms-readout" class="led" width="36" height="18"></canvas>
                   <span class="label">FMS</span>
                 </div>
@@ -51,16 +51,16 @@
 
               <div class="algo-block">
                 <span class="label">ALGORITHM</span>
-                <div class="algo-buttons-row">
+                <div class="algo-buttons-row" data-tip="FM ALGORITHM 1..8 (CARRIERS HIGHLIGHTED)">
                   <canvas id="algo-buttons"></canvas>
                 </div>
                 <div class="algo-bottom">
-                  <div class="feedback-cell">
-                    <canvas id="fb-knob" class="knob" width="36" height="36"></canvas>
+                  <div class="feedback-cell" data-tip="OPERATOR 1 SELF FEEDBACK 0..7 (0=OFF)">
+                    <canvas id="fb-knob" class="knob" width="40" height="40"></canvas>
                     <canvas id="fb-readout" class="led" width="36" height="18"></canvas>
                     <span class="label">FB</span>
                   </div>
-                  <canvas id="algo-diagram" class="bevel-inset" width="146" height="70"></canvas>
+                  <canvas id="algo-diagram" class="bevel-inset" width="160" height="88" data-tip="FM OPERATOR ROUTING DIAGRAM"></canvas>
                 </div>
               </div>
             </div>
@@ -72,9 +72,9 @@
           <div class="panel bevel-raised">
             <div class="panel-header"><span class="label">Instruments</span></div>
             <div class="panel-body">
-              <canvas id="instruments-list" width="268" height="210"></canvas>
+              <canvas id="instruments-list" width="268" height="210" data-tip="FACTORY INSTRUMENT PATCHES (CLICK TO LOAD)"></canvas>
               <div class="center-controls">
-                <canvas id="section-pills" width="120" height="16"></canvas>
+                <canvas id="section-pills" width="120" height="16" data-tip="SECTION: FM / SQ (PSG) / D (DAC)"></canvas>
                 <span class="center-label">Channels</span>
                 <div id="channels-row"></div>
 
@@ -83,17 +83,17 @@
                   <span>TRPS</span><div class="placeholder">0 0</div>
                   <span>RNG</span><div class="placeholder">0&ndash;127</div>
                   <span>DEL</span><div class="placeholder">0</div>
-                  <span>PAN</span><canvas id="pan-slider" width="90" height="14"></canvas>
+                  <span>PAN</span><canvas id="pan-slider" width="90" height="14" data-tip="STEREO PAN (L / BOTH / R)"></canvas>
                 </div>
 
                 <!-- View 10 — per-part polyphony. The mode selector is always
                      visible; GLIDE shows only in MONO, SPREAD only in UNISON. -->
                 <div class="poly-group">
-                  <span class="poly-label-mode">POLY</span><canvas id="poly-mode-pills" width="120" height="14"></canvas>
-                  <span class="poly-label-glide">GLIDE</span><canvas id="mono-glide-pills" width="120" height="14"></canvas>
+                  <span class="poly-label-mode">POLY</span><canvas id="poly-mode-pills" width="120" height="14" data-tip="POLYPHONY MODE (PER PART)"></canvas>
+                  <span class="poly-label-glide">GLIDE</span><canvas id="mono-glide-pills" width="120" height="14" data-tip="MONO MODE: RETRIGGER OR LEGATO"></canvas>
                   <span class="poly-label-spread">SPREAD</span>
                   <div class="spread-row">
-                    <canvas id="unison-spread-slider" width="90" height="14"></canvas>
+                    <canvas id="unison-spread-slider" width="90" height="14" data-tip="UNISON DETUNE SPREAD IN CENTS"></canvas>
                     <canvas id="unison-spread-readout" class="led" width="28" height="14"></canvas>
                   </div>
                 </div>
@@ -109,7 +109,7 @@
               <canvas id="preset-tabs" width="160" height="16"></canvas>
             </div>
             <div class="panel-body">
-              <canvas id="preset-list" width="256" height="220"></canvas>
+              <canvas id="preset-list" width="256" height="220" data-tip="USER PATCHES (CLICK TO LOAD)"></canvas>
             </div>
           </div>
         </section>

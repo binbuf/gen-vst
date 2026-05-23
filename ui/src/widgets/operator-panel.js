@@ -26,17 +26,17 @@ import { LedReadout } from "./led-readout.js";
 import { AdsrGraph } from "./adsr-graph.js";
 
 const KNOB_LABELS = [
-  ["ATK", "ar"],
-  ["DR1", "dr"],
-  ["SUS", "sl"],
-  ["DR2", "sr"],
-  ["RR",  "rr"],
+  ["ATK", "ar", "ATTACK RATE 0..31"],
+  ["DR1", "dr", "FIRST DECAY RATE 0..31"],
+  ["SUS", "sl", "SUSTAIN LEVEL 0..15 (0=PEAK)"],
+  ["DR2", "sr", "SECOND DECAY RATE 0..31 (0=HOLD)"],
+  ["RR",  "rr", "RELEASE RATE 0..15"],
 ];
 
 const SLIDER_LABELS = [
-  ["DETUNE",    "dt",  6,    false],
-  ["FREQ",      "mul", 15,   false],
-  ["ENV SCALE", "ks",  3,    false],
+  ["DETUNE",    "dt",  6,    false, "OPERATOR DETUNE 0..6"],
+  ["FREQ",      "mul", 15,   false, "FREQUENCY MULTIPLIER 0..15"],
+  ["ENV SCALE", "ks",  3,    false, "ENVELOPE KEY SCALING 0..3"],
 ];
 
 export class OperatorPanel {
@@ -91,15 +91,16 @@ export class OperatorPanel {
     const knobRow = document.createElement("div");
     knobRow.className = "op-knob-row bevel-inset";
     host.appendChild(knobRow);
-    for (const [labelText, paramKey] of KNOB_LABELS) {
+    for (const [labelText, paramKey, tip] of KNOB_LABELS) {
       const col = document.createElement("div");
       col.className = "op-knob-col";
+      if (tip) col.dataset.tip = tip;
       const c = document.createElement("canvas");
       c.className = "op-knob";
-      c.style.width = "30px";
-      c.style.height = "30px";
-      c.width = 30;
-      c.height = 30;
+      c.style.width = "34px";
+      c.style.height = "34px";
+      c.width = 34;
+      c.height = 34;
       col.appendChild(c);
       const lab = document.createElement("span");
       lab.className = "label";
@@ -119,8 +120,8 @@ export class OperatorPanel {
     sliders.className = "op-sliders";
     host.appendChild(sliders);
 
-    for (const [labelText, paramKey, max, signed] of SLIDER_LABELS) {
-      const row = this._buildSliderRow(labelText, paramKey, max, signed);
+    for (const [labelText, paramKey, max, signed, tip] of SLIDER_LABELS) {
+      const row = this._buildSliderRow(labelText, paramKey, max, signed, tip);
       sliders.appendChild(row);
     }
 
@@ -161,9 +162,10 @@ export class OperatorPanel {
     }
   }
 
-  _buildSliderRow(labelText, paramKey, max, signed) {
+  _buildSliderRow(labelText, paramKey, max, signed, tip) {
     const row = document.createElement("div");
     row.className = "op-slider-row";
+    if (tip) row.dataset.tip = tip;
 
     const lab = document.createElement("span");
     lab.className = "label";

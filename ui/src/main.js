@@ -16,6 +16,7 @@ import { mountSqView }    from "./views/sq-view.js";
 import { mountDView }     from "./views/d-view.js";
 import { openSettingsModal } from "./modals/settings.js";
 import { NotificationToastHost } from "./widgets/notification-toast.js";
+import { installTooltips } from "./widgets/tooltip.js";
 
 function mount() {
   const chassis = document.getElementById("chassis");
@@ -54,6 +55,11 @@ function mount() {
       message: event.message ?? "",
     });
   });
+
+  // Global hover tooltips — listens for elements with data-tip attributes.
+  // The toggle in Settings flips the tooltips_enabled apvts boolean, which
+  // this module subscribes to.
+  installTooltips();
 
   // Signal the editor that the UI has mounted. JUCE injects window.__JUCE__
   // before any resource loads; check_native_interop.js provides a no-op

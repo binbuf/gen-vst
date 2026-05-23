@@ -8,6 +8,7 @@ A pixel-perfect skeuomorphic emulation of late-80s/early-90s rackmount hardware,
 - **Panel insets:** very dark gray `#0a0a0a` with 1px lighter top/left bevels (`#2a2a2a`) and 1px darker bottom/right bevels for a subtle embossed look
 - **LCD screen base:** muted olive-green `#3d5a2e` → `#4a6b38`
 - **LCD active pixels:** bright phosphor green `#a8d878` to `#c8e89a`
+- **LCD label text (printed on the LCD):** dark olive ink `#1a2818` — used for labels that sit directly on the green LCD background (the center column's routing strip).
 - **LED segment display base:** very dark red-black `#2a0808`
 - **LED segment active:** vivid red `#ff2020` with a slight bloom
 - **Knob body:** mid blue `#4a78c8` with a darker blue ring `#1e3a6e` and a small white/cyan indicator dot
@@ -17,10 +18,10 @@ A pixel-perfect skeuomorphic emulation of late-80s/early-90s rackmount hardware,
 - **Sliders:** thin dark groove with a chunky blue rectangular cap
 
 ## Typography
-One bitmap font everywhere, roughly 8px tall, all caps for labels. Two specialty fonts: a **7-segment LED font** for the big patch-name display, and a **dot-matrix LED font** (5x7) for small red numeric readouts next to knobs. The "GENNY" wordmark is a custom chunky pixel logotype with a beveled gold gradient and a single red underline stroke.
+One bitmap font everywhere, roughly 8px tall, all caps for labels. One specialty system: a **5x7 dot-matrix LED renderer** drawn directly to canvas (no font file) — used for both the small red numeric readouts next to knobs *and* the large red patch-name display in the header. The dot-matrix renderer carries the full A–Z + 0–9 alphabet so patch names with letters render unambiguously (a 7-segment font would collapse T onto 7, B onto 8, etc.). The "GENNY" wordmark is a custom chunky pixel logotype with a beveled gold gradient and a single red underline stroke.
 
 ## Layout
-A fixed-size window roughly 960×560px, split into four regions:
+A fixed-size window of 960×640px, split into four regions:
 
 **Top header bar (full width, ~80px tall)** — logo on the left, a tiny green VU meter labeled "TRUE STEREO" next to it, and a wide red 7-segment patch-name display spanning the right ~60%. The display has small decorative bracket glyphs flanking the patch name ("GADGET BASS 01").
 

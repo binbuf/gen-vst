@@ -6,7 +6,7 @@
 
 ## Context
 
-[ADR-0007](0007-fixed-window-size.md) fixes the plugin window at 960×560 and
+[ADR-0007](0007-fixed-window-size.md) fixes the plugin window at 960×640 and
 states the WebView scales only by **integer** factors, because the pixel-art UI
 is authored on a 1× grid and fractional scaling breaks pixel-snapping. It left
 *how the UI behaves on a display whose scale factor is fractional* as an open
@@ -37,7 +37,7 @@ undefined appearance on a default Windows laptop.
 ## Consequences
 
 - **Extends** [ADR-0007](0007-fixed-window-size.md); ADR-0007 remains in force
-  (960×560 base size, integer-only scaling) and is **not** superseded.
+  (960×640 base size, integer-only scaling) and is **not** superseded.
 - Resolves [05-ui-ux.md](../05-ui-ux.md) Open Question #1.
 - On a 150% Windows display the plugin renders at 1× or 2× (whichever is nearer),
   so it appears somewhat smaller or larger than a fractionally-scaled native app.

@@ -8,9 +8,9 @@
  * indicator rather than flickering at the ~30 Hz tick rate.
  */
 
-import { setupPixelCanvas, palette } from "./pixel.js";
+import { setupPixelCanvas, palette, drawBevel } from "./pixel.js";
 
-const SIZE = 6;
+const SIZE = 8;
 const DECAY_MS = 1000;   // 08-ui-views.md "lights and then decays over ~1 s"
 
 export class ClipLed {
@@ -79,5 +79,6 @@ export class ClipLed {
 
     ctx.fillStyle = fill;
     ctx.fillRect(1, 1, SIZE, SIZE);
+    drawBevel(ctx, 1, 1, SIZE, SIZE, false);
   }
 }

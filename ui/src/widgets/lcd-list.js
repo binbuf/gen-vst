@@ -31,6 +31,9 @@ export class LcdList {
     this.h = setup.height;
 
     this.scrollY = 0;
+    // selected < 0 means "no row highlighted" — used by the FM view to ensure
+    // only one of Instruments / Presets shows an inverse-video row at any
+    // moment (the active patch lives in exactly one of those roots).
     this.selected = options.selected ?? 0;
 
     canvas.addEventListener("click", e => this._onClick(e));
@@ -65,6 +68,14 @@ export class LcdList {
     this.items = items;
     this.selected = selectedIndex;
     this.scrollY = 0;
+    this.render();
+  }
+
+  // Update only the highlighted row (-1 = no highlight). Used to coordinate
+  // selection between sibling lists without re-populating items.
+  setSelected(index) {
+    this.selected = (typeof index === "number") ? index : -1;
+    if (this.selected >= 0) this._ensureSelectedVisible();
     this.render();
   }
 
@@ -159,7 +170,7 @@ export class LcdList {
     for (let i = top; i < Math.min(this.items.length, top + rowsVisible); ++i) {
       const item = this.items[i];
       const y = PAD_TOP + i * ROW_H - this.scrollY;
-      const isSel = i === this.selected;
+      const isSel = (this.selected >= 0) && i === this.selected;
 
       if (isSel) {
         // Inverse-video selection — phosphor-green fill, dark-LCD text.

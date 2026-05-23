@@ -468,6 +468,57 @@ juce::String PatchBrowser::activePatchPath (int part) const
     return activePaths[(std::size_t) part];
 }
 
+void PatchBrowser::clearActivePatchPath (int part)
+{
+    if (part < 0 || part >= PartManager::kNumParts)
+        return;
+    const juce::ScopedLock lk (activePathLock);
+    activePaths[(std::size_t) part] = juce::String{};
+}
+
+bool PatchBrowser::rescanWritableRoots()
+{
+    bool changed = false;
+    for (auto& r : rootList)
+    {
+        if (! r) continue;
+        if (r->kind != PatchRootKind::UserSaved
+         && r->kind != PatchRootKind::UserImported)
+            continue;
+        if (r->folder == nullptr) continue;
+
+        const int prevCount = r->folder->patchCount;
+        r->folder->scanned  = false;
+        r->folder->subfolders.clear();
+        r->folder->patches.clear();
+        scanImmediateChildren (*r->folder);
+        if (r->folder->patchCount != prevCount)
+            changed = true;
+    }
+
+    if (changed)
+    {
+        // Background search index is stale; schedule a rebuild on the worker
+        // thread (matches the post-import path).
+        indexBuilt.store (false, std::memory_order_release);
+        if (isThreadRunning()) notify();
+        else                   startThread (juce::Thread::Priority::low);
+    }
+    return changed;
+}
+
+std::int64_t PatchBrowser::userSavedRootMtime() const
+{
+    const juce::File dir (pathString (resolveUserSavedRoot()));
+    return dir.exists() ? dir.getLastModificationTime().toMilliseconds() : 0;
+}
+
+std::int64_t PatchBrowser::userImportedRootMtime() const
+{
+    const juce::File dir (pathString (resolveUserImportedRoot()));
+    return dir.exists() ? dir.getLastModificationTime().toMilliseconds() : 0;
+}
+
 // =============================================================================
 // Factory patches
 // =============================================================================
@@ -557,6 +608,59 @@ std::string PatchBrowser::importPatchFile (const juce::String& sourcePath)
     if (isThreadRunning()) notify();
     else                   startThread (juce::Thread::Priority::low);
     return {};
+}
+
+PatchBrowser::FolderImportResult
+PatchBrowser::importPatchFolder (const juce::String& sourcePath)
+{
+    FolderImportResult result {};
+    const fs::path root { sourcePath.toRawUTF8() };
+    std::error_code ec;
+    if (! fs::is_directory (root, ec))
+    {
+        result.errors.push_back ("source is not a directory: "
+                                 + sourcePath.toStdString());
+        return result;
+    }
+
+    const auto importedFs = resolveUserImportedRoot();
+    fs::create_directories (importedFs, ec);
+
+    // Recursive walk; collect patch files first so we can guarantee the index
+    // rebuild + folder rescan run exactly once at the end.
+    for (auto it = fs::recursive_directory_iterator (root, ec);
+         it != fs::recursive_directory_iterator{};
+         it.increment (ec))
+    {
+        if (ec) { ec.clear(); continue; }
+        const auto& entry = *it;
+        if (! entry.is_regular_file (ec)) { ec.clear(); continue; }
+        if (! isPatchExtension (entry.path())) { ++result.skipped; continue; }
+
+        const fs::path dest = importedFs / entry.path().filename();
+        std::error_code copyEc;
+        fs::copy_file (entry.path(), dest,
+                       fs::copy_options::overwrite_existing, copyEc);
+        if (copyEc)
+            result.errors.push_back ("copy failed for "
+                + entry.path().filename().string() + ": " + copyEc.message());
+        else
+            ++result.imported;
+    }
+
+    if (result.imported > 0)
+    {
+        if (auto* importedRoot = findFolderByPath (pathString (importedFs)))
+        {
+            importedRoot->scanned = false;
+            scanImmediateChildren (*importedRoot);
+        }
+        indexBuilt.store (false, std::memory_order_release);
+        if (isThreadRunning()) notify();
+        else                   startThread (juce::Thread::Priority::low);
+    }
+
+    return result;
 }
 
 std::string PatchBrowser::deletePatchFile (const juce::String& absolutePath)

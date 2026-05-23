@@ -189,6 +189,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         "Velocity -> Carrier TL",
         true));
 
+    // UI preference — hover tooltips on/off. Persisted with the rest of the
+    // state so the user's preference survives across sessions even though it
+    // doesn't affect the audio path.
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "tooltips_enabled", 1 },
+        "Tooltips",
+        true));
+
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "aftertouch_target", 1 },
         "Aftertouch Target",

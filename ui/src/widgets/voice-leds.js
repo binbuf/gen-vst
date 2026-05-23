@@ -8,11 +8,11 @@
  * doesn't cost an unnecessary canvas fill every tick.
  */
 
-import { setupPixelCanvas, palette } from "./pixel.js";
+import { setupPixelCanvas, palette, drawBevel } from "./pixel.js";
 
 const NUM_VOICES = 16;
-const LED_SIZE = 4;
-const GAP = 1;
+const LED_SIZE = 6;
+const GAP = 2;
 
 export class VoiceLeds {
   constructor(canvas) {
@@ -46,8 +46,12 @@ export class VoiceLeds {
     for (let i = 0; i < NUM_VOICES; ++i) {
       const x = i * (LED_SIZE + GAP);
       const lit = (this.mask >> i) & 1;
-      ctx.fillStyle = lit ? pal["lcd-pixel"] : pal["lcd-base-hi"];
+      // Lit LEDs use the bright phosphor; unlit LEDs use the dim olive base
+      // and pick up a 1px inset bevel so the row reads as a panel of
+      // physical indicators rather than a flat strip of dots.
+      ctx.fillStyle = lit ? pal["lcd-pixel-hi"] : pal["lcd-base"];
       ctx.fillRect(x, 1, LED_SIZE, LED_SIZE);
+      drawBevel(ctx, x, 1, LED_SIZE, LED_SIZE, false);
     }
   }
 }

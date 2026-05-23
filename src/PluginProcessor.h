@@ -165,6 +165,23 @@ public:
     // patches survive instead of being clobbered by the dev fallback.
     bool wasStateRestored() const noexcept { return stateRestored; }
 
+    // Editor UI selection state. Persisted across DAW project save/load so
+    // reopening the project returns the user to the same FM channel + tab
+    // they last edited. Written by the editor on UI events; written by the
+    // PluginState restore path; read by a freshly-mounted editor.
+    // The state isn't audio-affecting, so non-atomic int is fine — these
+    // are only touched on the message thread.
+    int  uiSelectedPart() const noexcept { return uiSelectedPartIndex; }
+    void setUiSelectedPart (int n) noexcept
+    {
+        if (n >= 0 && n < PartManager::kNumParts) uiSelectedPartIndex = n;
+    }
+    int  uiPresetTab() const noexcept { return uiPresetTabIndex; }
+    void setUiPresetTab (int t) noexcept
+    {
+        if (t == 0 || t == 1) uiPresetTabIndex = t;
+    }
+
 private:
     // Store `patch` on `part` and push its values into the apvts parameter
     // tree. Message thread only — uses setValueNotifyingHost.
@@ -296,6 +313,12 @@ private:
     std::mutex                       pendingNotificationsMutex;
     PendingStateRestore              pendingStateRestore;
     bool                             stateRestored = false;
+
+    // Editor UI selection state (message-thread only). Persisted with the
+    // rest of the plugin state so reopening the project restores the user's
+    // last-edited FM channel + preset/import tab choice.
+    int                              uiSelectedPartIndex = 0;
+    int                              uiPresetTabIndex    = 0;   // 0 = PRESETS, 1 = IMPORT
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

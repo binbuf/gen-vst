@@ -57,7 +57,7 @@ is the authoritative visual spec. Summary of what is adopted:
 
 ### Layout
 
-Fixed window, **960 × 560 px**, no resize for the foreseeable future (the pixel-art
+Fixed window, **960 × 640 px**, no resize for the foreseeable future (the pixel-art
 design assumes a fixed grid). Four regions, per `docs/genny-ui.md`:
 
 ```
@@ -92,7 +92,7 @@ texture files). Every pixel on screen is produced one of two ways:
   See the Component Inventory below.
 
 **No SVG.** SVG anti-aliases by default and works against the pixel-snapped look;
-canvas + CSS cover every case. **No WebGL** — Canvas 2D is sufficient at 960×560.
+canvas + CSS cover every case. **No WebGL** — Canvas 2D is sufficient at 960×640.
 
 The only binary assets bundled with the web build are **fonts** (see *Fonts* below).
 
@@ -140,11 +140,17 @@ and are pulled into the Vite web build (then embedded in the release bundle):
 | Style | Source | How rendered |
 |-------|--------|--------------|
 | Label font (8px, all-caps) | **Press Start 2P** — `extern/fonts/press-start-2p/` (SIL OFL) | CSS `@font-face`, used at 8px / 16px only — never fractional sizes |
-| 7-segment patch display | **torinak 7-segment** — `extern/fonts/7-segment/` (SIL OFL, from torinak.com) | CSS `@font-face`; the `seg-display` canvas widget renders text in this face |
-| 5×7 dot-matrix LED readouts | *No font* — built-in glyph table (see *5×7 Dot-Matrix Readouts* below) | Canvas primitives |
+| 5×7 dot-matrix LED readouts + patch-name display | *No font* — built-in glyph table (see *5×7 Dot-Matrix Readouts* below) | Canvas primitives |
 
 The header **"GEN VST" wordmark** (beveled gold logotype, red underline) is **canvas-
 drawn** from a small glyph definition — consistent with the no-image-assets rule.
+
+The header **patch-name display** is also rendered with the 5×7 dot-matrix system,
+not a 7-segment font: a 7-segment alphabet collapses letters onto digit shapes
+(T → 7, B → 8), so a real letter-grid is required for patch names containing
+alphabetic characters. The torinak 7-segment font (formerly listed here) was
+dropped during MVP polish; its files remain in `extern/fonts/` for future use
+but are not loaded by `design-system.css`.
 
 ### 5×7 Dot-Matrix Readouts
 
@@ -158,17 +164,20 @@ font's Unicode coverage pure overhead. This keeps all "LED" output (this widget 
 
 **Glyph table.** A built-in JS table maps each supported character to a 5-wide ×
 7-tall boolean bitmap, stored as 7 row values of 5 bits each (`0bXXXXX` per row, MSB
-= leftmost dot). Supported glyphs are exactly what the readouts can display:
+= leftmost dot). Supported glyphs:
 
 ```
-digits  0 1 2 3 4 5 6 7 8 9
-letters O F            (for "OFF")
-symbols -              (negative values)
-blank   ' '            (all dots unlit)
+digits   0 1 2 3 4 5 6 7 8 9
+letters  A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+symbols  - . : _ [ ] /
+blank    ' '
 ```
 
-Any value the UI cannot map to these glyphs is a bug in the calling widget, not a
-fallback case — readouts only ever show short numerics, `OFF`, or signed numbers.
+The small numeric LED readouts only ever consume the digit / `OFF` / `-` subset;
+the alphabetic glyphs exist for the header patch-name display, which calls
+`drawDotMatrixText()` at a larger dot pitch to fill the 44 px header readout
+(see `widgets/seg-display.js`). Any value the UI cannot map to these glyphs is
+a bug in the calling widget, not a fallback case.
 
 **Geometry.** Two named constants, chosen so dots stay pixel-snapped at every
 integer window scale (`DOT_PITCH > DOT_SIZE` gives the inter-dot gap):
@@ -238,7 +247,7 @@ UI depends on; the editor implementation itself is a later doc/iteration.
 ### Editor host
 
 `GenVstAudioProcessorEditor` owns a single `juce::WebBrowserComponent` sized to the
-whole 960×560 window. The browser is configured (`WebBrowserComponent::Options`) with:
+whole 960×640 window. The browser is configured (`WebBrowserComponent::Options`) with:
 - `withNativeIntegrationEnabled()` — injects the `juce` JS module (`window.__JUCE__`).
 - `withResourceProvider(...)` — serves the embedded web bundle in release builds.
 - Parameter **relays** registered via `withOptionsFrom(...)`.

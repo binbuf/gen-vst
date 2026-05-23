@@ -178,6 +178,25 @@ public:
     // wired in by Task 06's PC handler). Exposed for Task 16's state save.
     juce::String activePatchPath (int part) const;
 
+    // Clear the recorded active patch path for `part`. Used by the
+    // resetCurrentPart / resetAllToDefaults native functions so that after a
+    // reset the UI does not still show "this part is on patch X".
+    void clearActivePatchPath (int part);
+
+    // Re-scan the user-saved + user-imported roots from disk. Used by the
+    // cross-instance refresh path (PluginEditor mtime-poll Timer) so an
+    // import done in plugin instance A propagates to instance B without the
+    // user having to reopen the editor. Returns true if any root's
+    // patchCount differs from the cached value (i.e. files were added or
+    // removed by some other process / instance). Message thread only.
+    bool rescanWritableRoots();
+
+    // Last-modified time for the user-saved / user-imported root directories
+    // (milliseconds since epoch). 0 if the directory does not exist. Used by
+    // the editor's mtime poll to detect changes from other instances cheaply.
+    std::int64_t userSavedRootMtime() const;
+    std::int64_t userImportedRootMtime() const;
+
     // -------------------------------------------------------------------------
     // Audio-thread queue drain
     // -------------------------------------------------------------------------
@@ -234,6 +253,20 @@ public:
     // drag-and-drop import path. Returns empty on success or an error string
     // on failure.
     std::string importPatchFile (const juce::String& sourcePath);
+
+    // Result of a recursive folder import.
+    struct FolderImportResult
+    {
+        int          imported = 0;       // .tfi/.vgi/.dmp files copied
+        int          skipped  = 0;       // non-patch files encountered
+        std::vector<std::string> errors; // per-file copy failures
+    };
+
+    // Recursively copy every .tfi/.vgi/.dmp file under `sourcePath` into the
+    // user-imported root, preserving filenames (no directory hierarchy is
+    // re-created). Non-patch files are silently skipped. Returns counts +
+    // per-file errors; never throws.
+    FolderImportResult importPatchFolder (const juce::String& sourcePath);
 
     // Write `patch` to `destinationPath`, format selected by extension
     // (`.tfi` -> TFI, `.vgi` -> VGI). Used by the exportPatch native function.

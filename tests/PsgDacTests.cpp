@@ -1,7 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <thread>
+#include <vector>
 
 #include "DACPlayer.h"
 #include "SN76489Engine.h"
@@ -39,6 +43,77 @@ TEST (DACPlayer, NormaliseDacRateFallsBackOnUnknown)
     EXPECT_EQ (DACPlayer::normaliseDacRate (48000), 22050);
     EXPECT_EQ (DACPlayer::normaliseDacRate (0),     22050);
     EXPECT_EQ (DACPlayer::normaliseDacRate (-1),    22050);
+}
+
+// --- DACPlayer thread-safety stress -----------------------------------------
+// Regression test: prior to the lock-free swap pattern,
+// `resetAllToDefaults` could crash Ableton during MIDI playback because
+// DACPlayer::clearPcm() deallocated `pcm` on the message thread while
+// renderAdd() was reading `pcm[playPos]` on the audio thread.
+//
+// This test hammers clearPcm + loadRawPcm + setDacRate from one thread while
+// renderAdd runs continuously on another for ~500 ms. Pass criterion: no
+// crashes (the test process must exit normally), no torn reads observable
+// via finite output samples.
+TEST (DACPlayer, ClearAndLoadAreSafeUnderConcurrentRender)
+{
+    DACPlayer dac;
+    dac.prepare (44100.0, 256);
+    dac.setEnabled (true);
+
+    // Pre-load a non-empty buffer so the first iterations have something to
+    // play (and to read concurrent-deallocate from).
+    std::vector<std::uint8_t> initial (4096, 0xC0);
+    dac.loadRawPcm (initial.data(), initial.size(), 22050, "stress.raw");
+    dac.trigger (60, 100);
+
+    std::atomic<bool> stop { false };
+    std::atomic<std::uint64_t> samplesRendered { 0 };
+
+    std::thread audio ([&]
+    {
+        constexpr int kBlock = 256;
+        std::array<float, kBlock> left{};
+        std::array<float, kBlock> right{};
+        while (! stop.load (std::memory_order_acquire))
+        {
+            left.fill  (0.0f);
+            right.fill (0.0f);
+            dac.renderAdd (left.data(), right.data(), kBlock);
+            // Confirm output is finite — torn reads can produce NaN/Inf.
+            for (float v : left)  ASSERT_TRUE (std::isfinite (v));
+            for (float v : right) ASSERT_TRUE (std::isfinite (v));
+            samplesRendered.fetch_add ((std::uint64_t) kBlock,
+                                       std::memory_order_relaxed);
+        }
+    });
+
+    // Message thread: cycle through clear / load / setDacRate, mirroring what
+    // resetAllToDefaults + a user importing a new sample would do.
+    const std::vector<std::uint8_t> alt (8192, 0x40);
+    const auto t0 = std::chrono::steady_clock::now();
+    int iter = 0;
+    while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds (500))
+    {
+        ++iter;
+        if (iter % 3 == 0) {
+            dac.clearPcm();
+        } else if (iter % 3 == 1) {
+            dac.loadRawPcm (initial.data(), initial.size(), 22050, "a.raw");
+            dac.trigger (60, 100);
+        } else {
+            dac.loadRawPcm (alt.data(), alt.size(), 11025, "b.raw");
+            dac.setDacRate (8000);
+            dac.trigger (60, 100);
+        }
+        std::this_thread::sleep_for (std::chrono::microseconds (200));
+    }
+
+    stop.store (true, std::memory_order_release);
+    audio.join();
+
+    // Sanity: audio thread should have rendered at least *some* blocks.
+    EXPECT_GT (samplesRendered.load(), 0u);
 }
 
 // --- SN76489Engine allocation -------------------------------------------------

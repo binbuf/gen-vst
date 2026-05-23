@@ -51,12 +51,19 @@ export class VuMeter {
     const innerW = this.w - 6;
 
     const drawBar = (y, fraction) => {
-      // Background segment cells (dim) + lit cells (bright).
+      // Background segment cells (dim) + lit cells (bright). The first
+      // segment is *always* lit dim-bright so the meter visibly lives even
+      // when the audio is fully silent (without this, a 0 reading looks
+      // identical to a broken meter).
       const segs = Math.max(8, Math.floor(innerW / 3));
       const litCount = Math.round(segs * fraction);
       const segW = Math.floor(innerW / segs);
       for (let i = 0; i < segs; ++i) {
-        ctx.fillStyle = i < litCount ? pal["lcd-pixel-hi"] : pal["lcd-base-hi"];
+        let col;
+        if (i < litCount)        col = pal["lcd-pixel-hi"];
+        else if (i === 0)        col = pal["lcd-pixel"];     // alive-indicator
+        else                     col = pal["lcd-base-hi"];
+        ctx.fillStyle = col;
         ctx.fillRect(3 + i * segW, y, segW - 1, barH);
       }
     };

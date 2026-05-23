@@ -16,7 +16,6 @@ const ATTRIBUTIONS = [
   { name: "JUCE 8",              license: "GPL v3",       desc: "" },
   { name: "Furnace tfilib",      license: "GPL",          desc: "(factory patch bank)" },
   { name: "Press Start 2P",      license: "SIL OFL",      desc: "(label font)" },
-  { name: "torinak 7-segment",   license: "SIL OFL",      desc: "(patch-display font)" },
 ];
 
 export function openAboutModal() {

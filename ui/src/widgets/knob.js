@@ -85,38 +85,56 @@ export class Knob {
     const cx = w / 2, cy = h / 2;
     const outerR = Math.floor(Math.min(cx, cy)) - 1;
     const ringR  = outerR;
-    const bodyR  = outerR - 3;
+    const bodyR  = outerR - 4;     // leave 4px for a chunkier blue bezel ring
 
     ctx.clearRect(0, 0, w, h);
 
-    // Dark blue ring (the bezel).
+    // Dark blue bezel ring.
     this._fillDisc(cx, cy, ringR, pal["knob-ring"]);
 
-    // Body.
+    // Inner body.
     this._fillDisc(cx, cy, bodyR, pal["knob-body"]);
 
-    // Hard 1px bevel highlight on the body's top-left quadrant + shadow on the
-    // bottom-right — gives the chunky physical-knob feel without a gradient.
+    // Hard-edge raised bevel — 2px lit ring on the top-left quadrant + 2px
+    // shadow on the bottom-right. Pure pixel art (no gradient blur). Gives
+    // the chunky physical-knob feel and reads well at small sizes.
     this._discHighlight(cx, cy, bodyR);
 
-    // Indicator: 1-pixel-wide line of "dot" colour rendered as discrete pixels
-    // from r * 0.30 out to r * 0.85 along the value angle.
+    // Small 2x2 specular highlight near the top-left, just inside the bevel.
+    // A real physical surface catches the room light at one spot, and this
+    // tiny white square is the pixel-art shorthand for that highlight.
+    const specR = bodyR - 2;
+    const specAngle = (220 * Math.PI) / 180;  // upper-left of the knob
+    const sx = snap(cx + Math.cos(specAngle) * specR * 0.62);
+    const sy = snap(cy + Math.sin(specAngle) * specR * 0.62);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(sx, sy, 2, 2);
+
+    // Indicator: a chunky line of dot-colour rendered as a 2px-thick stripe
+    // from r * 0.30 out to r * 0.88 along the value angle, with a 3x3 square
+    // tip so the indicator is unambiguous from across the layout.
     const angleRad = ((START_ANGLE_DEG + v * SWEEP_DEG) * Math.PI) / 180;
     const dx = Math.cos(angleRad);
     const dy = Math.sin(angleRad);
 
     const inner = bodyR * 0.30;
-    const outer = bodyR * 0.85;
+    const outer = bodyR * 0.88;
 
     ctx.fillStyle = pal["knob-dot"];
     const steps = Math.ceil(outer - inner);
+    // Two-pixel-wide stripe: draw the dot pair offset perpendicular to the
+    // travel direction so a near-vertical indicator is still 2 px wide.
+    const px = -dy, py = dx;   // perpendicular unit
     for (let i = 0; i <= steps; ++i) {
       const t = inner + i;
-      ctx.fillRect(snap(cx + dx * t), snap(cy + dy * t), 1, 1);
+      const ax = snap(cx + dx * t);
+      const ay = snap(cy + dy * t);
+      ctx.fillRect(ax, ay, 1, 1);
+      ctx.fillRect(snap(ax + px), snap(ay + py), 1, 1);
     }
 
-    // Square indicator dot at the tip — readable like the genny-ui reference.
-    ctx.fillRect(snap(cx + dx * outer) - 1, snap(cy + dy * outer) - 1, 2, 2);
+    // 3x3 indicator tip — really visible at the knob edge.
+    ctx.fillRect(snap(cx + dx * outer) - 1, snap(cy + dy * outer) - 1, 3, 3);
   }
 
   // Filled disc using Bresenham-style integer scan — keeps the edge crisp.
@@ -138,22 +156,29 @@ export class Knob {
   _discHighlight(cx, cy, r) {
     const ctx = this.ctx;
     const pal = palette();
-    // A 1px arc on the top-left for the lit edge, drawn as fillRect dots
-    // along the parametric circle. Confined to the upper-left 90deg wedge.
-    const r2 = r * r;
-    ctx.fillStyle = pal["bevel-light"];
-    for (let a = 180; a <= 270; ++a) {
-      const rad = a * Math.PI / 180;
-      const x = snap(cx + Math.cos(rad) * (r - 1));
-      const y = snap(cy + Math.sin(rad) * (r - 1));
-      ctx.fillRect(x, y, 1, 1);
-    }
-    ctx.fillStyle = pal["bevel-dark"];
-    for (let a = 0; a <= 90; ++a) {
-      const rad = a * Math.PI / 180;
-      const x = snap(cx + Math.cos(rad) * (r - 1));
-      const y = snap(cy + Math.sin(rad) * (r - 1));
-      ctx.fillRect(x, y, 1, 1);
+    // A 2px-thick arc on the top-left for the lit edge and the bottom-right
+    // for the shadowed edge. Drawn as fillRect dots along two parametric
+    // circles (radius r-1 and r-2) so the highlight is exactly 2 px wide
+    // even when the underlying disc is integer-stepped. The lit colour is
+    // a lighter-blue tint so it doesn't blend back into the chassis bevel.
+    const lit = "#7aa0e0";       // lighter knob-body — only used as a bevel hint
+    const dim = pal["knob-ring"]; // already-dark blue, reads as shadow
+    for (let ring = 0; ring < 2; ++ring) {
+      const rr = r - ring;
+      ctx.fillStyle = lit;
+      for (let a = 180; a <= 280; ++a) {
+        const rad = a * Math.PI / 180;
+        const x = snap(cx + Math.cos(rad) * rr);
+        const y = snap(cy + Math.sin(rad) * rr);
+        ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.fillStyle = dim;
+      for (let a = -10; a <= 90; ++a) {
+        const rad = a * Math.PI / 180;
+        const x = snap(cx + Math.cos(rad) * rr);
+        const y = snap(cy + Math.sin(rad) * rr);
+        ctx.fillRect(x, y, 1, 1);
+      }
     }
   }
 

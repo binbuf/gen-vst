@@ -146,3 +146,43 @@ export function closeAnyModal() {
 export function isModalOpen() {
   return STATE.current !== null;
 }
+
+/**
+ * Tiny confirm-modal helper for destructive actions (RESET PART, RESET ALL).
+ * Opens a small modal asking the user to confirm, calls `onConfirm` if they
+ * say yes. Cancel / Esc / [X] dismiss without firing the callback.
+ */
+export function confirmModal({ title, message, confirmLabel = "OK", onConfirm }) {
+  openModal({
+    title,
+    width: 420,
+    build: (body, ctx) => {
+      const msg = document.createElement("p");
+      msg.className = "label confirm-message";
+      msg.textContent = message;
+      body.appendChild(msg);
+
+      const row = document.createElement("div");
+      row.className = "modal-footer confirm-buttons";
+
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "settings-button bevel-raised label";
+      cancel.textContent = "CANCEL";
+      cancel.addEventListener("click", () => ctx.close());
+      row.appendChild(cancel);
+
+      const ok = document.createElement("button");
+      ok.type = "button";
+      ok.className = "settings-button bevel-raised label confirm-destructive";
+      ok.textContent = confirmLabel;
+      ok.addEventListener("click", () => {
+        ctx.close();
+        try { onConfirm?.(); } catch (e) { console.error(e); }
+      });
+      row.appendChild(ok);
+
+      body.appendChild(row);
+    },
+  });
+}

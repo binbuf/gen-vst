@@ -33,5 +33,8 @@ export { ClipLed } from "./clip-led.js";
 export { WaveformDisplay } from "./waveform-display.js";
 export { NotificationToastHost } from "./notification-toast.js";
 
+// Global hover tooltips — installed once at startup; toggled by Settings.
+export { installTooltips, uninstallTooltips } from "./tooltip.js";
+
 export * from "./pixel.js";
 export * from "../binding.js";

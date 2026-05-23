@@ -80,6 +80,17 @@ private:
     // which fires valueChangedEvent on the JS side -> every FM widget repaints.
     void rebuildFmAttachments (int part);
 
+    // Cross-instance patch refresh: piggybacks on the 30 Hz telemetry timer.
+    // Every ~2 s we re-stat the user-saved + user-imported roots; if either
+    // mtime moved (another plugin instance dropped a file there), the
+    // PatchBrowser re-scans the roots from disk and the JS UI gets a
+    // patchRootsChanged event. Cheap (two file-system stats) and only runs
+    // while the editor is mounted.
+    void pollWritableRootsForExternalChanges();
+    std::int64_t lastSavedMtime    = 0;
+    std::int64_t lastImportedMtime = 0;
+    int          mtimePollTickCounter = 0;
+
     // Build relays for the 4 x 11 per-operator FM params with names stripped
     // of the `_part<n>` suffix ("dt_op1", "mul_op1", ...). The unique_ptr
     // indirection is mandated by the relays themselves: WebSliderRelay is
@@ -150,6 +161,7 @@ private:
     juce::WebComboBoxRelay      aftertouchTargetRelay { "aftertouch_target" };
     juce::WebComboBoxRelay      voiceCountRelay       { "voice_count" };
     juce::WebComboBoxRelay      uiScaleRelay          { "ui_scale" };
+    juce::WebToggleButtonRelay  tooltipsEnabledRelay  { "tooltips_enabled" };
 
     // Per-PSG-channel relays — same NON_MOVEABLE pinning as the FM relays.
     std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> psgVolRelays  { makePsgVolRelays()  };
@@ -193,6 +205,7 @@ private:
     juce::WebComboBoxParameterAttachment      aftertouchTargetAttachment;
     juce::WebComboBoxParameterAttachment      voiceCountAttachment;
     juce::WebComboBoxParameterAttachment      uiScaleAttachment;
+    juce::WebToggleButtonParameterAttachment  tooltipsEnabledAttachment;
 
     std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgVolAttachments;
     std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgPanAttachments;

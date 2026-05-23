@@ -83,20 +83,31 @@ export class SectionTabs {
 
       if (this.style === "tab") {
         // Tab style — no chrome on unselected, active gets a red underline
-        // and red text (matching the PRESETS / IMPORT pair).
+        // (2 px thick) and red text (matching the PRESETS / IMPORT pair).
         ctx.fillStyle = pal["chassis"];
         ctx.fillRect(r.x, r.y, r.w, r.h);
         drawLabel(ctx, r.x + PAD_X, r.y + PAD_Y, r.text,
                   this.fontSize, isSel ? pal["led-on"] : pal["label"]);
         if (isSel) {
           ctx.fillStyle = pal["led-on"];
-          ctx.fillRect(r.x + PAD_X, r.y + r.h - 1, r.w - PAD_X * 2, 1);
+          ctx.fillRect(r.x + PAD_X, r.y + r.h - 2, r.w - PAD_X * 2, 2);
         }
       } else {
-        // Pill style — beveled body, red highlight when selected.
+        // Pill style — beveled body, red highlight when selected. The
+        // selected pill picks up an additional 1-px red ring outside the
+        // bevel so it reads as a stamped switch.
         ctx.fillStyle = isSel ? pal["select"] : pal["panel"];
         ctx.fillRect(r.x, r.y, r.w, r.h);
         drawBevel(ctx, r.x, r.y, r.w, r.h, true);
+        if (isSel) {
+          // 1-px red highlight ring just outside the bevel — clear "this
+          // segment is active" cue, particularly at small fontSize values.
+          ctx.fillStyle = pal["led-on"];
+          ctx.fillRect(r.x, r.y - 1, r.w, 1);             // top
+          ctx.fillRect(r.x, r.y + r.h, r.w, 1);           // bottom
+          ctx.fillRect(r.x - 1, r.y, 1, r.h);             // left
+          ctx.fillRect(r.x + r.w, r.y, 1, r.h);           // right
+        }
         drawLabel(ctx, r.x + PAD_X, r.y + PAD_Y, r.text,
                   this.fontSize, isSel ? pal["label"] : pal["label"]);
       }

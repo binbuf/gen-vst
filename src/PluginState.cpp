@@ -22,6 +22,7 @@ namespace
     constexpr const char* kDacTag         = "dac";
     constexpr const char* kCustomRootsTag = "customRoots";
     constexpr const char* kRootTagInner   = "root";
+    constexpr const char* kUiStateTag     = "uiState";
 
     using Kind = MidiRouter::Destination::Kind;
 
@@ -287,6 +288,13 @@ std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
         entry->setAttribute ("path", r->folder->path);
     }
 
+    // Editor UI selection state (which FM channel was last edited and which
+    // preset/import tab was active). Restored on the next mount so reopening
+    // a project picks up where the user left off.
+    auto* uiEl = root->createNewChildElement (kUiStateTag);
+    uiEl->setAttribute ("selectedPart", proc.uiSelectedPart());
+    uiEl->setAttribute ("presetTab",    proc.uiPresetTab());
+
     return root;
 }
 
@@ -327,6 +335,15 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
 
     restoreRouting (proc.getMidiRouter(), *wrapper);
     restoreDacPcm  (proc.getDacPlayer(),  *wrapper);
+
+    // Restore the editor UI selection state from <uiState ...>. Missing or
+    // out-of-range values fall back to the constructor defaults (part 0,
+    // PRESETS tab) so legacy Task-16 projects without this element still load.
+    if (auto* uiEl = wrapper->getChildByName (kUiStateTag))
+    {
+        proc.setUiSelectedPart (uiEl->getIntAttribute ("selectedPart", 0));
+        proc.setUiPresetTab    (uiEl->getIntAttribute ("presetTab",    0));
+    }
 
     auto customRoots = collectCustomRoots (*wrapper);
     auto patchPaths  = collectPatchPaths  (*wrapper);

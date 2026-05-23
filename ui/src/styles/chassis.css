@@ -17,10 +17,12 @@
 
 #chassis {
   width: 960px;
-  height: 560px;
+  height: 640px;
   background: var(--chassis);
-  display: grid;
-  grid-template-rows: 80px 260px 220px;
+  /* Header / middle / bottom — middle and bottom each picked up 20 px from
+   * the 560 → 640 chassis bump (ADR-0007) to fix overflow of the polyphony
+   * group (center column) and SQ/D panels. 80 + 280 + 280 = 640 ✓. */
+  grid-template-rows: 80px 280px 280px;
 }
 
 /* =========================================================================
@@ -146,8 +148,8 @@
 }
 
 .lfo-cell canvas.knob {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
 }
 
 .lfo-cell canvas.led {
@@ -186,8 +188,8 @@
 }
 
 .feedback-cell canvas.knob {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
 }
 
 .feedback-cell canvas.led {
@@ -202,10 +204,15 @@
 
 /* ---- Center column — Instruments + routing ------------------------------- */
 
+/* The lower half of the center column reads as part of the same green LCD as
+ * the Instruments list above it (08-ui-views.md view 1 + genny-ui.md): one
+ * big screen with dark-on-green labels and inset LED placeholders, rather
+ * than a separate dark-chassis routing strip. */
 #col-center .panel-body {
   display: grid;
   grid-template-columns: 268px 124px;
   gap: 8px;
+  background: var(--lcd-base);
 }
 
 .center-controls {
@@ -219,21 +226,25 @@
 .center-label {
   font-family: "Press Start 2P", monospace;
   font-size: 8px;
-  color: var(--label);
+  color: var(--lcd-text-dark);
   text-transform: uppercase;
   margin-top: 2px;
 }
 
 #channels-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* 6 numbered cells + 1 reset cell. The reset cell uses a narrower fr to keep
+   * the part numbers prominent. */
+  grid-template-columns: repeat(6, 1fr) 0.8fr;
   gap: 2px;
 }
 
+/* Channel cells live on the LCD-green strip, so their face is a slightly
+ * lighter olive that reads as a recessed button against the LCD base. */
 .channel-cell {
   height: 16px;
-  background: var(--panel);
-  color: var(--label);
+  background: var(--lcd-base-hi);
+  color: var(--lcd-text-dark);
   font-family: "Press Start 2P", monospace;
   font-size: 8px;
   border: none;
@@ -246,6 +257,15 @@
   color: var(--label);
 }
 
+.channel-reset {
+  background: var(--lcd-base-hi);
+  color: var(--led-on);
+}
+.channel-reset:hover {
+  background: #2a0808;        /* dim led-base, hover hint */
+  color: var(--label);
+}
+
 .routing-group {
   display: grid;
   grid-template-columns: 28px 1fr;
@@ -253,10 +273,13 @@
   align-items: center;
   font-family: "Press Start 2P", monospace;
   font-size: 8px;
-  color: var(--label);
+  color: var(--lcd-text-dark);
   text-transform: uppercase;
 }
 
+/* The little numeric value boxes on the routing strip stay LED-red because
+ * genny-ui.md calls them out as small LED readouts, not LCD labels — they
+ * read as red glowing inset displays sitting on the green LCD area. */
 .routing-group .placeholder {
   height: 14px;
   background: var(--led-base);
@@ -267,6 +290,12 @@
   align-items: center;
   justify-content: flex-end;
   padding: 0 4px;
+  /* hard-edge recessed bevel: light bottom/right, dark top/left */
+  border: 1px solid;
+  border-top-color: var(--bevel-dark);
+  border-left-color: var(--bevel-dark);
+  border-right-color: var(--bevel-light);
+  border-bottom-color: var(--bevel-light);
 }
 
 
@@ -278,7 +307,7 @@
   margin-top: 4px;
   font-family: "Press Start 2P", monospace;
   font-size: 8px;
-  color: var(--label);
+  color: var(--lcd-text-dark);
   text-transform: uppercase;
 }
 
@@ -345,6 +374,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Hard-edge raised bevel: light top/left, dark bottom/right — matches the
+   * pixel-art bevel idiom used by knobs and the channels row. */
+  border: 1px solid;
+  border-top-color: #6a98e8;
+  border-left-color: #6a98e8;
+  border-right-color: #1e3a6e;
+  border-bottom-color: #1e3a6e;
 }
 
 .status-dot {

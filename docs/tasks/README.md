@@ -140,7 +140,7 @@ These are explicitly deferred by the design/ADRs and have **no task file**:
 - CLAP build target via `clap-juce-extensions` (ADR-0008).
 - Channel 3 special mode — per-operator independent pitch (ADR-0014).
 - Chord mode — note-range zones triggering part configurations (07-feature-spec).
-- Resizable window (ADR-0007 — currently fixed 960×560).
+- Resizable window (ADR-0007 — currently fixed 960×640).
 - Legacy DMP version 8 import (ADR-0012 — v11 only for MVP).
 - Per-part voice reservations / caps (ADR-0013).
 - PSG Option B auto-layer refinements; bank-select for user/custom roots.

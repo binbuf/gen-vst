@@ -15,9 +15,10 @@ import {
   SectionTabs, Toggle,
   bindCombo, bindToggle,
 } from "../widgets/index.js";
-import { openModal } from "./modal-host.js";
+import { openModal, confirmModal } from "./modal-host.js";
 import { openMidiRoutingModal } from "./midi-routing.js";
 import { openAboutModal }       from "./about.js";
+import * as Juce from "../juce/index.js";
 
 export function openSettingsModal() {
   openModal({
@@ -33,6 +34,7 @@ export function openSettingsModal() {
       addChoiceRow (grid, "UI SCALE",          "ui_scale",           ["1x","2x","3x"], 130);
       addToggleRow (grid, "VELOCITY → TL",     "vel_to_tl");
       addChoiceRow (grid, "AFTERTOUCH",        "aftertouch_target",  ["OFF","LFO","TL"], 180);
+      addToggleRow (grid, "TOOLTIPS",          "tooltips_enabled");
 
       // Separator + the two sub-modal buttons.
       const sep = document.createElement("div");
@@ -50,6 +52,27 @@ export function openSettingsModal() {
       const aboutBtn = makeBigButton("ABOUT / CREDITS…");
       aboutBtn.addEventListener("click", () => openAboutModal());
       buttonRow.appendChild(aboutBtn);
+
+      // RESET ALL — destructive: clears every patch + setting + routing back
+      // to defaults. Confirmation modal first so a stray click can't undo a
+      // long tweaking session.
+      const resetRow = document.createElement("div");
+      resetRow.className = "settings-button-row";
+      const resetBtn = makeBigButton("RESET ALL TO DEFAULTS");
+      resetBtn.classList.add("settings-button-destructive");
+      resetBtn.addEventListener("click", () => {
+        confirmModal({
+          title: "RESET ALL",
+          message: "This will reset every patch, setting and routing entry. Are you sure?",
+          confirmLabel: "RESET ALL",
+          onConfirm: async () => {
+            const fn = Juce.getNativeFunction("resetAllToDefaults");
+            try { await fn(); } catch (e) { console.error(e); }
+          },
+        });
+      });
+      resetRow.appendChild(resetBtn);
+      body.appendChild(resetRow);
 
       // Footer: Close.
       const footer = document.createElement("div");

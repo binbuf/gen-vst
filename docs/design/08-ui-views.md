@@ -23,7 +23,7 @@ the content and structure, not the precise pixels.
 
 ## Conventions
 
-- **One OS window.** There is exactly one native window — the fixed 960×560
+- **One OS window.** There is exactly one native window — the fixed 960×640
   WebView ([ADR-0007](adr/0007-fixed-window-size.md)). Every "popup", "sub-window"
   and "modal" in this catalog is an **in-WebView overlay layer** (a DOM layer
   drawn on the same canvas), **not** a separate OS window. The only exceptions
@@ -109,6 +109,35 @@ view 3. The header and the left/center/right columns persist across sections.
 The FM section's center-column control stack gains a polyphony group — see
 view 10.
 
+### Reset-part button
+
+The CHANNELS 1–6 selector row ends with a small `R` button that resets every
+parameter of the currently selected FM part to its `juce::AudioParameter`
+default (operators, envelopes, alg/fb, polyphony settings) and clears the
+active patch path. A confirmation modal guards the destructive action.
+Backed by the `resetCurrentPart` native function — implemented as a parameter
+walk over IDs ending in `_part<n>`, so the FM-relay rebind path repaints the
+entire panel in one batch (same mechanism as channel paging).
+
+### Center-column visual treatment
+
+The lower half of the center column (CHANNELS / MIDI / TRPS / RNG / DEL / PAN
+/ POLY / GLIDE / SPREAD) sits on the same green LCD background as the
+Instruments list directly above it, rather than the dark chassis used by the
+bottom row of operator panels. Labels use the dark-LCD ink colour
+(`--lcd-text-dark`); numeric value placeholders stay LED-red so each reads
+as a tiny inset display printed on the green LCD. The bottom row (operator
+panels) stays on the dark chassis — that contrast is intentional and matches
+the mixing-console feel called out in `genny-ui.md`.
+
+### Header oscilloscope and VU idle behaviour
+
+When no audio is playing, the oscilloscope still draws a faint baseline trace
+in `lcd-pixel-hi` so the meter visibly lives, and the VU meter's first
+segment is always lit (dim phosphor) for the same reason. Without these
+"alive" indicators the meters in a silent project looked indistinguishable
+from a broken telemetry pipe.
+
 ---
 
 ## 2. Main window — SQ (PSG) section
@@ -193,7 +222,7 @@ the waveform display is blank; `CLEAR` is disabled.
 ## 4. Patch browser (modal overlay)
 
 A **full-window modal overlay** ([ADR-0006](adr/0006-folder-tree-patch-browser.md);
-form confirmed by the user). It covers the 960×560 window; the main UI is dimmed
+form confirmed by the user). It covers the 960×640 window; the main UI is dimmed
 behind it.
 
 ```
@@ -299,8 +328,10 @@ Global plugin preferences. Opened from the header gear icon.
 │  UI SCALE           [(1×)· 2× · 3×]                                  │
 │  VELOCITY → TL      [ on ]                                           │
 │  AFTERTOUCH         [ Off ·(LFO depth)· Carrier TL ]                 │
+│  TOOLTIPS           [ on ]                                           │
 │  ────────────────────────────────────────────────────────────────   │
 │  [ MIDI ROUTING… ]      [ ABOUT / CREDITS… ]                         │
+│  [ RESET ALL TO DEFAULTS ]                                           │
 │                                                  [ Close ]          │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -310,7 +341,13 @@ Global plugin preferences. Opened from the header gear icon.
 - `UI SCALE` — 1× / 2× / 3× integer presets ([ADR-0017](adr/0017-hidpi-display-scaling.md)).
 - `VELOCITY → TL` — enable/disable velocity → TL scaling.
 - `AFTERTOUCH` — channel-pressure routing: Off / LFO depth / Carrier TL.
+- `TOOLTIPS` — global hover-tooltip toggle (default on). Persisted in apvts
+  as `tooltips_enabled` so the user's preference survives across sessions.
 - `MIDI ROUTING…` opens view 5; `ABOUT / CREDITS…` opens view 7.
+- `RESET ALL TO DEFAULTS` — destructive button (red label). After a
+  confirmation modal, snaps every parameter (every FM part, PSG, DAC, global
+  settings) to its `juce::AudioParameter` default and resets routing. Active
+  patch paths are cleared; the DAC sample is unloaded.
 
 Per-part settings (polyphony mode, unison spread, mono retrigger/legato) are
 **not** here — they live with the selected part (view 10).
@@ -391,7 +428,7 @@ functional rather than pixel-art styled.
 └──────────────────────────────────────────────────────┘
 ```
 
-- Sized to the 960×560 editor area.
+- Sized to the 960×640 editor area.
 - `Retry` attempts to recreate the WebView (e.g. after the user installs the
   runtime without reloading the plugin).
 - The audio processor is unaffected — only the editor is degraded.
@@ -435,12 +472,16 @@ not-pixel-parity stance of [ADR-0015](adr/0015-webview-backend-support.md).
 | `+ Add Folder…` (browser) | Choose directory | registers a custom patch root |
 | `LOAD WAV…` (D section) | Open file | `*.wav` → converted to 8-bit PCM |
 
-**Drag-and-drop** is the non-dialog path: `.tfi`/`.vgi`/`.dmp` files dropped on
-the plugin window import into the user-imported root (`…/patches/imported/`);
-a folder dropped on the window registers as a custom root. Because an OS drop
-must yield real filesystem paths, this uses a native
-`juce::FileDragAndDropTarget` on the editor, **not** HTML5 drag-and-drop
-(see `05-ui-ux.md`).
+**Drag-and-drop** is the non-dialog path: `.tfi`/`.vgi`/`.dmp` files dropped
+on the plugin window import into the user-imported root
+(`…/patches/imported/`). A **folder** dropped on the window is now also
+treated as an import — every patch file inside the folder is copied
+recursively into the user-imported root so the patches appear in the main
+window's IMPORT tab. Users who want to register a folder as a browser-only
+*custom root* (no copy) use the Patch Browser's "Add Folder..." button
+instead. Because an OS drop must yield real filesystem paths, this uses a
+native `juce::FileDragAndDropTarget` on the editor, **not** HTML5
+drag-and-drop (see `05-ui-ux.md`).
 
 ---
 
@@ -453,7 +494,7 @@ Views 4–7 are in-WebView modal overlays and share this behaviour:
 - Dismissed by `Close`, the `[X]`, or the `Esc` key.
 - Modal while open: clicks outside the modal panel do not reach the main UI.
 - The notification toast (view 8) may still appear above an open modal.
-- Modals are sized within the 960×560 canvas; they never spawn an OS window.
+- Modals are sized within the 960×640 canvas; they never spawn an OS window.
 
 ---
 

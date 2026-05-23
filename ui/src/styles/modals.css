@@ -98,6 +98,47 @@ body[data-modal-open="true"] #chassis {
   margin: 4px 0;
 }
 
+/* Destructive variant for RESET ALL TO DEFAULTS — red label so it stands out
+ * from the neutral MIDI ROUTING / ABOUT buttons above it. */
+.settings-button-destructive {
+  color: var(--led-on);
+}
+.settings-button-destructive:hover {
+  background: var(--led-base);
+}
+
+/* Tiny confirm modal shared by RESET PART, RESET ALL and similar destructive
+ * actions. Centered text + two-button row. */
+.confirm-message {
+  font-size: 8px;
+  line-height: 1.4;
+  padding: 4px 4px 12px 4px;
+}
+.confirm-buttons {
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirm-destructive {
+  color: var(--led-on);
+}
+
+/* ============================================================================
+ * Hover tooltips (widgets/tooltip.js) — pixel-art bubble that floats above
+ * the widget under the cursor. Single shared element; positioned in JS.
+ * ========================================================================== */
+
+.tooltip-bubble {
+  background: var(--panel);
+  color: var(--label);
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  line-height: 1.2;
+  padding: 4px 6px;
+  max-width: 200px;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .settings-button-row {
   display: flex;
   gap: 8px;

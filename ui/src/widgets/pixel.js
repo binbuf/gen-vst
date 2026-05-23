@@ -114,11 +114,12 @@ export function ditherFill(ctx, x, y, w, h, a, b, pct) {
 /* 5x7 dot-matrix glyph table                                                 */
 /*                                                                            */
 /* 7 rows, 5 columns each. MSB is the leftmost dot. The supported character   */
-/* set is exactly digits 0-9, the letters O and F (for the "OFF" readout),    */
-/* "-" for negative numbers, and " " (blank). 05-ui-ux.md "5x7 Dot-Matrix     */
-/* Readouts" specifies *what* glyphs exist and how they're drawn, not the     */
-/* exact bitmap — the pixels below are hand-pixeled to read crisply at 1px    */
-/* dots and remain recognizable at integer scaling.                           */
+/* set is digits 0-9, the full A-Z alphabet, "-" / "." / ":" / "_" / "[" /    */
+/* "]" / "/" and " " (blank). 05-ui-ux.md "5x7 Dot-Matrix Readouts"           */
+/* specifies *what* glyphs exist and how they're drawn, not the exact bitmap  */
+/* — the pixels below are hand-pixeled to read crisply at 1px dots and       */
+/* remain recognizable at integer scaling. The patch-name display in the     */
+/* header reuses this table at a larger dot scale.                            */
 /* -------------------------------------------------------------------------- */
 
 export const DOT_SIZE = 1;
@@ -217,14 +218,50 @@ export const GLYPHS = {
     0b00010,
     0b01100,
   ),
-  "O": G(
+  "A": G(
     0b01110,
     0b10001,
     0b10001,
+    0b11111,
     0b10001,
     0b10001,
+    0b10001,
+  ),
+  "B": G(
+    0b11110,
+    0b10001,
+    0b10001,
+    0b11110,
+    0b10001,
+    0b10001,
+    0b11110,
+  ),
+  "C": G(
+    0b01110,
+    0b10001,
+    0b10000,
+    0b10000,
+    0b10000,
     0b10001,
     0b01110,
+  ),
+  "D": G(
+    0b11110,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b11110,
+  ),
+  "E": G(
+    0b11111,
+    0b10000,
+    0b10000,
+    0b11110,
+    0b10000,
+    0b10000,
+    0b11111,
   ),
   "F": G(
     0b11111,
@@ -235,6 +272,186 @@ export const GLYPHS = {
     0b10000,
     0b10000,
   ),
+  "G": G(
+    0b01110,
+    0b10001,
+    0b10000,
+    0b10111,
+    0b10001,
+    0b10001,
+    0b01110,
+  ),
+  "H": G(
+    0b10001,
+    0b10001,
+    0b10001,
+    0b11111,
+    0b10001,
+    0b10001,
+    0b10001,
+  ),
+  "I": G(
+    0b01110,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b01110,
+  ),
+  "J": G(
+    0b00111,
+    0b00010,
+    0b00010,
+    0b00010,
+    0b00010,
+    0b10010,
+    0b01100,
+  ),
+  "K": G(
+    0b10001,
+    0b10010,
+    0b10100,
+    0b11000,
+    0b10100,
+    0b10010,
+    0b10001,
+  ),
+  "L": G(
+    0b10000,
+    0b10000,
+    0b10000,
+    0b10000,
+    0b10000,
+    0b10000,
+    0b11111,
+  ),
+  "M": G(
+    0b10001,
+    0b11011,
+    0b10101,
+    0b10101,
+    0b10001,
+    0b10001,
+    0b10001,
+  ),
+  "N": G(
+    0b10001,
+    0b10001,
+    0b11001,
+    0b10101,
+    0b10011,
+    0b10001,
+    0b10001,
+  ),
+  "O": G(
+    0b01110,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01110,
+  ),
+  "P": G(
+    0b11110,
+    0b10001,
+    0b10001,
+    0b11110,
+    0b10000,
+    0b10000,
+    0b10000,
+  ),
+  "Q": G(
+    0b01110,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10101,
+    0b10010,
+    0b01101,
+  ),
+  "R": G(
+    0b11110,
+    0b10001,
+    0b10001,
+    0b11110,
+    0b10100,
+    0b10010,
+    0b10001,
+  ),
+  "S": G(
+    0b01111,
+    0b10000,
+    0b10000,
+    0b01110,
+    0b00001,
+    0b00001,
+    0b11110,
+  ),
+  "T": G(
+    0b11111,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+  ),
+  "U": G(
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01110,
+  ),
+  "V": G(
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01010,
+    0b00100,
+  ),
+  "W": G(
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10101,
+    0b10101,
+    0b11011,
+    0b10001,
+  ),
+  "X": G(
+    0b10001,
+    0b10001,
+    0b01010,
+    0b00100,
+    0b01010,
+    0b10001,
+    0b10001,
+  ),
+  "Y": G(
+    0b10001,
+    0b10001,
+    0b01010,
+    0b00100,
+    0b00100,
+    0b00100,
+    0b00100,
+  ),
+  "Z": G(
+    0b11111,
+    0b00001,
+    0b00010,
+    0b00100,
+    0b01000,
+    0b10000,
+    0b11111,
+  ),
   "-": G(
     0b00000,
     0b00000,
@@ -243,6 +460,60 @@ export const GLYPHS = {
     0b00000,
     0b00000,
     0b00000,
+  ),
+  ".": G(
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00110,
+    0b00110,
+  ),
+  ":": G(
+    0b00000,
+    0b00110,
+    0b00110,
+    0b00000,
+    0b00110,
+    0b00110,
+    0b00000,
+  ),
+  "_": G(
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111,
+  ),
+  "[": G(
+    0b01110,
+    0b01000,
+    0b01000,
+    0b01000,
+    0b01000,
+    0b01000,
+    0b01110,
+  ),
+  "]": G(
+    0b01110,
+    0b00010,
+    0b00010,
+    0b00010,
+    0b00010,
+    0b00010,
+    0b01110,
+  ),
+  "/": G(
+    0b00001,
+    0b00010,
+    0b00010,
+    0b00100,
+    0b01000,
+    0b01000,
+    0b10000,
   ),
   " ": G(
     0b00000,
@@ -307,6 +578,65 @@ export function drawLedReadout(ctx, x, y, text, widthChars, colors) {
       }
     }
   }
+}
+
+/**
+ * Variable-scale dot-matrix renderer. Same glyph table as drawLedReadout but
+ * the dot size + pitch are passed in, so the header patch-name display can
+ * render the alphabet much larger than the small per-knob value readouts.
+ *
+ * Text is rendered left-to-right at (x, y) with the chosen dot geometry. Both
+ * lit and unlit dots are drawn (unlit grid stays faintly visible). Characters
+ * outside the glyph table fall through to blank — callers should pre-uppercase
+ * and pre-filter exotic punctuation.
+ *
+ * Returns the total pixel width consumed so callers can horizontally center.
+ */
+export function drawDotMatrixText(ctx, x, y, text, opts = {}) {
+  const dotSize  = opts.dotSize  ?? DOT_SIZE;
+  const dotPitch = opts.dotPitch ?? DOT_PITCH;
+  const pal      = palette();
+  const lit      = (opts.colors && opts.colors.lit) || pal["led-on"];
+  const dim      = (opts.colors && opts.colors.dim) || pal["led-dim"];
+
+  const glyphW = 5 * dotPitch - (dotPitch - dotSize);
+  const gap    = dotPitch;
+
+  for (let c = 0; c < text.length; ++c) {
+    const ch = text.charAt(c);
+    const glyph = GLYPHS[ch] || GLYPHS[" "];
+    const cellX = x + c * (glyphW + gap);
+    for (let row = 0; row < 7; ++row) {
+      const bits = glyph[row];
+      for (let col = 0; col < 5; ++col) {
+        const on = (bits >> (4 - col)) & 1;
+        ctx.fillStyle = on ? lit : dim;
+        ctx.fillRect(
+          snap(cellX + col * dotPitch),
+          snap(y + row * dotPitch),
+          dotSize,
+          dotSize,
+        );
+      }
+    }
+  }
+  return text.length * glyphW + Math.max(0, text.length - 1) * gap;
+}
+
+/** Pixel width for a given character count at the chosen dot geometry. */
+export function dotMatrixTextWidth(numChars, opts = {}) {
+  const dotSize  = opts.dotSize  ?? DOT_SIZE;
+  const dotPitch = opts.dotPitch ?? DOT_PITCH;
+  const glyphW = 5 * dotPitch - (dotPitch - dotSize);
+  const gap    = dotPitch;
+  return numChars * glyphW + Math.max(0, numChars - 1) * gap;
+}
+
+/** Pixel height for one row at the chosen dot geometry. */
+export function dotMatrixTextHeight(opts = {}) {
+  const dotSize  = opts.dotSize  ?? DOT_SIZE;
+  const dotPitch = opts.dotPitch ?? DOT_PITCH;
+  return 7 * dotPitch - (dotPitch - dotSize);
 }
 
 /* -------------------------------------------------------------------------- */

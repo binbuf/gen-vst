@@ -40,13 +40,32 @@ export class Oscilloscope {
     const innerW = this.w - 4;
     const halfH = this.h / 2 - 2;
 
+    // Always paint a faint baseline grid so the scope visibly "lives" even
+    // when the audio is silent. Without this the meter looks broken until
+    // a note is played.
+    ctx.fillStyle = pal["lcd-base-hi"];
+    ctx.fillRect(2, midY, innerW, 1);
+
     if (this.samples && this.samples.length > 0) {
-      ctx.fillStyle = pal["lcd-pixel"];
+      // Decide whether the buffer is effectively silent so we can pick a
+      // brighter idle trace below — visible feedback that telemetry is
+      // flowing even at zero amplitude.
+      let peakAbs = 0;
+      const step = this.samples.length / innerW;
+      // Sample-stride scan; full-buffer scan would be O(n) but we already
+      // walk this stride below — pull peakAbs out of that same loop.
+      // Two-pass keeps the rendering simpler.
+      for (let i = 0; i < this.samples.length; ++i) {
+        const a = Math.abs(this.samples[i]);
+        if (a > peakAbs) peakAbs = a;
+      }
+      const isSilent = peakAbs < 0.001;
+
+      ctx.fillStyle = isSilent ? pal["lcd-pixel-hi"] : pal["lcd-pixel"];
 
       // Map each output column to the nearest source sample. The samples are
       // already downsampled C++ side; pick rather than re-average to keep
       // sharp transients visible.
-      const step = this.samples.length / innerW;
       let prevY = midY - Math.round(halfH * clamp(this.samples[0]));
       for (let x = 0; x < innerW; ++x) {
         const s = this.samples[Math.floor(x * step)] ?? 0;
@@ -61,9 +80,9 @@ export class Oscilloscope {
         prevY = y;
       }
     } else {
-      // Cold-start placeholder: a faint centre line so the inset isn't visually
-      // empty before the first telemetry tick lands.
-      ctx.fillStyle = pal["lcd-pixel"];
+      // Cold-start placeholder: a brighter centre line so the inset reads
+      // as a live (but quiet) display rather than an empty rectangle.
+      ctx.fillStyle = pal["lcd-pixel-hi"];
       ctx.fillRect(2, midY, innerW, 1);
     }
   }

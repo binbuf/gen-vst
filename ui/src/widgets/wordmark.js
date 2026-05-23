@@ -43,21 +43,24 @@ export class Wordmark {
     ctx.font = `${FONT_PX}px "Press Start 2P", monospace`;
     ctx.textBaseline = "top";
 
-    // Hard 1px shadow under-right, then the gold face. No blur, no gradient —
-    // a single offset is enough to read as beveled in pixel-art idiom.
+    // Chunky beveled gold: drop a 2-px shadow stack (one offset right, one
+    // offset down-right) before the gold face so the wordmark reads as
+    // raised metal rather than a flat foil sticker.
     const x = 2;
     const y = Math.max(2, Math.floor((this.h - FONT_PX - 4) / 2));
 
     ctx.fillStyle = pal["logo-shadow"];
-    ctx.fillText(TEXT, snap(x + 1), snap(y + 1));
+    ctx.fillText(TEXT, snap(x + 2), snap(y + 2));
+    ctx.fillText(TEXT, snap(x + 1), snap(y + 2));
+    ctx.fillText(TEXT, snap(x + 2), snap(y + 1));
     ctx.fillStyle = pal["logo"];
     ctx.fillText(TEXT, snap(x), snap(y));
 
-    // Red underline, 2px thick, spanning the visible text width. Press Start
+    // Red underline, 3px thick, spanning the visible text width. Press Start
     // 2P is monospaced 1-em-cell, so 7 chars * FONT_PX is exact.
-    const underlineY = y + FONT_PX + 2;
+    const underlineY = y + FONT_PX + 3;
     ctx.fillStyle = pal["logo-underline"];
-    ctx.fillRect(x, underlineY, TEXT.length * FONT_PX, 2);
+    ctx.fillRect(x, underlineY, TEXT.length * FONT_PX + 2, 3);
     ctx.restore();
   }
 }

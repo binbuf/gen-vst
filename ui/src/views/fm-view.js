@@ -26,6 +26,7 @@ import {
 
 import * as Juce from "../juce/index.js";
 import { openPatchBrowserModal } from "../modals/patch-browser.js";
+import { confirmModal } from "../modals/modal-host.js";
 
 const NUM_PARTS = 6;
 const NUM_OPS = 4;
@@ -42,6 +43,40 @@ export function mountFmView(chassis) {
   mountCenter    (middle.querySelector("#col-center"));
   mountRightCol  (middle.querySelector("#col-right"));
   mountBottom    (chassis.querySelector("#bottom"));
+
+  // Restore persisted UI selection state (the editor C++ side already paged
+  // selectedPart's FM attachments before opening the WebView, so we just
+  // need to flip the JS-side highlights to match). Falls back to (0, 0) if
+  // the backend doesn't provide the call (older binaries) or on first run.
+  applyInitialUiState();
+}
+
+async function applyInitialUiState() {
+  let selectedPart = 0;
+  let presetTab    = 0;
+  try {
+    const fn = Juce.getNativeFunction("getInitialUiState");
+    const r  = await fn();
+    if (r && r.ok) {
+      if (typeof r.selectedPart === "number") selectedPart = r.selectedPart;
+      if (typeof r.presetTab    === "number") presetTab    = r.presetTab;
+    }
+  } catch { /* native fn missing — keep defaults */ }
+
+  // Apply selectedPart to the channels row's highlight (the FM attachment
+  // rebind was already done C++-side from processor.uiSelectedPart()).
+  fmViewState.selectedPart = selectedPart;
+  if (typeof fmViewState.setChannelsSelected === "function")
+    fmViewState.setChannelsSelected(selectedPart);
+
+  // Apply presetTab to the right-column tabs binding.
+  if (fmViewState.presetTabsBinding) {
+    fmViewState.presetTabsBinding.setIndex(presetTab);
+  }
+
+  // After paging, ask which patch is loaded into the restored part so the
+  // Instruments/Presets/Import highlight is correct.
+  refreshActivePatchPathForPart(selectedPart);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -117,12 +152,19 @@ function mountCenter(col) {
   // INSTRUMENTS — pinned to the factory root (08-ui-views.md view 4
   // *Relationship to the main-window lists*). The full folder-tree navigator
   // is the patch-browser modal; this list never repaints to a different root.
+  //
+  // selected: -1 means "no highlight yet" — the FM view coordinates so that
+  // exactly one of Instruments / Presets / Import is highlighted at any time,
+  // matching the part's actual loaded patch. See updateActiveHighlights().
   const lcd = new LcdList(col.querySelector("#instruments-list"), {
     items: [],
+    selected: -1,
     onSelect: async (item) => {
       const loadInstrument = Juce.getNativeFunction("loadInstrument");
       await loadInstrument(item.id);
+      fmViewState.activePatchPath = item.id;
       fmViewState.seg?.setText(item.label);
+      updateActiveHighlights();
     },
   });
   populatePatchList(lcd, "factory");
@@ -204,18 +246,23 @@ function mountPolyphonyGroup(col) {
 // browsed.
 function populatePatchList(lcd, kindFilter) {
   const getPatchList = Juce.getNativeFunction("getPatchList");
+  // Always set selectedIndex = -1: the per-list "selected" state is owned by
+  // updateActiveHighlights now, which picks one list based on the current
+  // active patch path. Calling setItems with 0 would re-introduce the bug
+  // where both lists showed an inverse-video row.
   getPatchList().then((roots) => {
     const root = roots?.find?.((r) => r.kind === kindFilter);
-    if (!root) { lcd.setItems([], 0); return; }
+    if (!root) { lcd.setItems([], -1); updateActiveHighlights(); return; }
     getPatchList(root.path).then((folder) => {
       const items = [];
       if (Array.isArray(folder?.patches)) {
         for (const p of folder.patches)
           items.push({ id: p.path, label: p.name });
       }
-      lcd.setItems(items, 0);
-    }).catch(() => lcd.setItems([], 0));
-  }).catch(() => lcd.setItems([], 0));
+      lcd.setItems(items, -1);
+      updateActiveHighlights();
+    }).catch(() => { lcd.setItems([], -1); updateActiveHighlights(); });
+  }).catch(() => { lcd.setItems([], -1); updateActiveHighlights(); });
 }
 
 // Re-populate every pinned list. Called by the patchRootsChanged C++ event
@@ -246,12 +293,13 @@ function mountSectionPills(canvas) {
 }
 
 function mountChannelsRow(host) {
-  // Six clickable cells. The selected one gets a red `selected` class. A
-  // click calls the native selectChannel(n); the editor's
-  // rebuildFmAttachments pushes every part-n value into the FM relays, which
-  // in turn fires valueChangedEvent on every FM widget -> the whole panel
-  // repaints in one batch (genny-ui.md "Selecting a list item ... repaints
-  // every knob, slider, LED ... in one batch").
+  // Six clickable cells plus a small "R" reset button at the end. The
+  // selected cell gets a red `selected` class. A click calls the native
+  // selectChannel(n); the editor's rebuildFmAttachments pushes every
+  // part-n value into the FM relays, which in turn fires valueChangedEvent
+  // on every FM widget -> the whole panel repaints in one batch
+  // (genny-ui.md "Selecting a list item ... repaints every knob, slider,
+  // LED ... in one batch").
   host.innerHTML = "";
   const cells = [];
   for (let i = 0; i < NUM_PARTS; ++i) {
@@ -260,19 +308,55 @@ function mountChannelsRow(host) {
     cell.className = "channel-cell bevel-raised";
     cell.textContent = String(i + 1);
     cell.dataset.part = String(i);
+    cell.dataset.tip = `SELECT FM CHANNEL ${i + 1}`;
     cell.addEventListener("click", async () => {
       await selectChannelFn(i);
       setSelected(i);
+      // Selecting a different part means a different active patch — repaint
+      // the Instruments / Presets highlight to match the part's patch.
+      refreshActivePatchPathForPart(i);
     });
     host.appendChild(cell);
     cells.push(cell);
   }
+
+  // Reset button for the currently selected part. Lives in the channels row
+  // because that's the part-selector context; clicking opens a confirm modal
+  // so a slip can't undo a tweak. The native function snaps every parameter
+  // with the `_part<n>` suffix to its juce default, which fires the FM-relay
+  // valueChangedEvent and repaints the panel.
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "channel-cell channel-reset bevel-raised";
+  resetBtn.textContent = "R";
+  resetBtn.dataset.tip = "RESET CURRENT PART TO DEFAULTS";
+  resetBtn.addEventListener("click", () => {
+    const partLabel = String(fmViewState.selectedPart + 1);
+    confirmModal({
+      title: "RESET PART",
+      message: `Reset all parameters on FM part ${partLabel} to defaults?`,
+      confirmLabel: "RESET PART",
+      onConfirm: async () => {
+        const fn = Juce.getNativeFunction("resetCurrentPart");
+        try { await fn(); } catch (e) { console.error(e); }
+        // Clearing active patch path also clears the highlight + seg display.
+        fmViewState.activePatchPath = null;
+        fmViewState.seg?.setText("GEN VST");
+        updateActiveHighlights();
+      },
+    });
+  });
+  host.appendChild(resetBtn);
+
   const setSelected = (i) => {
     for (let j = 0; j < cells.length; ++j)
       cells[j].classList.toggle("selected", j === i);
     fmViewState.selectedPart = i;
   };
-  setSelected(0);
+  // Expose so applyInitialUiState() (on project reload) can drive the
+  // highlight from the persisted selectedPart.
+  fmViewState.setChannelsSelected = setSelected;
+  setSelected(fmViewState.selectedPart || 0);
 }
 
 function mountPanSlider(canvas) {
@@ -294,10 +378,13 @@ function mountRightCol(col) {
   // (08-ui-views.md view 1 *Patch-list data sources*).
   const presetList = new LcdList(col.querySelector("#preset-list"), {
     items: [],
+    selected: -1,
     onSelect: async (item) => {
       const loadPreset = Juce.getNativeFunction("loadPreset");
       await loadPreset(item.id);
+      fmViewState.activePatchPath = item.id;
       fmViewState.seg?.setText(item.label);
+      updateActiveHighlights();
     },
   });
   fmViewState.presetList = presetList;
@@ -306,7 +393,13 @@ function mountRightCol(col) {
   const tabs = makeLocalChoiceBinding(["PRESETS", "IMPORT"], 0, (idx) => {
     fmViewState.presetTab = idx;
     refreshPresetList();
+    // Persist the choice C++-side so reopening the DAW project picks it up.
+    try {
+      const setTab = Juce.getNativeFunction("setPresetTab");
+      setTab(idx).catch(() => {});
+    } catch { /* native fn missing — non-fatal */ }
   });
+  fmViewState.presetTabsBinding = tabs;
   new SectionTabs(col.querySelector("#preset-tabs"), tabs, { style: "tab" });
 
   // Folder icon in the tab header — opens the patch-browser modal
@@ -322,6 +415,7 @@ function mountRightCol(col) {
     iconCanvas.className = "right-col-folder-icon";
     iconCanvas.style.cursor = "pointer";
     iconCanvas.title = "Open patch browser";
+    iconCanvas.dataset.tip = "OPEN PATCH BROWSER";
     header.appendChild(iconCanvas);
     new FolderIcon(iconCanvas);
     iconCanvas.addEventListener("click", () => openPatchBrowserModal());
@@ -369,7 +463,59 @@ const fmViewState = {
   seg: null,
   instrumentsList: null,
   presetList: null,
+  // Absolute path of the patch currently loaded into the selected part.
+  // Used to find which pinned list owns it and highlight only that row.
+  activePatchPath: null,
+  // Exposed by mountChannelsRow + mountRightCol so applyInitialUiState()
+  // can restore the persisted highlight + tab choice after project reload.
+  setChannelsSelected: null,
+  presetTabsBinding:   null,
 };
+
+// Walk both pinned lists and highlight only the row matching activePatchPath
+// (if any); clear the highlight on the other list. Safe to call any time —
+// lists may be empty or unmounted.
+function updateActiveHighlights() {
+  const path = fmViewState.activePatchPath;
+  const instLcd  = fmViewState.instrumentsList;
+  const presLcd  = fmViewState.presetList;
+
+  const findIn = (lcd) => {
+    if (!lcd || !path) return -1;
+    const items = lcd.items || [];
+    for (let i = 0; i < items.length; ++i)
+      if (items[i].id === path) return i;
+    return -1;
+  };
+  const instIdx = findIn(instLcd);
+  const presIdx = findIn(presLcd);
+  // Prefer Instruments (factory) over Presets when paths happen to collide;
+  // in practice the user-imported and factory roots have disjoint paths.
+  if (instIdx >= 0) {
+    instLcd?.setSelected(instIdx);
+    presLcd?.setSelected(-1);
+  } else if (presIdx >= 0) {
+    instLcd?.setSelected(-1);
+    presLcd?.setSelected(presIdx);
+  } else {
+    instLcd?.setSelected(-1);
+    presLcd?.setSelected(-1);
+  }
+}
+
+// Ask the backend which patch (if any) is loaded into a given part and
+// update activePatchPath accordingly. Used when the user pages channels —
+// each part can have its own loaded patch.
+async function refreshActivePatchPathForPart(part) {
+  try {
+    const fn = Juce.getNativeFunction("getActivePatchPath");
+    const r = await fn(part);
+    fmViewState.activePatchPath = (r && r.ok) ? (r.path || null) : null;
+  } catch {
+    fmViewState.activePatchPath = null;
+  }
+  updateActiveHighlights();
+}
 
 // Re-fetch every pinned list whenever the backend signals a root mutation
 // (save / import / delete / drop / add-folder — see PluginEditor.cpp's
@@ -379,6 +525,9 @@ const fmViewState = {
 if (typeof window !== "undefined" && window.__JUCE__?.backend) {
   window.__JUCE__.backend.addEventListener("patchRootsChanged", () => {
     refreshPinnedLists();
+    // The lists may now contain (or no longer contain) the active patch —
+    // re-resolve which row to highlight after the items repopulate.
+    updateActiveHighlights();
   });
 }
 

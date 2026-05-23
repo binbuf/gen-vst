@@ -56,14 +56,20 @@ public:
     bool hasPcm() const noexcept;
 
     // --- Raw PCM accessors (Task 16 state save) ------------------------------
-    // The stored 8-bit unsigned PCM (resampled to `dacRate`). Empty when no
+    // The stored 8-bit unsigned PCM (resampled to dacRate). Empty when no
     // sample is loaded. Pointer is invalidated by clearPcm / loadWav /
     // loadRawPcm / setDacRate — read on the message thread only.
+    //
+    // We expose the *message-thread mirror* (mtPcm), not the audio-thread
+    // live buffer (pcm). The two have identical content modulo one block of
+    // audio-thread lag while the swap is pending — for state save and the
+    // D-view's UI peaks that lag is invisible. Reading the audio-thread pcm
+    // from the message thread would be a data race during a pending swap.
     const std::uint8_t* getRawPcmData() const noexcept
     {
-        return pcm.empty() ? nullptr : pcm.data();
+        return mtPcm.empty() ? nullptr : mtPcm.data();
     }
-    std::size_t         getRawPcmSize() const noexcept { return pcm.size(); }
+    std::size_t         getRawPcmSize() const noexcept { return mtPcm.size(); }
 
     // --- Sample-info accessors (Task 13 D-view) ------------------------------
 
@@ -86,15 +92,16 @@ public:
 
     // --- Parameters ----------------------------------------------------------
 
-    void setEnabled (bool on) noexcept     { enabled = on; }
-    void setMode    (Mode m) noexcept      { mode = m; }
-    void setLevel   (float gain01) noexcept { level = juce::jlimit (0.0f, 1.0f, gain01); }
+    void setEnabled (bool on) noexcept     { enabled.store (on, std::memory_order_release); }
+    void setMode    (Mode m) noexcept      { modeInt.store ((int) m, std::memory_order_release); }
+    void setLevel   (float gain01) noexcept { level.store (juce::jlimit (0.0f, 1.0f, gain01),
+                                                            std::memory_order_release); }
     void setDacRate (int hz);   // 8000 / 11025 / 22050 — regenerates pcm[] from srcFloat[]
 
-    bool  isEnabled() const noexcept       { return enabled; }
-    Mode  getMode()   const noexcept       { return mode; }
-    float getLevel()  const noexcept       { return level; }
-    int   getDacRate() const noexcept      { return dacRate; }
+    bool  isEnabled() const noexcept       { return enabled.load (std::memory_order_acquire); }
+    Mode  getMode()   const noexcept       { return (Mode) modeInt.load (std::memory_order_acquire); }
+    float getLevel()  const noexcept       { return level.load (std::memory_order_acquire); }
+    int   getDacRate() const noexcept      { return mtDacRate; }
 
     // --- MIDI triggers -------------------------------------------------------
 
@@ -106,7 +113,7 @@ public:
     // Stop playback immediately; the chip outputs whatever it last latched.
     void release();
 
-    bool isPlaying() const noexcept { return playing; }
+    bool isPlaying() const noexcept { return playing.load (std::memory_order_acquire); }
 
     // --- Render --------------------------------------------------------------
 
@@ -128,34 +135,66 @@ public:
 
 private:
     void writeReg (std::uint8_t addr, std::uint8_t value);
-    void regeneratePcmFromSource();
+    std::vector<std::uint8_t> regenerateBytes (const std::vector<float>& src,
+                                               double sourceRate, int destDacRate) const;
+    void stageSwap (std::vector<std::uint8_t> newBytes, int newDacRate);
     std::uint8_t fetchNextSampleByte();
 
     GenVstYmfmInterface interface;
     ymfm::ym2612        chip { interface };
 
-    bool  enabled  = false;
-    Mode  mode     = Mode::OneShot;
-    float level    = 1.0f;
-    int   dacRate  = 22050;
+    // --- Atomic player state (touched by both threads) -----------------------
+    // enabled / mode / level: written from the message thread (apvts setters)
+    // and read on the audio thread inside renderAdd. Plain scalars are not
+    // safe for that cross-thread access pattern; atomics with release/acquire
+    // make the writes promptly visible to the audio thread without locks.
+    std::atomic<bool>  enabled { false };
+    std::atomic<int>   modeInt { (int) Mode::OneShot };   // Mode-as-int for atomic<>
+    std::atomic<float> level   { 1.0f };
 
-    // 8-bit unsigned PCM resampled to dacRate.
+    // playing: written from the audio thread (on loop end / one-shot done) AND
+    // from the message thread (trigger / release / clearPcm). Atomic boolean
+    // is the right primitive for both write directions.
+    std::atomic<bool>  playing { false };
+
+    // --- Audio-thread-owned live buffer --------------------------------------
+    // pcm / dacRate / samplesPerWrite / playPos / writeAccumulator are read in
+    // renderAdd. They are NEVER written directly from the message thread; new
+    // content is published via the staging area below and swapped in at the
+    // top of renderAdd. Within a single renderAdd call these are stable.
     std::vector<std::uint8_t> pcm;
+    int                       dacRate         = 22050;
+    double                    samplesPerWrite = 1.0;
+    std::size_t               playPos         = 0;
+    double                    writeAccumulator = 0.0;
 
-    // Original mono float source plus its sample rate, retained so dacRate
-    // changes can resample without forcing a WAV reload.
-    std::vector<float> srcFloat;
-    double             srcRate = 0.0;
+    // --- Message-thread mirrors (state save + UI display) --------------------
+    // mtPcm/mtDacRate mirror what was most-recently staged; getRawPcmData() /
+    // getSampleLengthSeconds() / hasPcm() read from here so the message
+    // thread never races with the audio thread on pcm. srcFloat and srcRate
+    // back the resampler in setDacRate() and the waveform peaks in
+    // computePeaks(); the audio thread never touches them.
+    std::vector<std::uint8_t> mtPcm;
+    int                       mtDacRate  = 22050;
+    std::vector<float>        srcFloat;
+    double                    srcRate    = 0.0;
+    juce::String              sampleName;
 
-    // Filename of the most-recently loaded WAV (for the Task 13 D view).
-    juce::String       sampleName;
-
-    // Playback cursor (in pcm[] indices) and phase accumulator for the
-    // per-native-sample DAC write timing.
-    bool        playing               = false;
-    std::size_t playPos               = 0;
-    double      samplesPerWrite       = 1.0;   // native samples between DAC writes
-    double      writeAccumulator      = 0.0;
+    // --- Staging area (lock-free swap protocol) ------------------------------
+    // The message thread fills stagingPcm + stagingDacRate + stagingSamplesPerWrite
+    // and then sets pendingSwap.store(true, release). The audio thread checks
+    // pendingSwap at the top of renderAdd; on observe-true it pcm.swap(staging)
+    // + copies the scalar fields + resets playPos/writeAccumulator. The OLD
+    // pcm ends up in stagingPcm, where the next message-thread stageSwap call
+    // overwrites it (allocator activity stays off the audio thread).
+    //
+    // stageSwap busy-waits on pendingSwap before writing staging — guarantees
+    // we never overwrite a staging buffer that the audio thread is in the
+    // middle of swapping. The wait is < 1 audio block in normal operation.
+    std::vector<std::uint8_t> stagingPcm;
+    int                       stagingDacRate         = 22050;
+    double                    stagingSamplesPerWrite = 1.0;
+    std::atomic<bool>         pendingSwap { false };
 
     // Per-sample scaling factor for the chip output (matches Voice.cpp).
     static constexpr float kSampleScale = 0.5f / 32768.0f;
