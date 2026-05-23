@@ -34,8 +34,9 @@ namespace FmRegisterMap
     inline constexpr std::array<int, 4> kOperatorWriteOrder { 0, 2, 1, 3 };
 
     // A note-on is always this many (register, value) writes:
-    // 1 key-off + 4 operators x 7 registers + 2 channel + 2 frequency + 1 key-on.
-    inline constexpr int kNoteOnWriteCount = 34;
+    // 1 key-off + 1 LFO + 4 operators x 7 registers + 2 channel + 2 frequency
+    // + 1 key-on.
+    inline constexpr int kNoteOnWriteCount = 35;
 
     // YM2612 frequency register fields for one note.
     struct FreqRegs

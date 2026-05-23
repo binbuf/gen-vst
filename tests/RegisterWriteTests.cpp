@@ -38,9 +38,9 @@ namespace
 }
 
 // The note-on sequence for a known patch must match an exact register log:
-// key-off, operator blocks in S1/S3/S2/S4 order, channel registers, frequency
-// HIGH-then-LOW, key-on — with correctly packed values, incl. DT conversion
-// (op2 dt=5 -> hardware 6, op3 dt=6 -> hardware 7).
+// key-off, LFO control, operator blocks in S1/S3/S2/S4 order, channel registers,
+// frequency HIGH-then-LOW, key-on — with correctly packed values, incl. DT
+// conversion (op2 dt=5 -> hardware 6, op3 dt=6 -> hardware 7).
 TEST (RegisterWrite, NoteOnSequenceMatchesExpectedLog)
 {
     const auto writes = FmRegisterMap::buildNoteOn (makeKnownPatch(), 69);  // A4
@@ -48,6 +48,7 @@ TEST (RegisterWrite, NoteOnSequenceMatchesExpectedLog)
     // A4 -> BLK 4, F-number 0x43B: 0xA4 = (4<<3)|(0x43B>>8) = 0x24, 0xA0 = 0x3B.
     const std::array<RegWrite, FmRegisterMap::kNoteOnWriteCount> expected {{
         { 0x28, 0x00 },                                       // key-off
+        { 0x22, 0x00 },                                       // LFO off (rate 0)
 
         { 0x30, 0x01 }, { 0x40, 0x00 }, { 0x50, 0x1F },       // S1 block, offset 0x00
         { 0x60, 0x00 }, { 0x70, 0x00 }, { 0x80, 0x0F }, { 0x90, 0x00 },

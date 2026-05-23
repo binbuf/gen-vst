@@ -56,6 +56,11 @@ std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch, int mid
     // 1. Key-off first, so the envelope retriggers cleanly (channel 0, OPS=0).
     emit (0x28, 0x00);
 
+    // 1b. LFO control (0x22): bit 3 = enable, bits 2:0 = rate. Each voice is its
+    // own ymfm instance (ADR-0010), so the chip's single global LFO is in effect
+    // per-voice and is set here from the part's patch.
+    emit (0x22, ((patch.lfo_enable & 0x01) << 3) | (patch.lfo_rate & 0x07));
+
     // 2. Per-operator parameters, written in hardware order S1, S3, S2, S4.
     for (const int op : kOperatorWriteOrder)
     {
