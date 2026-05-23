@@ -194,6 +194,7 @@ private:
 
     juce::WebComboBoxRelay      bendRangeRelay        { "bend_range" };
     juce::WebToggleButtonRelay  velToTlRelay          { "vel_to_tl" };
+    juce::WebToggleButtonRelay  trueStereoRelay       { "true_stereo" };
     juce::WebComboBoxRelay      aftertouchTargetRelay { "aftertouch_target" };
     juce::WebComboBoxRelay      voiceCountRelay       { "voice_count" };
     juce::WebComboBoxRelay      uiScaleRelay          { "ui_scale" };
@@ -258,6 +259,7 @@ private:
 
     juce::WebComboBoxParameterAttachment      bendRangeAttachment;
     juce::WebToggleButtonParameterAttachment  velToTlAttachment;
+    juce::WebToggleButtonParameterAttachment  trueStereoAttachment;
     juce::WebComboBoxParameterAttachment      aftertouchTargetAttachment;
     juce::WebComboBoxParameterAttachment      voiceCountAttachment;
     juce::WebComboBoxParameterAttachment      uiScaleAttachment;

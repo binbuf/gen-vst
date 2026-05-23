@@ -28,6 +28,7 @@ export { Oscilloscope } from "./oscilloscope.js";
 export { VuMeter } from "./vu-meter.js";
 export { VoiceLeds } from "./voice-leds.js";
 export { ClipLed } from "./clip-led.js";
+export { TrueStereoToggle } from "./true-stereo-toggle.js";
 
 // Task 13 widgets
 export { WaveformDisplay } from "./waveform-display.js";

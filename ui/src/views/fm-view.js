@@ -20,10 +20,10 @@ import {
   Knob, Slider, LedReadout, LcdList, SectionTabs,
   SegDisplay, AlgoButtons, AlgoDiagram, OperatorPanel, Wordmark, GearIcon,
   FolderIcon,
-  Oscilloscope, VuMeter, VoiceLeds, ClipLed,
+  Oscilloscope, VuMeter, VoiceLeds, ClipLed, TrueStereoToggle,
   StepField,
   RangeSlider, InstrumentRack,
-  bindSlider, bindCombo,
+  bindSlider, bindToggle, bindCombo,
 } from "../widgets/index.js";
 import { setupPixelCanvas, palette, drawBevel, drawLedReadout, GLYPH_H } from "../widgets/pixel.js";
 
@@ -90,6 +90,12 @@ function mountHeader(header) {
   // Canvas-drawn wordmark (no bitmap image asset — 05-ui-ux.md).
   const wm = header.querySelector("#wordmark");
   new Wordmark(wm);
+
+  // Task 25 — TRUE STEREO toggle cell. Click flips the global apvts param;
+  // off = sum L+R to mono in processBlock (PluginProcessor.cpp).
+  const trueStereoCanvas = header.querySelector("#true-stereo");
+  if (trueStereoCanvas)
+    new TrueStereoToggle(trueStereoCanvas, bindToggle("true_stereo"));
 
   // Header meter bay (08-ui-views.md "Header meter bay"). All four widgets
   // are driven by the C++→JS `meterData` event pushed at ~30 Hz; we hold

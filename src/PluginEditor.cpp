@@ -372,6 +372,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         .withOptionsFrom (dacLevelRelay)
         .withOptionsFrom (bendRangeRelay)
         .withOptionsFrom (velToTlRelay)
+        .withOptionsFrom (trueStereoRelay)
         .withOptionsFrom (aftertouchTargetRelay)
         .withOptionsFrom (voiceCountRelay)
         .withOptionsFrom (uiScaleRelay)
@@ -1585,6 +1586,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             resetParam ("master_gain");
             resetParam ("bend_range");
             resetParam ("vel_to_tl");
+            resetParam ("true_stereo");
             resetParam ("aftertouch_target");
             resetParam ("voice_count");
             resetParam ("ui_scale");
@@ -1901,6 +1903,8 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
                                   bendRangeRelay, proc.getValueTreeState().undoManager),
       velToTlAttachment          (*proc.getValueTreeState().getParameter ("vel_to_tl"),
                                   velToTlRelay, proc.getValueTreeState().undoManager),
+      trueStereoAttachment       (*proc.getValueTreeState().getParameter ("true_stereo"),
+                                  trueStereoRelay, proc.getValueTreeState().undoManager),
       aftertouchTargetAttachment (*proc.getValueTreeState().getParameter ("aftertouch_target"),
                                   aftertouchTargetRelay, proc.getValueTreeState().undoManager),
       voiceCountAttachment       (*proc.getValueTreeState().getParameter ("voice_count"),

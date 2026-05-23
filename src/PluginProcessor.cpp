@@ -189,6 +189,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         "Velocity -> Carrier TL",
         true));
 
+    // True stereo (Task 25). On = leave L/R untouched, Off = sum L+R / 2 into
+    // both channels at the tail of processBlock so the plugin output collapses
+    // to mono. Default on per genny-ui's header label.
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "true_stereo", 1 },
+        "True Stereo",
+        true));
+
     // UI preference — hover tooltips on/off. Persisted with the rest of the
     // state so the user's preference survives across sessions even though it
     // doesn't affect the audio path.
@@ -496,6 +504,7 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     masterGainParam       = apvts.getRawParameterValue ("master_gain");
     bendRangeParam        = apvts.getRawParameterValue ("bend_range");
     velToTlParam          = apvts.getRawParameterValue ("vel_to_tl");
+    trueStereoParam       = apvts.getRawParameterValue ("true_stereo");
     aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
     voiceCountParam       = apvts.getRawParameterValue ("voice_count");
 
@@ -857,6 +866,24 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Silence any output channels beyond the stereo pair.
     for (int ch = 2; ch < numChannels; ++ch)
         buffer.clear (ch, 0, numSamples);
+
+    // Task 25 — TRUE STEREO toggle. When off, collapse L+R to mono by writing
+    // (L+R)/2 into both channels. Runs after the sub-block renders so every
+    // upstream stereo image (PSG pan, FM L/R, DAC) is preserved up to this
+    // point, then folded. Telemetry has already consumed the stereo signal in
+    // pushSamples, so the meters still show stereo activity even on mono out.
+    if (numChannels > 1 && trueStereoParam != nullptr
+        && trueStereoParam->load() < 0.5f)
+    {
+        float* left  = buffer.getWritePointer (0);
+        float* right = buffer.getWritePointer (1);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float sum = (left[i] + right[i]) * 0.5f;
+            left[i] = sum;
+            right[i] = sum;
+        }
+    }
 
     // Commit per-block telemetry: step the VU envelope, publish the snapshot,
     // record the voice-activity mask. Audio-thread → message-thread handoff

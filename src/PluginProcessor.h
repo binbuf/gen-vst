@@ -229,6 +229,7 @@ private:
     std::atomic<float>* masterGainParam       = nullptr;
     std::atomic<float>* bendRangeParam        = nullptr;
     std::atomic<float>* velToTlParam          = nullptr;
+    std::atomic<float>* trueStereoParam       = nullptr;
     std::atomic<float>* aftertouchTargetParam = nullptr;
     std::atomic<float>* voiceCountParam       = nullptr;
 

@@ -31,7 +31,10 @@
 
 #header {
   display: grid;
-  grid-template-columns: 132px 220px 1fr 32px;
+  /* Task 25 — five columns: wordmark, TRUE STEREO cell, meter bay,
+   * patch-name display (flexible), gear. Sums to 944px usable inside the
+   * 8px side padding plus 4 × 8px column gaps = 960px chassis width. */
+  grid-template-columns: 132px 76px 220px 1fr 32px;
   grid-template-rows: 1fr 12px;
   gap: 0 8px;
   padding: 6px 8px;
@@ -43,8 +46,16 @@
   grid-row: 1 / span 2;
 }
 
-.meter-bay {
+#true-stereo {
   grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: center;
+  cursor: pointer;
+}
+
+.meter-bay {
+  grid-column: 3;
   grid-row: 1 / span 2;
   display: flex;
   gap: 4px;
@@ -53,7 +64,7 @@
 
 
 .header-right {
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 1;
   display: flex;
   align-items: center;
@@ -61,7 +72,7 @@
 
 
 .header-right-bottom {
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 2;
   display: flex;
   align-items: center;
@@ -78,7 +89,7 @@
 }
 
 #gear {
-  grid-column: 4;
+  grid-column: 5;
   grid-row: 1 / span 2;
   width: 18px;
   height: 18px;
