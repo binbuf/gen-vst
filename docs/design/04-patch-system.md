@@ -606,3 +606,69 @@ Only the Furnace factory bank is distributed. The game-derived collection is nev
 part of the repo or any release artifact, so the project carries no game-audio
 redistribution exposure. Any bank added later must have a clear license before it
 can be committed or shipped.
+
+---
+
+## Bank bundle format (`.gnbank`, v1)
+
+Task 24's *Export Bank* / *Import Bank* JSON file. A snapshot of the user-curated
+instrument rack (Task 22) plus each row's per-instrument routing values.
+Distinct from the `.vgm`/`.vgz` bank-import path (Task 21): VGM extracts FM
+patches into the user-imported root and never touches the rack; `.gnbank`
+captures the rack itself.
+
+**Schema (single supported `version = 1`; no migration story yet — older
+bundles fail with a descriptive error):**
+
+```json
+{
+  "version": 1,
+  "rows": [
+    {
+      "type":      "fm" | "sq" | "d",
+      "slot":      0,
+      "patchPath": "<absolute path or empty for SQ/D>",
+      "routing": {
+        "midiCh":       1,
+        "transposeSt":  0,
+        "transposeOct": 0,
+        "noteLo":       0,
+        "noteHi":       127,
+        "detuneCents":  0,
+        "balance":      0.0
+      }
+    }
+  ]
+}
+```
+
+- `type` mirrors `PartManager::InstrumentType`. `slot` mirrors the rack
+  pool index — `0..4` for FM, `0..2` for PSG tone, `3` for PSG noise, `0`
+  for DAC.
+- `patchPath` is an absolute filesystem path. Cross-OS portability has the
+  same caveat as the rest of the patch system: an unresolved path leaves
+  the row's routing apvts values intact and raises a toast.
+- The DAC sample (8-bit PCM) is **not** part of the bank bundle — it
+  rides on the plugin-state path (Task 16, base64-embedded in the project).
+- Import is a **replace, not a merge**: every rack slot is cleared first,
+  then each row in the JSON replays through `addInstrument` →
+  `loadIntoPart` → routing param writes. The patchRootsChanged event
+  refreshes the rack widget after the replay completes.
+
+Reader/writer live in `src/BankIO.{h,cpp}`; the JSON-roundtrip and
+empty-rack edge cases are covered by `tests/BankIOTests.cpp`.
+
+---
+
+## Plugin state file (`.gnvst`)
+
+Task 24's *Save State* / *Load State* JSON-XML file. The bytes are the same
+`juce::AudioProcessorValueTreeState` blob the plugin returns from
+`getStateInformation` / consumes via `setStateInformation` (Task 16) — the
+`.gnvst` extension just lifts that state out of the DAW project into a
+standalone file the user can copy across sessions or machines.
+
+Unlike `.gnbank`, this file **does** carry the DAC PCM (base64) and every
+custom-root path, because that is how `getStateInformation` already
+serialises them. There is no separate schema document for the `.gnvst`
+format — see `src/PluginState.cpp` for the authoritative XML shape.

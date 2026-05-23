@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <utility>
 
+#include "BankIO.h"
 #include "VgmExtract.h"
 
 #if ! GENVST_DEV_SERVER
@@ -600,16 +601,26 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 });
         });
 
-    // Import Bank dialog (Task 21 / ADR-0019) — one-click .vgm/.vgz bank
-    // import. Picks a file, parses the YM2612 register stream on a background
-    // thread, writes every unique key-on snapshot to the user-imported root,
-    // refreshes the IMPORT tab, and surfaces a toast. Matches Genny VST's
-    // "Import Bank" UX: no second dialog, no per-patch checkbox modal.
+    // Import Bank dialog (Task 21 / ADR-0019, extended by Task 24). Two
+    // accepted file flavours, branched on extension:
+    //
+    //   .vgm / .vgz                — Genny-style one-click FM-patch bank
+    //                                 extraction. YM2612 register stream is
+    //                                 parsed on a background thread; every
+    //                                 unique key-on snapshot is written to
+    //                                 the user-imported root.
+    //   .gnbank / .json            — Restore a rack snapshot exported by
+    //                                 Export Bank. Clears every rack slot,
+    //                                 then replays each row (activate slot,
+    //                                 reload the FM patch by path, write
+    //                                 every per-instrument routing param).
+    //
+    // Either path ends with a toast and a patchRootsChanged refresh.
     options = options.withNativeFunction ("importBankDialog",
         [this] (const juce::Array<juce::var>&, Completion completion)
         {
             vgmImportChooser = std::make_unique<juce::FileChooser> (
-                "Import VGM bank", juce::File{}, "*.vgm;*.vgz");
+                "Import Bank", juce::File{}, "*.vgm;*.vgz;*.gnbank;*.json");
 
             const auto flags = juce::FileBrowserComponent::openMode
                              | juce::FileBrowserComponent::canSelectFiles;
@@ -622,29 +633,424 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                     { completion (makeStatusVar ({})); return; }   // cancelled
 
                     const juce::String fileName = file.getFileName();
+                    const juce::String ext      = file.getFileExtension().toLowerCase();
 
-                    runVgmExtractAsync (file.getFullPathName(),
-                        [this, fileName, completion = std::move (completion)]
-                        (int saved, const juce::String& err) mutable
+                    if (ext == ".vgm" || ext == ".vgz")
+                    {
+                        // Existing Task 21 path: extract every FM patch into
+                        // the user-imported root.
+                        runVgmExtractAsync (file.getFullPathName(),
+                            [this, fileName, completion = std::move (completion)]
+                            (int saved, const juce::String& err) mutable
+                            {
+                                if (saved > 0)
+                                    emitNotify ("info",
+                                        "Imported " + juce::String (saved)
+                                            + (saved == 1 ? " patch from " : " patches from ")
+                                            + fileName);
+                                if (err.isNotEmpty())
+                                    emitNotify ("error", err);
+                                else if (saved == 0)
+                                    emitNotify ("error", "No patches imported from " + fileName);
+
+                                auto* obj = new juce::DynamicObject();
+                                obj->setProperty ("ok",         (saved > 0) && err.isEmpty());
+                                obj->setProperty ("savedCount", saved);
+                                if (err.isNotEmpty())
+                                    obj->setProperty ("error", err);
+                                completion (juce::var (obj));
+                            });
+                        return;
+                    }
+
+                    // Task 24 — JSON bank restore. Parse the file, clear every
+                    // rack slot, then replay each row. Errors collect into a
+                    // single toast so the user sees the full picture rather
+                    // than one toast per failed row.
+                    genvst::bank::Bank bnk;
+                    const auto err = genvst::bank::readFromFile (file, bnk);
+                    if (err.isNotEmpty())
+                    {
+                        emitNotify ("error", err);
+                        completion (makeStatusVar (err.toStdString()));
+                        return;
+                    }
+
+                    auto& apvts    = processor.getValueTreeState();
+                    auto& parts    = processor.getPartManager();
+                    auto& browser  = processor.getPatchBrowser();
+
+                    auto writeParam = [&apvts] (const juce::String& id, float v)
+                    {
+                        if (auto* p = apvts.getParameter (id))
+                            p->setValueNotifyingHost (p->convertTo0to1 (v));
+                    };
+
+                    // Clear every slot — bank import is a replace, not a merge.
+                    for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
+                    {
+                        parts.setSlotActive ({ PartManager::InstrumentType::FM, i }, false);
+                        browser.clearActivePatchPath (i);
+                    }
+                    for (int i = 0; i < PartManager::kNumRackSqSlots; ++i)
+                        parts.setSlotActive ({ PartManager::InstrumentType::SQ, i }, false);
+                    for (int i = 0; i < PartManager::kNumRackDSlots; ++i)
+                        parts.setSlotActive ({ PartManager::InstrumentType::D,  i }, false);
+
+                    static const std::array<const char*, SN76489Engine::kNumChannels>
+                        kPsgIds { "ch1", "ch2", "ch3", "noise" };
+
+                    juce::StringArray rowErrors;
+                    int restored = 0;
+                    for (const auto& row : bnk.rows)
+                    {
+                        PartManager::InstrumentType type;
+                        if      (row.type == "fm") type = PartManager::InstrumentType::FM;
+                        else if (row.type == "sq") type = PartManager::InstrumentType::SQ;
+                        else if (row.type == "d")  type = PartManager::InstrumentType::D;
+                        else
                         {
-                            if (saved > 0)
-                                emitNotify ("info",
-                                    "Imported " + juce::String (saved)
-                                        + (saved == 1 ? " patch from " : " patches from ")
-                                        + fileName);
-                            if (err.isNotEmpty())
-                                emitNotify ("error", err);
-                            else if (saved == 0)
-                                emitNotify ("error", "No patches imported from " + fileName);
+                            rowErrors.add ("unknown row type \"" + row.type + "\"");
+                            continue;
+                        }
 
-                            auto* obj = new juce::DynamicObject();
-                            obj->setProperty ("ok",         (saved > 0) && err.isEmpty());
-                            obj->setProperty ("savedCount", saved);
-                            if (err.isNotEmpty())
-                                obj->setProperty ("error", err);
-                            completion (juce::var (obj));
-                        });
+                        if (row.slot < 0 || row.slot >= PartManager::slotPoolSize (type))
+                        {
+                            rowErrors.add ("row slot " + juce::String (row.slot) + " out of range");
+                            continue;
+                        }
+
+                        const PartManager::SlotId slot { type, row.slot };
+                        parts.setSlotActive (slot, true);
+
+                        juce::String suffix;
+                        if (type == PartManager::InstrumentType::FM)
+                            suffix = "_part" + juce::String (row.slot + 1);
+                        else if (type == PartManager::InstrumentType::SQ)
+                            suffix = juce::String ("_psg_") + kPsgIds[(std::size_t) row.slot];
+                        else
+                            suffix = "_dac";
+
+                        if (type == PartManager::InstrumentType::FM
+                            && row.patchPath.isNotEmpty())
+                        {
+                            const auto loadErr = browser.loadIntoPart (row.slot, row.patchPath);
+                            if (! loadErr.empty())
+                                rowErrors.add ("part " + juce::String (row.slot + 1) + ": "
+                                               + juce::String (loadErr));
+                        }
+
+                        writeParam ("midi_ch"       + suffix, (float) row.midiCh);
+                        writeParam ("transpose_st"  + suffix, (float) row.transposeSt);
+                        writeParam ("transpose_oct" + suffix, (float) row.transposeOct);
+                        writeParam ("note_lo"       + suffix, (float) row.noteLo);
+                        writeParam ("note_hi"       + suffix, (float) row.noteHi);
+                        writeParam ("detune_cents"  + suffix, (float) row.detuneCents);
+                        writeParam ("balance"       + suffix, row.balance);
+
+                        ++restored;
+                    }
+
+                    // Refresh the JS rack widget so the rows appear visually.
+                    emitPatchRootsChanged();
+
+                    if (restored > 0)
+                        emitNotify ("info",
+                            "Imported " + juce::String (restored)
+                                + (restored == 1 ? " row from " : " rows from ")
+                                + fileName);
+                    if (! rowErrors.isEmpty())
+                        emitNotify ("warn", rowErrors.joinIntoString ("; "));
+                    if (restored == 0 && rowErrors.isEmpty())
+                        emitNotify ("warn", "Bank file contained no rows.");
+
+                    auto* obj = new juce::DynamicObject();
+                    obj->setProperty ("ok",         restored > 0 || bnk.rows.empty());
+                    obj->setProperty ("savedCount", restored);
+                    if (! rowErrors.isEmpty())
+                        obj->setProperty ("error", rowErrors.joinIntoString ("; "));
+                    completion (juce::var (obj));
                 });
+        });
+
+    // Export Bank dialog (Task 24) — snapshot every active rack row + its
+    // per-instrument routing into a JSON bundle the user picks. Empty rack
+    // surfaces a toast and aborts (per task spec verification step). The
+    // patchPath stored per FM row is whatever PatchBrowser::activePatchPath
+    // currently holds for that part, so importing on a different machine
+    // requires that path to resolve there too — the same cross-OS caveat as
+    // the rest of the patch system (04-patch-system.md).
+    options = options.withNativeFunction ("exportBankDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            auto& apvts   = processor.getValueTreeState();
+            auto& parts   = processor.getPartManager();
+            auto& browser = processor.getPatchBrowser();
+
+            auto readInt = [&apvts] (const juce::String& id, int dflt) -> int
+            {
+                if (auto* p = apvts.getRawParameterValue (id))
+                    return juce::roundToInt (p->load());
+                return dflt;
+            };
+            auto readFloat = [&apvts] (const juce::String& id, float dflt) -> float
+            {
+                if (auto* p = apvts.getRawParameterValue (id))
+                    return p->load();
+                return dflt;
+            };
+
+            genvst::bank::Bank bnk;
+            auto addRow = [&] (const char*        typeStr,
+                               int                slotIdx,
+                               const juce::String& suffix,
+                               const juce::String& patchPath,
+                               int                 defaultMidi)
+            {
+                genvst::bank::BankRow r;
+                r.type         = typeStr;
+                r.slot         = slotIdx;
+                r.patchPath    = patchPath;
+                r.midiCh       = readInt   ("midi_ch"       + suffix, defaultMidi);
+                r.transposeSt  = readInt   ("transpose_st"  + suffix, 0);
+                r.transposeOct = readInt   ("transpose_oct" + suffix, 0);
+                r.noteLo       = readInt   ("note_lo"       + suffix, 0);
+                r.noteHi       = readInt   ("note_hi"       + suffix, 127);
+                r.detuneCents  = readInt   ("detune_cents"  + suffix, 0);
+                r.balance      = readFloat ("balance"       + suffix, 0.0f);
+                bnk.rows.push_back (std::move (r));
+            };
+
+            static const std::array<const char*, SN76489Engine::kNumChannels>
+                kPsgIds { "ch1", "ch2", "ch3", "noise" };
+            static constexpr std::array<int, SN76489Engine::kNumChannels>
+                kPsgDefCh { 11, 12, 13, 14 };
+
+            for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
+                if (parts.isSlotActive ({ PartManager::InstrumentType::FM, i }))
+                    addRow ("fm", i,
+                            "_part" + juce::String (i + 1),
+                            browser.activePatchPath (i),
+                            i + 1);
+
+            for (int i = 0; i < PartManager::kNumRackSqSlots; ++i)
+                if (parts.isSlotActive ({ PartManager::InstrumentType::SQ, i }))
+                    addRow ("sq", i,
+                            juce::String ("_psg_") + kPsgIds[(std::size_t) i],
+                            {},
+                            kPsgDefCh[(std::size_t) i]);
+
+            for (int i = 0; i < PartManager::kNumRackDSlots; ++i)
+                if (parts.isSlotActive ({ PartManager::InstrumentType::D, i }))
+                    addRow ("d", i, "_dac", {}, 16);
+
+            if (bnk.rows.empty())
+            {
+                emitNotify ("warn", "Rack is empty — nothing to export.");
+                completion (makeStatusVar ("rack empty"));
+                return;
+            }
+
+            bankExportChooser = std::make_unique<juce::FileChooser> (
+                "Export Bank",
+                juce::File{}.getChildFile ("bank.gnbank"),
+                "*.gnbank;*.json");
+
+            const auto flags = juce::FileBrowserComponent::saveMode
+                             | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting;
+
+            bankExportChooser->launchAsync (flags,
+                [this, completion = std::move (completion), bnk = std::move (bnk)]
+                (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    const auto err = genvst::bank::writeToFile (bnk, file);
+                    if (err.isNotEmpty())
+                    {
+                        emitNotify ("error", err);
+                        completion (makeStatusVar (err.toStdString()));
+                        return;
+                    }
+
+                    emitNotify ("info",
+                        "Exported " + juce::String ((int) bnk.rows.size())
+                            + (bnk.rows.size() == 1 ? " row to " : " rows to ")
+                            + file.getFileName());
+                    completion (makeStatusVar ({}));
+                });
+        });
+
+    // Save State dialog (Task 24) — wrap getStateInformation in a file
+    // chooser. `.gnvst` is the new extension; the bytes are the same
+    // AudioProcessorValueTreeState XML the plugin serialises through the
+    // standard JUCE state path (Task 16), so a `.gnvst` file is identical
+    // to the host's project-embedded state blob — just lifted to a
+    // standalone file the user can copy across DAWs / sessions.
+    options = options.withNativeFunction ("saveStateDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            stateSaveChooser = std::make_unique<juce::FileChooser> (
+                "Save State",
+                juce::File{}.getChildFile ("state.gnvst"),
+                "*.gnvst");
+
+            const auto flags = juce::FileBrowserComponent::saveMode
+                             | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting;
+
+            stateSaveChooser->launchAsync (flags,
+                [this, completion = std::move (completion)]
+                (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    juce::MemoryBlock block;
+                    processor.getStateInformation (block);
+                    if (! file.replaceWithData (block.getData(), block.getSize()))
+                    {
+                        emitNotify ("error",
+                            "Could not write state file: " + file.getFullPathName());
+                        completion (makeStatusVar ("write failed"));
+                        return;
+                    }
+                    emitNotify ("info", "Saved state to " + file.getFileName());
+                    completion (makeStatusVar ({}));
+                });
+        });
+
+    // Load State dialog (Task 24) — read `.gnvst` bytes and replay through
+    // setStateInformation. Restores the full apvts + routing + DAC PCM +
+    // custom roots + rack + UI state (everything Task 16 persists).
+    options = options.withNativeFunction ("loadStateDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            stateLoadChooser = std::make_unique<juce::FileChooser> (
+                "Load State", juce::File{}, "*.gnvst");
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles;
+
+            stateLoadChooser->launchAsync (flags,
+                [this, completion = std::move (completion)]
+                (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    juce::MemoryBlock block;
+                    if (! file.loadFileAsData (block) || block.getSize() == 0)
+                    {
+                        emitNotify ("error",
+                            "Could not read state file: " + file.getFileName());
+                        completion (makeStatusVar ("read failed"));
+                        return;
+                    }
+                    processor.setStateInformation (block.getData(),
+                                                   (int) block.getSize());
+                    // Push the UI refresh — state restore replays patches +
+                    // routing + custom roots, so the rack widget + lists need
+                    // to refetch.
+                    emitPatchRootsChanged();
+                    emitNotify ("info",
+                        "Loaded state from " + file.getFileName());
+                    completion (makeStatusVar ({}));
+                });
+        });
+
+    // Import / Export Instrument (Task 24). Thin aliases for the existing
+    // patch-browser file-chooser paths so the IMPORT-tab JS calls a uniform
+    // set of fns. importFileDialog / exportFileDialog stay registered for
+    // the patch-browser modal's buttons; these duplicate their behaviour
+    // under names that match the IMPORT-tab button labels.
+    options = options.withNativeFunction ("importInstrumentDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            importChooser = std::make_unique<juce::FileChooser> (
+                "Import Instrument", juce::File{},
+                juce::String (buildPatchExtensionFilter()));
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles;
+
+            importChooser->launchAsync (flags,
+                [this, completion = std::move (completion)]
+                (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    const auto err = processor.getPatchBrowser()
+                                         .importPatchFile (file.getFullPathName());
+                    if (! err.empty())
+                        emitNotify ("error", juce::String (err));
+                    else
+                    {
+                        emitPatchRootsChanged();
+                        emitNotify ("info",
+                            "Imported instrument: " + file.getFileName());
+                    }
+                    completion (makeStatusVar (err));
+                });
+        });
+
+    options = options.withNativeFunction ("exportInstrumentDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            exportChooser = std::make_unique<juce::FileChooser> (
+                "Export Instrument",
+                juce::File{}.getChildFile ("instrument.tfi"),
+                "*.tfi;*.vgi");
+
+            const auto flags = juce::FileBrowserComponent::saveMode
+                             | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting;
+
+            exportChooser->launchAsync (flags,
+                [this, completion = std::move (completion)]
+                (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    Patch current;
+                    processor.readLivePatch (selectedPart, current);
+                    const auto err = processor.getPatchBrowser()
+                                         .exportPatchToPath (current,
+                                                             file.getFullPathName());
+                    if (! err.empty())
+                        emitNotify ("error", juce::String (err));
+                    else
+                        emitNotify ("info",
+                            "Exported instrument to " + file.getFileName());
+                    completion (makeStatusVar (err));
+                });
+        });
+
+    // Log VGM + Import Tuning (Task 24) — stubbed for MVP per the task
+    // spec's "If implementation runs long" branch. Follow-up tasks are
+    // stamped at docs/tasks/29-vgm-logging.md and 30-scala-tuning.md
+    // (tasks 27/28 are already taken by LFO waveform / glide time).
+    options = options.withNativeFunction ("toggleVgmLogging",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            emitNotify ("info", "VGM logging coming soon — see Task 29.");
+            completion (makeStatusVar ({}));
+        });
+
+    options = options.withNativeFunction ("importTuningDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            emitNotify ("info", "Scala tuning import coming soon — see Task 30.");
+            completion (makeStatusVar ({}));
         });
 
     // Export file dialog — save file; extension picks TFI vs VGI.

@@ -723,9 +723,11 @@ function mountChannelsRow(host) {
 /* -------------------------------------------------------------------------- */
 
 function mountRightCol(col) {
-  // PRESETS tab → user-saved root; IMPORT tab → user-imported root. Both
-  // start empty on a fresh install and fill in as the user saves / imports
-  // (08-ui-views.md view 1 *Patch-list data sources*).
+  // PRESETS tab → user-saved patch list. IMPORT tab (Task 24) → the
+  // 8-button action stack. The PRESETS list and the IMPORT actions both
+  // live in the panel body and swap visibility on tab change — only one
+  // is visible at a time (Genny's IMPORT tab is purely an action menu;
+  // the imported patches themselves live in the patch browser modal).
   const presetList = new LcdList(col.querySelector("#preset-list"), {
     items: [],
     selected: -1,
@@ -740,34 +742,26 @@ function mountRightCol(col) {
   fmViewState.presetList = presetList;
   populatePatchList(presetList, "user-saved");
 
-  // Task 21 — Import Bank button. Lives on the IMPORT tab only (ADR-0019:
-  // one-click VGM/VGZ extraction matching Genny's UX). Calls the native
-  // `importBankDialog` function which opens the file chooser, runs the
-  // extraction on a background thread, writes the patches into the
-  // user-imported root, and fires a `notify` toast. The patchRootsChanged
-  // event from the backend then refreshes this LCD list automatically.
-  const importBankBtn = document.createElement("button");
-  importBankBtn.type = "button";
-  importBankBtn.className = "pb-button bevel-raised label import-bank-btn";
-  importBankBtn.textContent = "IMPORT BANK";
-  importBankBtn.dataset.tip = "IMPORT EVERY FM PATCH FROM A VGM OR VGZ FILE";
-  importBankBtn.style.display = "none";   // shown only on the IMPORT tab
-  importBankBtn.addEventListener("click", async () => {
-    try {
-      const fn = Juce.getNativeFunction("importBankDialog");
-      await fn();
-      // Toast + IMPORT-list refresh are emitted by the C++ side via the
-      // `notify` and `patchRootsChanged` events; no JS follow-up needed.
-    } catch (e) { console.error(e); }
-  });
-  col.querySelector(".panel-body").appendChild(importBankBtn);
-  fmViewState.importBankBtn = importBankBtn;
+  // Task 24 — IMPORT tab action stack. Eight vertical buttons in Genny's
+  // top-to-bottom order. Each button calls a native fn and lets the C++
+  // side handle toast feedback via the existing `notify` event channel.
+  const importActions = mountImportActions(col.querySelector(".panel-body"));
+  fmViewState.importActions = importActions;
+
+  // Initial visibility — applyInitialUiState updates this once the
+  // persisted tab choice is known.
+  importActions.style.display = "none";
 
   const tabs = makeLocalChoiceBinding(["PRESETS", "IMPORT"], 0, (idx) => {
     fmViewState.presetTab = idx;
+    // Swap visibility: PRESETS shows the patch list; IMPORT shows the
+    // action stack. The presetTabsBinding's initial value (idx=0) and the
+    // applyInitialUiState restore path both feed through here.
+    const showImport = (idx === 1);
+    const presetCanvas = col.querySelector("#preset-list");
+    if (presetCanvas) presetCanvas.style.display = showImport ? "none" : "";
+    importActions.style.display = showImport ? "flex" : "none";
     refreshPresetList();
-    // Import Bank is meaningful only when the IMPORT tab is active.
-    importBankBtn.style.display = (idx === 1) ? "block" : "none";
     // Persist the choice C++-side so reopening the DAW project picks it up.
     try {
       const setTab = Juce.getNativeFunction("setPresetTab");
@@ -795,6 +789,54 @@ function mountRightCol(col) {
     new FolderIcon(iconCanvas);
     iconCanvas.addEventListener("click", () => openPatchBrowserModal());
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Task 24 — IMPORT tab action stack                                          */
+/* -------------------------------------------------------------------------- */
+
+// Genny-style 8-button vertical stack. Each entry maps a visible label to a
+// native function name + an optional tooltip. Click handlers await the native
+// fn and surface errors via the standard `notify` toast pipeline; success
+// feedback is emitted by the C++ side, so the JS click handler stays trivial.
+const IMPORT_ACTIONS = [
+  { label: "IMPORT BANK",       fn: "importBankDialog",
+    tip: "IMPORT EVERY PATCH FROM A VGM/VGZ FILE OR A SAVED .GNBANK BUNDLE" },
+  { label: "EXPORT BANK",       fn: "exportBankDialog",
+    tip: "EXPORT THE CURRENT RACK TO A .GNBANK JSON BUNDLE" },
+  { label: "LOAD STATE",        fn: "loadStateDialog",
+    tip: "LOAD A SAVED .GNVST PLUGIN STATE" },
+  { label: "SAVE STATE",        fn: "saveStateDialog",
+    tip: "SAVE THE FULL PLUGIN STATE TO A .GNVST FILE" },
+  { label: "IMPORT INSTRUMENT", fn: "importInstrumentDialog",
+    tip: "IMPORT A SINGLE PATCH FILE (TFI / VGI / DMP / Y12 / OPM)" },
+  { label: "EXPORT INSTRUMENT", fn: "exportInstrumentDialog",
+    tip: "EXPORT THE SELECTED PART AS A TFI OR VGI FILE" },
+  { label: "LOG VGM",           fn: "toggleVgmLogging",
+    tip: "RECORD A VGM LOG OF EVERY CHIP REGISTER WRITE" },
+  { label: "IMPORT TUNING",     fn: "importTuningDialog",
+    tip: "APPLY A SCALA .SCL TUNING FILE" },
+];
+
+function mountImportActions(panelBody) {
+  const host = document.createElement("div");
+  host.className = "import-actions";
+  for (const entry of IMPORT_ACTIONS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pb-button bevel-raised label import-action-btn";
+    btn.textContent = entry.label;
+    btn.dataset.tip = entry.tip ?? entry.label;
+    btn.addEventListener("click", async () => {
+      try {
+        const fn = Juce.getNativeFunction(entry.fn);
+        await fn();
+      } catch (e) { console.error(`${entry.fn} failed`, e); }
+    });
+    host.appendChild(btn);
+  }
+  panelBody.appendChild(host);
+  return host;
 }
 
 /* -------------------------------------------------------------------------- */

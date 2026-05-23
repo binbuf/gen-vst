@@ -22,10 +22,12 @@ add_executable(GenVstTests
     MidiRoutingTests.cpp
     PsgDacTests.cpp
     PsgEnvelopeTests.cpp
+    BankIOTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
+    "${CMAKE_SOURCE_DIR}/src/BankIO.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
     "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"
     "${CMAKE_SOURCE_DIR}/src/MidiRouter.cpp"

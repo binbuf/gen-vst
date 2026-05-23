@@ -331,6 +331,13 @@ private:
     // contract as the others; replaced on every launch.
     std::unique_ptr<juce::FileChooser> vgmImportChooser;
 
+    // Task 24 — IMPORT-tab action choosers. Same pattern as the others: each
+    // launch stashes a fresh chooser here so the dialog outlives the async
+    // callback that uses it.
+    std::unique_ptr<juce::FileChooser> bankExportChooser;
+    std::unique_ptr<juce::FileChooser> stateSaveChooser;
+    std::unique_ptr<juce::FileChooser> stateLoadChooser;
+
     // Task 21 — VGM bank-import runner. Reads `filePath`, runs the heavy
     // parse on a juce::Thread::launch-spawned background thread, writes each
     // extracted patch to the user-imported root, refreshes the IMPORT-tab
