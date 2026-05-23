@@ -63,7 +63,13 @@ headroom, and verify the full feature set against the parity checklist.
 4. Tune per-voice scaling and the master soft-clip guard against dense chords
    and loud patches.
 5. Walk the full `07-feature-spec.md` parity + extensions lists in a DAW;
-   verify every MVP item; file follow-ups for anything that fails.
+   verify every MVP item; file follow-ups for anything that fails. Two
+   walkthrough cases the checklist would otherwise miss:
+   - **Save → PRESETS tab:** save a patch from the FM editor → it appears in
+     the PRESETS tab and on disk under `<userAppData>/GenVst/patches/saved/`.
+   - **Import → IMPORT tab:** drag-and-drop a `.tfi` onto the plugin window
+     → it appears in the IMPORT tab and on disk under
+     `<userAppData>/GenVst/patches/imported/`.
 
 ## Deliverables
 

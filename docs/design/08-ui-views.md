@@ -59,6 +59,19 @@ The default view. Its layout — header, left column (LFO/Algorithm), center col
 four operator panels — is specified in full in [`genny-ui.md`](../genny-ui.md).
 This section records only what `genny-ui.md` left unplaced.
 
+### Patch-list data sources
+
+The three patch lists rendered by this view each pin to one of the patch
+roots from [`04-patch-system.md`](04-patch-system.md) *Patch roots*:
+
+- **INSTRUMENTS** (center column) → factory root (read-only, bundled).
+- **PRESETS** tab (right column) → user-saved root (`…/patches/saved/`).
+- **IMPORT** tab (right column) → user-imported root (`…/patches/imported/`).
+
+Both user-side lists start empty on a fresh install and fill in as the user
+saves or imports. The full mapping, the modal's role, and the list/tab
+behaviour are specified in view 4 below.
+
 ### Header meter bay
 
 `genny-ui.md` places the logo, a "TRUE STEREO" VU meter and the 7-segment
@@ -188,10 +201,11 @@ behind it.
 │ [ Search patches…                                              🔍 ] │
 │ ┌────────────────────┬──────────────────────────────────────────┐  │
 │ │ ▼ Factory      🔒  │  Bass Guitar                              │  │
-│ │ ▼ User             │  Techno Lead                              │  │
-│ │ ▼ extra  (custom)  │ ▶ Synth Brass                      ◀ sel  │  │
-│ │   ▶ 01      (842)  │  Marimba                                  │  │
-│ │   ▼ 02      (915)  │  …                                        │  │
+│ │ ▼ Saved            │  Techno Lead                              │  │
+│ │ ▼ Imported         │ ▶ Synth Brass                      ◀ sel  │  │
+│ │ ▼ extra  (custom)  │  Marimba                                  │  │
+│ │   ▶ 01      (842)  │  …                                        │  │
+│ │   ▼ 02      (915)  │                                           │  │
 │ │     ▶ game_a  (28) │                                           │  │
 │ │   ▶ 03      (770)  │                                           │  │
 │ │ [ + Add Folder… ]  │                                           │  │
@@ -205,12 +219,15 @@ behind it.
 - **Search box** — filters by patch name across all roots; each hit shows its
   folder path. Backed by the background search index (`04-patch-system.md`).
 - **Left pane — folder tree** — every root and its subfolders as a collapsible
-  tree. `Factory` carries a lock glyph (read-only). Each scanned folder shows its
-  patch count. Lazy scan on first expand.
+  tree. `Factory` carries a lock glyph (read-only). `Saved` and `Imported` are
+  the two writable user roots (see `04-patch-system.md` *Patch roots*); custom
+  roots follow. Each scanned folder shows its patch count. Lazy scan on first
+  expand.
 - **Right pane — patch list** — the `.tfi`/`.vgi`/`.dmp` files in the selected
   folder.
 - **`+ Add Folder…`** — directory picker; registers a custom root (view 11).
-- **`Import file`** — file picker (`*.tfi;*.vgi;*.dmp`); copies into the User root.
+- **`Import file`** — file picker (`*.tfi;*.vgi;*.dmp`); copies into the
+  user-imported root (`…/patches/imported/`).
 - **`Export▾`** — export the current patch as TFI or VGI (save dialog).
 - **`Delete`** — removes a patch from a writable root; disabled for `Factory`.
 - **`Preview`** — middle-C note-on at fixed velocity for ~1s into the active part.
@@ -221,13 +238,19 @@ behind it.
 - Single-click or `Enter` on a patch loads it into the **currently selected FM
   part** ([ADR-0013](adr/0013-multitimbral-voice-model.md)); the modal stays open
   so several patches can be auditioned. `Close` dismisses it.
-- **Relationship to the main-window lists.** The main window's center
-  **INSTRUMENTS** list and right **PRESETS / IMPORT** lists are *quick-access*
-  views — INSTRUMENTS shows the active folder's patches, PRESETS shows the
-  factory bank, IMPORT shows the User root. The browser modal is the full
-  folder-tree navigator and the only place to manage roots, import, export and
-  delete. Choosing a folder in the browser updates what the INSTRUMENTS list
-  shows. The folder icon in the Presets/Import tab header opens this modal.
+- **Relationship to the main-window lists.** The main window's three
+  patch-list surfaces are *quick-access* views, each pinned to one of the
+  writable/read-only roots from `04-patch-system.md`:
+    - **INSTRUMENTS** (center column) → the **factory** root.
+    - **PRESETS** tab (right column) → the **user-saved** root
+      (`…/patches/saved/`). Empty until the user calls `savePatch()`.
+    - **IMPORT** tab (right column) → the **user-imported** root
+      (`…/patches/imported/`). Empty until the user imports a file or
+      drag-drops one.
+  The browser modal is the full folder-tree navigator and the only place to
+  manage roots, import, export and delete; it can also browse any custom
+  roots, which the main-window lists do not expose. The folder icon in the
+  Presets/Import tab header opens this modal.
 - A load failure raises a notification toast (view 8); it never blocks.
 
 ---
@@ -407,16 +430,17 @@ not-pixel-parity stance of [ADR-0015](adr/0015-webview-backend-support.md).
 
 | Trigger | Kind | Filter / result |
 |---------|------|-----------------|
-| `Import file` (browser) | Open file | `*.tfi;*.vgi;*.dmp` → copied into the User root |
+| `Import file` (browser) | Open file | `*.tfi;*.vgi;*.dmp` → copied into the user-imported root (`…/patches/imported/`) |
 | `Export▾` (browser) | Save file | writes a TFI (42 B) or VGI (43 B) file |
 | `+ Add Folder…` (browser) | Choose directory | registers a custom patch root |
 | `LOAD WAV…` (D section) | Open file | `*.wav` → converted to 8-bit PCM |
 
 **Drag-and-drop** is the non-dialog path: `.tfi`/`.vgi`/`.dmp` files dropped on
-the plugin window import into the User root; a folder dropped on the window
-registers as a custom root. Because an OS drop must yield real filesystem paths,
-this uses a native `juce::FileDragAndDropTarget` on the editor, **not** HTML5
-drag-and-drop (see `05-ui-ux.md`).
+the plugin window import into the user-imported root (`…/patches/imported/`);
+a folder dropped on the window registers as a custom root. Because an OS drop
+must yield real filesystem paths, this uses a native
+`juce::FileDragAndDropTarget` on the editor, **not** HTML5 drag-and-drop
+(see `05-ui-ux.md`).
 
 ---
 

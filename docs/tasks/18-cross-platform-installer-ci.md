@@ -55,6 +55,16 @@ install always has a working WebView2 runtime. The installer tool (WiX, Inno
 Setup, …) is an implementation choice. For offline installers the Fixed Version
 runtime is the documented alternative, not the default.
 
+### User data on install / uninstall
+
+The plugin auto-creates the writable user roots
+`<userAppData>/GenVst/patches/saved/` and `…/patches/imported/` on first
+launch via idempotent `fs::create_directories` (see Task 14). The installer
+**must not** pre-seed these — the runtime owns them. The installer **must
+not** delete `<userAppData>/GenVst/` on uninstall: those folders hold user
+content (saved patches, imported patches, persisted settings) and any
+post-install custom roots may live under the same tree.
+
 ### CI
 
 `.github/workflows/build.yml` with three platform jobs per `06-build-system.md`

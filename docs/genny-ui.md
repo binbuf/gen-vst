@@ -53,7 +53,9 @@ To the right of the list, a vertical stack of small control groups:
 - **PAN** — horizontal slider with no visible readout (or a centered indicator)
 
 ## Right Column — Presets
-Two tab headers at top: **PRESETS** (active) and **IMPORT**. The body is a second green LCD list, same styling as the Instruments list but without icons — just preset names like `Gadget Bass 01`, `Perc Hat 01`, `Shinobi Bass`. Selected row inverted. Pixel scrollbar on the right. Small folder/lock icons in the top-right of the tab header.
+Two tab headers at top: **PRESETS** (active) and **IMPORT**. The body is a second green LCD list, same styling as the Instruments list but without icons. Selected row inverted. Pixel scrollbar on the right. Small folder/lock icons in the top-right of the tab header.
+
+**Content (see `docs/design/08-ui-views.md` view 4 for the full data model):** PRESETS shows the user's saved patches (`<userAppData>/GenVst/patches/saved/`); IMPORT shows the user's imported patches (`<userAppData>/GenVst/patches/imported/`). Both lists are empty by default and fill in as the user saves or imports — the screenshots that show populated PRESETS rows like `Gadget Bass 01` are reference imagery, not first-launch state. The INSTRUMENTS list in the center column is the factory bank.
 
 ## Bottom Row — Four Operator Panels
 Four identical vertical strips, one per FM operator. Each strip contains, top to bottom:

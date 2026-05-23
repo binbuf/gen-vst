@@ -200,13 +200,25 @@ flat bank list.
 A **patch root** is a top-level folder the browser scans:
 
 - **Factory root** — the bundled factory patches. Read-only, always present,
-  auto-loaded on every startup. Cannot be removed.
-- **User root** — `<userAppData>/GenVst/patches/`. Writable; holds imported and
-  user-saved patches.
+  auto-loaded on every startup. Cannot be removed. Feeds the main-window
+  **INSTRUMENTS** list.
+- **User-saved root** — `<userAppData>/GenVst/patches/saved/`. Writable;
+  populated only by `savePatch()`. Feeds the main-window **PRESETS** tab.
+  Auto-created (idempotent `fs::create_directories`) on first launch.
+- **User-imported root** — `<userAppData>/GenVst/patches/imported/`. Writable;
+  populated only by `importPatch()` and drag-and-drop imports. Feeds the
+  main-window **IMPORT** tab. Auto-created on first launch.
 - **Custom roots** — any number of folders the user registers via "Add Folder…".
   Each root's full subdirectory structure is preserved and navigable. The list of
   custom root paths is persisted in plugin state and re-scanned on next startup.
   Removing a root only unregisters it — no files are deleted from disk.
+
+> **Pre-existing flat user roots.** Earlier builds wrote both saves and
+> imports directly to `<userAppData>/GenVst/patches/`. Such legacy patches
+> stay on disk but no longer appear in the main-window PRESETS / IMPORT
+> tabs after the split. They remain reachable by adding the legacy folder
+> as a custom root via the patch browser's *Add Folder…* — a one-way,
+> non-destructive migration.
 
 > **Cross-OS portability.** Custom-root and per-part patch paths are stored as
 > **absolute filesystem paths** in plugin state. A project saved on one OS and
@@ -277,9 +289,11 @@ is shown to the user via the UI notification toast (see [05-ui-ux.md](05-ui-ux.m
   scanned lazily; its directory structure becomes the navigable tree. The path is
   persisted across sessions.
 - **Import file:** a file picker filtered to `*.tfi;*.vgi;*.dmp` copies a single
-  patch into the writable user root.
+  patch into the **user-imported root** (`…/patches/imported/`).
 - **Drag-and-drop:** dropping `.tfi`/`.vgi`/`.dmp` files imports them into the
-  user root; dropping a *folder* registers it as a new custom root.
+  user-imported root; dropping a *folder* registers it as a new custom root.
+- **Save patch:** `savePatch()` writes a TFI into the **user-saved root**
+  (`…/patches/saved/`). This is the only path that populates the PRESETS tab.
 - **Export TFI:** construct a 42-byte buffer from the current `Patch` struct and write to file.
 - **Export VGI:** construct a 43-byte buffer, pack AMS/FMS into byte 2, AMON into DR byte.
 - **Delete:** removes a patch from a writable root. Disabled for the read-only
@@ -337,9 +351,11 @@ it loads, in order:
 1. **Factory root** (read-only, always present) — the bundle's
    `Contents/Resources/patches/` for plugin formats; a platform data directory for
    Standalone. Auto-loaded every launch.
-2. **User root** (writable) — `<userAppData>/GenVst/patches/`. Imported and
-   user-saved patches.
-3. **Custom roots** (user-added, any number) — folders registered via the
+2. **User-saved root** (writable) — `<userAppData>/GenVst/patches/saved/`.
+   Populated by `savePatch()` only. Auto-created on first launch.
+3. **User-imported root** (writable) — `<userAppData>/GenVst/patches/imported/`.
+   Populated by `importPatch()` and drag-and-drop only. Auto-created on first launch.
+4. **Custom roots** (user-added, any number) — folders registered via the
    browser's "Add Folder…", with their paths persisted in plugin state and
    re-scanned on the next launch.
 

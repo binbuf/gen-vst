@@ -9,9 +9,11 @@
 
 ## Objective
 
-Build the **patch browser modal** on top of the Task 09 backend, wire the
-main-window quick-access patch lists, and implement **import / export / delete /
-add-folder** and native **drag-and-drop**. This completes the UI.
+Build the **patch browser modal** on top of the Task 09 backend, **split the
+writable user root into `saved/` and `imported/` subroots**, wire the
+main-window quick-access patch lists to the right subroots, and implement
+**import / export / delete / add-folder** and native **drag-and-drop**. This
+completes the UI.
 
 ## Context & key constraints
 
@@ -32,29 +34,76 @@ add-folder** and native **drag-and-drop**. This completes the UI.
   velocity for ~1 s into the active part. `Delete` is **disabled for the
   read-only Factory root**. A load failure raises a notification toast (Task 13)
   and never blocks.
-- **Quick-access lists:** the main window's center `INSTRUMENTS` list and right
-  `PRESETS`/`IMPORT` lists are quick-access views over the same backend —
-  `INSTRUMENTS` = the active folder's patches, `PRESETS` = the factory bank,
-  `IMPORT` = the User root. The folder icon in the Presets/Import tab header
-  opens the browser modal. Choosing a folder in the browser updates what
-  `INSTRUMENTS` shows.
+
+### Subfolder split (writable user root)
+
+Task 09 shipped a single writable **User** root at
+`<userAppData>/GenVst/patches/`. This task splits it into two distinct roots,
+per `04-patch-system.md` *Patch roots*:
+
+- `<userAppData>/GenVst/patches/saved/` — the **user-saved** root, populated
+  only by `savePatchAsTfi()`.
+- `<userAppData>/GenVst/patches/imported/` — the **user-imported** root,
+  populated only by `importPatchFile()` and drag-and-drop imports.
+
+Concrete changes:
+
+- Add `PatchRootKind::UserSaved` and `PatchRootKind::UserImported`; retire
+  the old `User` value. The `kind` field in `rootsAsJson()` serialises as
+  `"user-saved"` and `"user-imported"`.
+- Both subfolders are auto-created on startup via idempotent
+  `fs::create_directories` — no installer step required.
+- `savePatchAsTfi()` writes into the `saved/` root; `importPatchFile()` and
+  the drag-and-drop file path write into the `imported/` root.
+- Pre-existing flat user-root patches (from older builds) are silently
+  ignored by the main-window lists. They remain accessible by `+ Add Folder…`
+  pointing at the legacy directory as a custom root — no migration code.
+
+### Quick-access list bindings
+
+The main window's three patch-list surfaces each pin to one of the roots:
+
+- `INSTRUMENTS` (center column) → `kind: "factory"`.
+- `PRESETS` tab (right column) → `kind: "user-saved"`. Empty on a fresh install.
+- `IMPORT` tab (right column) → `kind: "user-imported"`. Empty on a fresh install.
+
+The folder icon in the Presets/Import tab header opens the browser modal.
+Choosing a folder in the modal does **not** repaint `INSTRUMENTS` — the
+quick-access surfaces are pinned, not navigable. The modal is the place to
+browse anything outside those three roots (including custom roots).
+
+> **Bridge note.** Task 11 wired the main-window PRESETS list to the factory
+> root as a placeholder. That binding is replaced by step (d) below; until
+> this task ships, the runtime UI shows the placeholder behaviour — a known
+> deviation from the now-updated `08-ui-views.md` view 4.
+
 - **Native file choosers** (`08-ui-views.md` view 11) — `juce::FileChooser`,
   not WebView content: `Import file` (open `*.tfi;*.vgi;*.dmp` → copy into the
-  User root), `Export▾` (save a 42-byte TFI or 43-byte VGI), `+ Add Folder…`
-  (choose a directory → register a custom root).
+  user-imported root), `Export▾` (save a 42-byte TFI or 43-byte VGI),
+  `+ Add Folder…` (choose a directory → register a custom root).
 - **Drag-and-drop** uses a **native `juce::FileDragAndDropTarget` on the
   editor**, *not* HTML5 drop (`05-ui-ux.md` *File drag-and-drop*): an HTML5 drop
   yields only `File` objects, not real paths, and cannot enumerate a dropped
-  folder. Dropped `.tfi`/`.vgi`/`.dmp` files import into the User root; a
-  dropped folder registers as a custom root. The editor resolves the OS paths
-  and forwards them to the patch system.
+  folder. Dropped `.tfi`/`.vgi`/`.dmp` files import into the user-imported
+  root; a dropped folder registers as a custom root. The editor resolves the
+  OS paths and forwards them to the patch system.
 
 ## Scope
 
+- (a) Create `<userAppData>/GenVst/patches/saved/` and `…/imported/` on
+  startup via idempotent `fs::create_directories`.
+- (b) Route `savePatchAsTfi()` into `…/saved/`; route `importPatchFile()` and
+  the drag-and-drop file path into `…/imported/`.
+- (c) Add `PatchRootKind::UserSaved` / `UserImported`, retire the old `User`
+  value, and update `rootsAsJson()` to serialise the two new kinds.
+- (d) Wire the main-window `INSTRUMENTS` list to `kind: "factory"`, the
+  PRESETS tab to `kind: "user-saved"`, and the IMPORT tab to
+  `kind: "user-imported"` (replacing the Task 11 placeholder binding).
+- (e) Show the two writable roots as named top-level branches in the modal
+  browser's folder tree (`Saved` and `Imported`), alongside `Factory` and any
+  custom roots.
 - The patch browser modal UI: search, folder-tree pane, patch-list pane, the
-  button row, `Preview`, `Close`.
-- Wiring the main-window `INSTRUMENTS` / `PRESETS` / `IMPORT` quick-access lists
-  to the backend; the folder icon opens the modal.
+  button row, `Preview`, `Close`. Folder icon opens the modal.
 - `Import file`, `Export▾` (TFI + VGI), `Delete`, `+ Add Folder…` via native
   `juce::FileChooser`.
 - Native `juce::FileDragAndDropTarget` drag-and-drop for files and folders.
@@ -93,30 +142,43 @@ extensions the UI needs.
 
 1. Open the browser from the folder icon — it covers the window, the main UI is
    dimmed.
-2. The folder tree shows Factory (with a lock glyph), User, and any custom
-   roots; expanding a folder lazily scans it and fills in its patch count.
-   Point a custom root at `extra/` and expand into it — no UI
-   stall on the 30k-file tree.
+2. The folder tree shows Factory (with a lock glyph), Saved, Imported, and any
+   custom roots; expanding a folder lazily scans it and fills in its patch
+   count. Point a custom root at `extra/` and expand into it — no UI stall on
+   the 30k-file tree.
 3. Selecting a folder lists its patches; single-click / `Enter` loads a patch
    into the currently selected part — the sound changes, the modal stays open.
 4. `Preview` plays a ~1 s middle-C on the active part.
 5. Search by patch name returns hits across roots, each showing its folder path.
-6. `Import file` copies a `.tfi`/`.vgi`/`.dmp` into the User root and it appears
-   there. `Export▾` writes a valid TFI and a valid VGI (re-import them to
-   confirm). `Delete` removes a patch from a writable root and is **disabled**
-   for Factory.
-7. `+ Add Folder…` registers a custom root that appears in the tree.
-8. Drag a `.tfi` file onto the plugin window → it imports into the User root;
-   drag a folder onto the window → it registers as a custom root.
-9. A failed load surfaces a notification toast and does not block the browser.
-10. `pluginval --strictness-level 8` passes.
+6. On a fresh user-data directory: `…/saved/` and `…/imported/` are created
+   on first launch; the main-window PRESETS and IMPORT tabs both render
+   empty.
+7. `Import file` copies a `.tfi`/`.vgi`/`.dmp` into `…/imported/` — it appears
+   in the IMPORT tab and as a child of the `Imported` tree node.
+   `savePatch` from the FM editor writes a TFI into `…/saved/` — it appears in
+   the PRESETS tab and as a child of the `Saved` tree node.
+   `Export▾` writes a valid TFI and a valid VGI to a user-chosen location
+   (re-import them to confirm). `Delete` removes a patch from a writable root
+   and is **disabled** for Factory.
+8. `+ Add Folder…` registers a custom root that appears in the tree.
+9. Drag a `.tfi` file onto the plugin window → it imports into `…/imported/`
+   (appears in the IMPORT tab); drag a folder onto the window → it registers
+   as a custom root.
+10. A failed load surfaces a notification toast and does not block the browser.
+11. `pluginval --strictness-level 8` passes.
 
 ## Done when
 
-- [ ] The patch browser modal works: tree, list, search, preview, lazy scan.
+- [ ] `…/patches/saved/` and `…/patches/imported/` are auto-created on
+      startup; `savePatch` routes to the former, `importPatch` and
+      drag-and-drop to the latter.
+- [ ] `rootsAsJson()` emits the two new kinds (`"user-saved"`,
+      `"user-imported"`); the old `"user"` kind is gone.
+- [ ] The patch browser modal works: tree (Factory / Saved / Imported / custom),
+      list, search, preview, lazy scan.
 - [ ] Patches load into the selected part; the modal stays open.
-- [ ] Quick-access INSTRUMENTS/PRESETS/IMPORT lists are wired; the folder icon
-      opens the modal.
+- [ ] Quick-access lists are wired: INSTRUMENTS → factory, PRESETS → user-saved,
+      IMPORT → user-imported; the folder icon opens the modal.
 - [ ] Import / Export (TFI + VGI) / Delete / Add Folder work via native choosers;
       Delete is disabled for Factory.
 - [ ] Native file/folder drag-and-drop works.

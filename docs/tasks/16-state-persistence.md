@@ -21,7 +21,10 @@ sample, custom root, and setting. After this the MVP is feature-complete.
   Persistence* shows the schema; `01-architecture.md` *State Persistence* shows
   the read/write outline):
   - **Per part:** the assigned MIDI channel and the active patch identified
-    **by absolute filesystem path** (not a flat bank index — ADR-0006).
+    **by absolute filesystem path** (not a flat bank index — ADR-0006). Stored
+    paths may point into the factory root, either user subroot
+    (`…/patches/saved/` or `…/patches/imported/`, see Task 14), or any custom
+    root. The unresolved-path handling below covers all of these uniformly.
   - **Custom root paths** (the registered patch-browser custom roots).
   - **DAC:** the loaded 8-bit PCM, base64-encoded, so a saved project is
     self-contained (ADR-0014).
