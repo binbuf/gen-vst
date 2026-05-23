@@ -19,11 +19,13 @@
 import {
   Knob, Slider, LedReadout, LcdList, SectionTabs,
   SegDisplay, AlgoButtons, AlgoDiagram, OperatorPanel, Wordmark, GearIcon,
+  FolderIcon,
   Oscilloscope, VuMeter, VoiceLeds, ClipLed,
   bindSlider,
 } from "../widgets/index.js";
 
 import * as Juce from "../juce/index.js";
+import { openPatchBrowserModal } from "../modals/patch-browser.js";
 
 const NUM_PARTS = 6;
 const NUM_OPS = 4;
@@ -112,9 +114,9 @@ function mountLeftColumn(col) {
 /* -------------------------------------------------------------------------- */
 
 function mountCenter(col) {
-  // INSTRUMENTS list — quick-access view of the active folder; the full
-  // browser modal lands in Task 14. Items are fetched via the existing
-  // getPatchList native function.
+  // INSTRUMENTS — pinned to the factory root (08-ui-views.md view 4
+  // *Relationship to the main-window lists*). The full folder-tree navigator
+  // is the patch-browser modal; this list never repaints to a different root.
   const lcd = new LcdList(col.querySelector("#instruments-list"), {
     items: [],
     onSelect: async (item) => {
@@ -124,6 +126,7 @@ function mountCenter(col) {
     },
   });
   populatePatchList(lcd, "factory");
+  fmViewState.instrumentsList = lcd;
 
   // FM / SQ / D section pills. The selector calls selectSection(); for this
   // task only FM is live, so a non-FM choice tags the bottom region for the
@@ -140,11 +143,12 @@ function mountCenter(col) {
   // Polyphony group — view 10 placeholder; Task 15 adds the live controls.
 }
 
-// Populate `lcd` with the top-level patches of the given root kind
-// ("factory" or "user"). Per 08-ui-views.md view 4 the main-window lists
-// are quick-access views: INSTRUMENTS and PRESETS both currently feed off
-// the factory bank; IMPORT/the modal browser surface the user root and
-// custom roots in Task 14.
+// Populate `lcd` with the top-level patches of the given root kind.
+// 08-ui-views.md view 4 *Patch-list data sources*: the three main-window
+// lists are *pinned* to one root each — INSTRUMENTS → "factory", PRESETS →
+// "user-saved", IMPORT → "user-imported". Choosing a folder in the modal
+// browser does not repaint them; the modal is where any other root is
+// browsed.
 function populatePatchList(lcd, kindFilter) {
   const getPatchList = Juce.getNativeFunction("getPatchList");
   getPatchList().then((roots) => {
@@ -159,6 +163,20 @@ function populatePatchList(lcd, kindFilter) {
       lcd.setItems(items, 0);
     }).catch(() => lcd.setItems([], 0));
   }).catch(() => lcd.setItems([], 0));
+}
+
+// Re-populate every pinned list. Called by the patchRootsChanged C++ event
+// after a save / import / delete / drop / add-folder.
+function refreshPinnedLists() {
+  if (fmViewState.instrumentsList)
+    populatePatchList(fmViewState.instrumentsList, "factory");
+  refreshPresetList();
+}
+
+function refreshPresetList() {
+  if (!fmViewState.presetList) return;
+  const kind = fmViewState.presetTab === 0 ? "user-saved" : "user-imported";
+  populatePatchList(fmViewState.presetList, kind);
 }
 
 function mountSectionPills(canvas) {
@@ -218,10 +236,9 @@ function mountPanSlider(canvas) {
 /* -------------------------------------------------------------------------- */
 
 function mountRightCol(col) {
-  // The PRESETS list is mounted first so the PRESETS/IMPORT tab callback
-  // (declared below) can swap its contents between the factory bank and the
-  // user root without a temporal dead-zone reference. Both are quick-access
-  // views per ADR-0006; the full modal browser is Task 14.
+  // PRESETS tab → user-saved root; IMPORT tab → user-imported root. Both
+  // start empty on a fresh install and fill in as the user saves / imports
+  // (08-ui-views.md view 1 *Patch-list data sources*).
   const presetList = new LcdList(col.querySelector("#preset-list"), {
     items: [],
     onSelect: async (item) => {
@@ -230,15 +247,32 @@ function mountRightCol(col) {
       fmViewState.seg?.setText(item.label);
     },
   });
-  populatePatchList(presetList, "factory");
+  fmViewState.presetList = presetList;
+  populatePatchList(presetList, "user-saved");
 
-  // The tabs widget needs a binding; use a local proxy since the tabs choice
-  // is not currently an apvts parameter.
   const tabs = makeLocalChoiceBinding(["PRESETS", "IMPORT"], 0, (idx) => {
     fmViewState.presetTab = idx;
-    populatePatchList(presetList, idx === 0 ? "factory" : "user");
+    refreshPresetList();
   });
   new SectionTabs(col.querySelector("#preset-tabs"), tabs, { style: "tab" });
+
+  // Folder icon in the tab header — opens the patch-browser modal
+  // (08-ui-views.md view 4). Created here in JS so we don't have to thread
+  // it through index.html; positioned absolutely against the panel header.
+  const header = col.querySelector(".panel-header");
+  if (header) {
+    header.style.position  = "relative";
+    header.style.justifyContent = "space-between";
+    const iconCanvas = document.createElement("canvas");
+    iconCanvas.width  = 16;
+    iconCanvas.height = 12;
+    iconCanvas.className = "right-col-folder-icon";
+    iconCanvas.style.cursor = "pointer";
+    iconCanvas.title = "Open patch browser";
+    header.appendChild(iconCanvas);
+    new FolderIcon(iconCanvas);
+    iconCanvas.addEventListener("click", () => openPatchBrowserModal());
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -280,7 +314,20 @@ const fmViewState = {
   selectedPart: 0,
   presetTab: 0,
   seg: null,
+  instrumentsList: null,
+  presetList: null,
 };
+
+// Re-fetch every pinned list whenever the backend signals a root mutation
+// (save / import / delete / drop / add-folder — see PluginEditor.cpp's
+// emitPatchRootsChanged). Registered once at module load so the listener
+// survives across modal opens/closes; the registration is idempotent because
+// the event name is unique.
+if (typeof window !== "undefined" && window.__JUCE__?.backend) {
+  window.__JUCE__.backend.addEventListener("patchRootsChanged", () => {
+    refreshPinnedLists();
+  });
+}
 
 function mountKnob(canvas, name, _label) {
   if (!canvas) return null;

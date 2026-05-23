@@ -564,6 +564,12 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     patchBrowser.drainAudioThreadQueue (
         [this] (int part, const Patch& p) { applyPatchOnAudioThread (part, p); });
 
+    // Drain the preview queue (Task 14): the patch browser's *Preview* button
+    // pushed (part, note, vel) here on the message thread. Drained right after
+    // the patch queue so a preview click immediately after a load uses the
+    // freshly-loaded patch values.
+    drainPreviewQueue();
+
     // Snapshot every part's current parameters and seed every active voice
     // with the dirty-diff (catches DAW automation that landed between blocks).
     const bool velToTl = currentVelToTl();
@@ -965,6 +971,61 @@ void GenVstAudioProcessor::setStateInformation (const void* data, int sizeInByte
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+}
+
+void GenVstAudioProcessor::queuePreviewNoteOn (int part, int note, int velocity) noexcept
+{
+    if (part < 0 || part >= PartManager::kNumParts) return;
+    if (velocity <= 0) velocity = 1;   // a real note-on must have vel > 0
+
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    previewFifo.prepareToWrite (1, start1, size1, start2, size2);
+    if (size1 + size2 < 1) return;     // full -> drop (Preview is non-critical)
+
+    const int slot = size1 > 0 ? start1 : start2;
+    previewSlots[(std::size_t) slot] = { part, note, velocity };
+    previewFifo.finishedWrite (1);
+}
+
+void GenVstAudioProcessor::queuePreviewNoteOff (int part, int note) noexcept
+{
+    if (part < 0 || part >= PartManager::kNumParts) return;
+
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    previewFifo.prepareToWrite (1, start1, size1, start2, size2);
+    if (size1 + size2 < 1) return;
+
+    const int slot = size1 > 0 ? start1 : start2;
+    previewSlots[(std::size_t) slot] = { part, note, 0 };
+    previewFifo.finishedWrite (1);
+}
+
+void GenVstAudioProcessor::drainPreviewQueue()
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    const int ready = previewFifo.getNumReady();
+    if (ready <= 0) return;
+    previewFifo.prepareToRead (ready, start1, size1, start2, size2);
+
+    auto handle = [this] (const PreviewEvent& ev)
+    {
+        if (ev.velocity > 0)
+        {
+            paramCache.readPatch (ev.part, noteOnPatch);
+            voiceAllocator.noteOn (ev.part, ev.note, ev.velocity,
+                                   midiRouter.pitchBendSemitones (ev.part),
+                                   currentVelToTl(), noteOnPatch);
+        }
+        else
+        {
+            voiceAllocator.noteOff (ev.part, ev.note,
+                                    midiRouter.sustainPedalHeld (ev.part));
+        }
+    };
+
+    for (int i = 0; i < size1; ++i) handle (previewSlots[(std::size_t) (start1 + i)]);
+    for (int i = 0; i < size2; ++i) handle (previewSlots[(std::size_t) (start2 + i)]);
+    previewFifo.finishedRead (size1 + size2);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

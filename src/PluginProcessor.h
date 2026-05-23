@@ -101,6 +101,14 @@ public:
         paramCache.readPatch (part, dest);
     }
 
+    // Queue a synthetic note-on / note-off for `part`, bypassing the MIDI
+    // router. Used by the patch browser's *Preview* button (08-ui-views.md
+    // view 4) so a click auditions whatever patch the selected part currently
+    // holds, regardless of how MIDI is routed. Lock-free: the message thread
+    // pushes, the audio thread drains at the top of processBlock.
+    void queuePreviewNoteOn  (int part, int note, int velocity) noexcept;
+    void queuePreviewNoteOff (int part, int note) noexcept;
+
     // Public so unit tests and the MidiRoutingTests fixture can build the
     // full layout standalone (no AudioProcessor instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -195,6 +203,22 @@ private:
     // Pre-allocated processBlock scratch — never allocated on the audio thread.
     Patch                                    noteOnPatch;
     std::array<Patch, PartManager::kNumParts> partPatches;
+
+    // Preview queue (Task 14): the browser's *Preview* button pushes
+    // synthetic note-on/off events here on the message thread; processBlock
+    // drains them at the top and dispatches via the existing voice path.
+    // Capacity 16 is enough for several rapid preview clicks before the
+    // audio thread drains the queue once per block.
+    struct PreviewEvent
+    {
+        int  part     = 0;
+        int  note     = 60;
+        int  velocity = 0;     // 0 = note-off
+    };
+    static constexpr int kPreviewQueueCapacity = 16;
+    juce::AbstractFifo                                       previewFifo { kPreviewQueueCapacity };
+    std::array<PreviewEvent, (std::size_t) kPreviewQueueCapacity> previewSlots {};
+    void drainPreviewQueue();
 
     juce::HeapBlock<float> monoScratch;   // R-channel sink when the host bus is mono
 

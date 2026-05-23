@@ -23,6 +23,7 @@ export { AdsrGraph } from "./adsr-graph.js";
 export { OperatorPanel } from "./operator-panel.js";
 export { Wordmark } from "./wordmark.js";
 export { GearIcon } from "./gear-icon.js";
+export { FolderIcon } from "./folder-icon.js";
 export { Oscilloscope } from "./oscilloscope.js";
 export { VuMeter } from "./vu-meter.js";
 export { VoiceLeds } from "./voice-leds.js";

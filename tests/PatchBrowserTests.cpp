@@ -56,7 +56,9 @@ TEST (PatchBrowser, FactoryRootLoadsFactoryPatches)
     EXPECT_GT (browser.numFactoryPatches(), 30);
 
     const auto& rootsVec = browser.roots();
-    ASSERT_GE (rootsVec.size(), 2u);   // factory + user
+    // factory + user-saved + user-imported (Task 14: the writable root was
+    // split into saved/imported subroots).
+    ASSERT_GE (rootsVec.size(), 3u);
 
     const auto& factoryFolder = *rootsVec[0]->folder;
     EXPECT_TRUE (factoryFolder.scanned);
@@ -64,6 +66,122 @@ TEST (PatchBrowser, FactoryRootLoadsFactoryPatches)
 
     // Subfolders count zero on a fresh repo — Furnace's tfilib is a flat dir.
     EXPECT_EQ (factoryFolder.subfolders.size(), 0u);
+
+    EXPECT_EQ (rootsVec[0]->id, juce::String ("factory"));
+    EXPECT_EQ (rootsVec[1]->id, juce::String ("user-saved"));
+    EXPECT_EQ (rootsVec[2]->id, juce::String ("user-imported"));
+}
+
+// -- Task 14: rootsAsJson serialises the two new writable kinds -------------
+TEST (PatchBrowser, RootsAsJsonEmitsSavedAndImportedKinds)
+{
+    genvst::PatchBrowser browser;
+    browser.initialize (factoryDir());
+
+    const auto v = browser.rootsAsJson();
+    ASSERT_TRUE (v.isArray());
+
+    bool sawSaved = false, sawImported = false, sawLegacyUser = false;
+    for (int i = 0; i < v.size(); ++i)
+    {
+        const auto kind = v[i].getProperty ("kind", juce::var()).toString();
+        if (kind == "user-saved")    sawSaved    = true;
+        if (kind == "user-imported") sawImported = true;
+        if (kind == "user")          sawLegacyUser = true;
+    }
+    EXPECT_TRUE (sawSaved);
+    EXPECT_TRUE (sawImported);
+    EXPECT_FALSE (sawLegacyUser) << "old \"user\" kind must be retired";
+}
+
+// -- savePatch lands in saved/, importPatch in imported/ ---------------------
+TEST (PatchBrowser, SaveAndImportLandInDistinctSubroots)
+{
+    genvst::PatchBrowser browser;
+    browser.initialize (factoryDir());
+
+    // Save: synthesises a tiny patch and writes it via savePatchAsTfi. The
+    // file should land under <userAppData>/GenVst/patches/saved/ and inside
+    // the user-saved root's folder list.
+    Patch p {};
+    p.alg = 4; p.fb = 2;
+    const auto saved = browser.savePatchAsTfi (p, "task14_save_smoke");
+    ASSERT_TRUE (saved.error.empty()) << saved.error;
+    ASSERT_FALSE (saved.path.isEmpty());
+
+    // The path must contain a "saved" segment.
+    EXPECT_NE (saved.path.indexOf ("saved"), -1)
+        << "savePatch wrote outside the saved/ subroot: " << saved.path;
+
+    // Import: write a temp TFI we'll re-import. The file should land under
+    // .../imported/ and inside the user-imported root's folder list.
+    const fs::path src = fs::temp_directory_path() / "task14_import_smoke.tfi";
+    {
+        std::ofstream out (src, std::ios::binary | std::ios::trunc);
+        const std::vector<char> zeros (kTfiFileSize, 0);
+        out.write (zeros.data(), (std::streamsize) zeros.size());
+    }
+    const auto importErr = browser.importPatchFile (juce::String (src.string()));
+    fs::remove (src);
+    ASSERT_TRUE (importErr.empty()) << importErr;
+
+    bool sawSavedFile = false, sawImportedFile = false;
+    for (const auto& r : browser.roots())
+    {
+        if (r->kind == genvst::PatchRootKind::UserSaved)
+            for (const auto& patch : r->folder->patches)
+                if (patch.name == "task14_save_smoke") sawSavedFile = true;
+        if (r->kind == genvst::PatchRootKind::UserImported)
+            for (const auto& patch : r->folder->patches)
+                if (patch.name == "task14_import_smoke") sawImportedFile = true;
+    }
+    EXPECT_TRUE (sawSavedFile);
+    EXPECT_TRUE (sawImportedFile);
+
+    // Cleanup: delete what the test wrote so reruns are idempotent.
+    browser.deletePatchFile (saved.path);
+    for (const auto& r : browser.roots())
+    {
+        if (r->kind != genvst::PatchRootKind::UserImported) continue;
+        for (const auto& patch : r->folder->patches)
+            if (patch.name == "task14_import_smoke")
+                browser.deletePatchFile (patch.path);
+    }
+}
+
+// -- deletePatchFile only works inside writable roots -----------------------
+TEST (PatchBrowser, DeletePatchRefusesFactoryAndSucceedsOnSaved)
+{
+    genvst::PatchBrowser browser;
+    browser.initialize (factoryDir());
+
+    // Refuses any factory file. Pick the first factory entry and try.
+    const auto& factoryFolder = *browser.roots()[0]->folder;
+    ASSERT_FALSE (factoryFolder.patches.empty());
+    const auto factoryPath = factoryFolder.patches[0].path;
+
+    const auto factoryErr = browser.deletePatchFile (factoryPath);
+    EXPECT_FALSE (factoryErr.empty()) << "Delete must reject factory paths";
+    // The file is still there.
+    EXPECT_TRUE (fs::is_regular_file (fs::path (factoryPath.toRawUTF8())));
+
+    // Saves a temporary patch and deletes it — the file should be gone.
+    Patch p {};
+    const auto saved = browser.savePatchAsTfi (p, "task14_delete_smoke");
+    ASSERT_TRUE (saved.error.empty()) << saved.error;
+    ASSERT_TRUE (fs::is_regular_file (fs::path (saved.path.toRawUTF8())));
+
+    const auto delErr = browser.deletePatchFile (saved.path);
+    EXPECT_TRUE (delErr.empty()) << delErr;
+    EXPECT_FALSE (fs::is_regular_file (fs::path (saved.path.toRawUTF8())));
+
+    // The saved root should no longer list it.
+    for (const auto& r : browser.roots())
+    {
+        if (r->kind != genvst::PatchRootKind::UserSaved) continue;
+        for (const auto& patch : r->folder->patches)
+            EXPECT_NE (patch.name, juce::String ("task14_delete_smoke"));
+    }
 }
 
 // -- Lazy scan on a custom root: top-level only, deep folders unscanned ----

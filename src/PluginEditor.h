@@ -22,7 +22,14 @@
 // down every FM attachment and rebuilds it against part `n`'s parameter, so
 // every FM widget repaints to the new part's values in one batch. Global, PSG
 // and DAC relays bind once at construction and never rebind.
+//
+// Native file drop (08-ui-views.md view 11 / 05-ui-ux.md "File drag-and-drop"):
+// the editor implements juce::FileDragAndDropTarget directly — an HTML5 drop
+// inside the WebView only yields File objects, not real paths, and cannot
+// enumerate a dropped folder. Dropped patch files import into the user-imported
+// root; dropped directories register as custom roots.
 class GenVstAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                   public juce::FileDragAndDropTarget,
                                    private juce::Timer
 {
 public:
@@ -49,6 +56,14 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // juce::FileDragAndDropTarget — accepts directories (registered as a
+    // custom root) and any .tfi/.vgi/.dmp file (copied into the user-imported
+    // root). Other files are rejected, so dropping a random WAV onto the
+    // plugin window does nothing. The patch-browser modal's tree refreshes
+    // via the patchRootsChanged event emitted afterwards.
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped           (const juce::StringArray& files, int x, int y) override;
 
 private:
     juce::WebBrowserComponent::Options makeOptions();
@@ -202,6 +217,27 @@ private:
     // — the dialog must outlive the async callback, which is why it lives
     // here rather than as a local in the native-function lambda.
     std::unique_ptr<juce::FileChooser> wavChooser;
+
+    // Task 14 — owned choosers for the patch-browser modal's native dialogs
+    // (Import / Export / Add Folder). Same lifetime story as wavChooser:
+    // each launchAsync stash a fresh chooser here so the dialog outlives the
+    // async callback that uses it.
+    std::unique_ptr<juce::FileChooser> importChooser;
+    std::unique_ptr<juce::FileChooser> exportChooser;
+    std::unique_ptr<juce::FileChooser> folderChooser;
+
+    // Preview release timer: armed by the previewPatch native function so the
+    // synthetic middle-C is released after ~1s without the JS side having to
+    // schedule a second native call. Resets the timer on each Preview click
+    // so a rapid second press still gets a full release window.
+    std::unique_ptr<juce::Timer> previewReleaseTimer;
+    int                          previewActivePart = -1;
+    int                          previewActiveNote = -1;
+
+    // Emit a `patchRootsChanged` JS event so the open patch-browser modal
+    // refreshes its tree + the quick-access lists rebuild. Pushed after any
+    // operation that mutates a root: import, save, drop, add-folder, delete.
+    void emitPatchRootsChanged();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessorEditor)
 };

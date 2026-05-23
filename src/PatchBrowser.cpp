@@ -120,21 +120,38 @@ void PatchBrowser::initialize (const fs::path& factoryRoot)
 
     addRoot (std::move (factory));
 
-    // -------- User root --------
-    const auto userFs = resolveUserRoot();
+    // -------- User-saved + User-imported roots --------
+    // 04-patch-system.md *Patch roots*: the single writable user root is split
+    // into two distinct subroots — `saved/` (filled by savePatch) and
+    // `imported/` (filled by importPatch + drag-and-drop). Both are created
+    // idempotently on every startup; no installer step required.
+    const auto savedFs    = resolveUserSavedRoot();
+    const auto importedFs = resolveUserImportedRoot();
     std::error_code mkdirEc;
-    fs::create_directories (userFs, mkdirEc);   // OK if it already exists
+    fs::create_directories (savedFs,    mkdirEc);
+    fs::create_directories (importedFs, mkdirEc);
 
-    auto user = std::make_unique<PatchRoot>();
-    user->kind        = PatchRootKind::User;
-    user->id          = "user";
-    user->displayName = "User";
-    user->writable    = true;
-    user->folder      = std::make_unique<PatchFolder>();
-    user->folder->name = "User";
-    user->folder->path = pathString (userFs);
-    scanImmediateChildren (*user->folder);
-    addRoot (std::move (user));
+    auto saved = std::make_unique<PatchRoot>();
+    saved->kind        = PatchRootKind::UserSaved;
+    saved->id          = "user-saved";
+    saved->displayName = "Saved";
+    saved->writable    = true;
+    saved->folder      = std::make_unique<PatchFolder>();
+    saved->folder->name = "Saved";
+    saved->folder->path = pathString (savedFs);
+    scanImmediateChildren (*saved->folder);
+    addRoot (std::move (saved));
+
+    auto imported = std::make_unique<PatchRoot>();
+    imported->kind        = PatchRootKind::UserImported;
+    imported->id          = "user-imported";
+    imported->displayName = "Imported";
+    imported->writable    = true;
+    imported->folder      = std::make_unique<PatchFolder>();
+    imported->folder->name = "Imported";
+    imported->folder->path = pathString (importedFs);
+    scanImmediateChildren (*imported->folder);
+    addRoot (std::move (imported));
 
     initialised = true;
 
@@ -476,17 +493,18 @@ PatchBrowser::savePatchAsTfi (const Patch& patch, const juce::String& name)
 {
     SaveResult result;
 
-    const auto userFs = resolveUserRoot();
+    // 04-patch-system.md: savePatch() writes into the user-saved root only.
+    const auto savedFs = resolveUserSavedRoot();
     std::error_code ec;
-    fs::create_directories (userFs, ec);
-    if (! fs::is_directory (userFs, ec))
+    fs::create_directories (savedFs, ec);
+    if (! fs::is_directory (savedFs, ec))
     {
-        result.error = "cannot create user patch directory";
+        result.error = "cannot create user-saved patch directory";
         return result;
     }
 
     const auto safe = sanitiseFileName (name.isEmpty() ? juce::String ("patch") : name);
-    const fs::path dest = userFs / (safe.toStdString() + ".tfi");
+    const fs::path dest = savedFs / (safe.toStdString() + ".tfi");
 
     auto err = exportTFI (patch, dest);
     if (! err.empty())
@@ -495,11 +513,11 @@ PatchBrowser::savePatchAsTfi (const Patch& patch, const juce::String& name)
         return result;
     }
 
-    // Refresh the user root so the new patch shows up.
-    if (auto* userRoot = findFolderByPath (pathString (userFs)))
+    // Refresh the user-saved root so the new patch shows up.
+    if (auto* savedRoot = findFolderByPath (pathString (savedFs)))
     {
-        userRoot->scanned = false;
-        scanImmediateChildren (*userRoot);
+        savedRoot->scanned = false;
+        scanImmediateChildren (*savedRoot);
     }
 
     indexBuilt.store (false, std::memory_order_release);
@@ -521,18 +539,83 @@ std::string PatchBrowser::importPatchFile (const juce::String& sourcePath)
     if (! isPatchExtension (src))
         return "import source is not a .tfi/.vgi/.dmp file";
 
-    const auto userFs = resolveUserRoot();
-    fs::create_directories (userFs, ec);
-    const fs::path dest = userFs / src.filename();
+    // 04-patch-system.md: importPatch() and drag-and-drop both land in the
+    // user-imported root.
+    const auto importedFs = resolveUserImportedRoot();
+    fs::create_directories (importedFs, ec);
+    const fs::path dest = importedFs / src.filename();
     fs::copy_file (src, dest, fs::copy_options::overwrite_existing, ec);
     if (ec)
         return "copy failed: " + ec.message();
 
-    if (auto* userRoot = findFolderByPath (pathString (userFs)))
+    if (auto* importedRoot = findFolderByPath (pathString (importedFs)))
     {
-        userRoot->scanned = false;
-        scanImmediateChildren (*userRoot);
+        importedRoot->scanned = false;
+        scanImmediateChildren (*importedRoot);
     }
+    indexBuilt.store (false, std::memory_order_release);
+    if (isThreadRunning()) notify();
+    else                   startThread (juce::Thread::Priority::low);
+    return {};
+}
+
+std::string PatchBrowser::deletePatchFile (const juce::String& absolutePath)
+{
+    const fs::path path { absolutePath.toRawUTF8() };
+    std::error_code ec;
+    if (! fs::is_regular_file (path, ec))
+        return "delete target is not a regular file: " + absolutePath.toStdString();
+    if (! isPatchExtension (path))
+        return "delete target is not a .tfi/.vgi/.dmp file";
+
+    // Only allow deletes inside a writable root. We resolve once and compare
+    // canonical paths so a path like `…/saved/../saved/foo.tfi` still matches.
+    const auto canonTarget = fs::weakly_canonical (path, ec);
+    bool inWritable = false;
+    juce::String parentRootPath;
+    for (const auto& r : rootList)
+    {
+        if (! r->writable || r->folder == nullptr) continue;
+        const fs::path rootFs { r->folder->path.toRawUTF8() };
+        const auto canonRoot = fs::weakly_canonical (rootFs, ec);
+        // canonTarget begins with canonRoot? std::filesystem doesn't expose
+        // starts_with directly until C++20 lexically_relative; compare via
+        // proximate-style logic with a path iterator walk.
+        auto a = canonRoot.begin();
+        auto b = canonTarget.begin();
+        bool prefix = true;
+        for (; a != canonRoot.end(); ++a, ++b)
+        {
+            if (b == canonTarget.end() || *a != *b) { prefix = false; break; }
+        }
+        if (prefix)
+        {
+            inWritable = true;
+            parentRootPath = r->folder->path;
+            break;
+        }
+    }
+    if (! inWritable)
+        return "refusing to delete: path is not inside a writable root";
+
+    fs::remove (path, ec);
+    if (ec)
+        return "delete failed: " + ec.message();
+
+    // Refresh every scanned folder that might have held the deleted file. The
+    // file's immediate parent is the obvious candidate; refresh the root too
+    // because the immediate parent IS the root in the common case.
+    if (auto* parent = findFolderByPath (pathString (path.parent_path())))
+    {
+        parent->scanned = false;
+        scanImmediateChildren (*parent);
+    }
+    if (auto* root = findFolderByPath (parentRootPath))
+    {
+        root->scanned = false;
+        scanImmediateChildren (*root);
+    }
+
     indexBuilt.store (false, std::memory_order_release);
     if (isThreadRunning()) notify();
     else                   startThread (juce::Thread::Priority::low);
@@ -598,9 +681,10 @@ juce::var PatchBrowser::rootsAsJson() const
     for (const auto& r : rootList)
     {
         auto* obj = new juce::DynamicObject();
-        const char* kindStr = r->kind == PatchRootKind::Factory ? "factory"
-                            : r->kind == PatchRootKind::User    ? "user"
-                                                                : "custom";
+        const char* kindStr = r->kind == PatchRootKind::Factory      ? "factory"
+                            : r->kind == PatchRootKind::UserSaved    ? "user-saved"
+                            : r->kind == PatchRootKind::UserImported ? "user-imported"
+                                                                     : "custom";
         obj->setProperty ("kind",        kindStr);
         obj->setProperty ("id",          r->id);
         obj->setProperty ("displayName", r->displayName);
@@ -652,7 +736,7 @@ juce::var PatchBrowser::searchAsJson (const juce::String& query) const
 // Path resolution
 // =============================================================================
 
-fs::path PatchBrowser::resolveUserRoot()
+fs::path PatchBrowser::resolveUserRootBase()
 {
     const auto base = juce::File::getSpecialLocation (
                           juce::File::SpecialLocationType::userApplicationDataDirectory);
@@ -660,10 +744,21 @@ fs::path PatchBrowser::resolveUserRoot()
     return fs::path (user.getFullPathName().toRawUTF8());
 }
 
+fs::path PatchBrowser::resolveUserSavedRoot()
+{
+    return resolveUserRootBase() / "saved";
+}
+
+fs::path PatchBrowser::resolveUserImportedRoot()
+{
+    return resolveUserRootBase() / "imported";
+}
+
 juce::String PatchBrowser::rootIdFor (PatchRootKind kind, const juce::String& absolutePath)
 {
-    if (kind == PatchRootKind::Factory) return "factory";
-    if (kind == PatchRootKind::User)    return "user";
+    if (kind == PatchRootKind::Factory)      return "factory";
+    if (kind == PatchRootKind::UserSaved)    return "user-saved";
+    if (kind == PatchRootKind::UserImported) return "user-imported";
 
     // Custom roots: a short, stable id derived from the path's hash. Stable
     // across sessions for the same path so a state restore (Task 16) can

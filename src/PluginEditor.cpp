@@ -392,7 +392,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             completion (makeStatusVar (err));
         });
 
-    // --- Save / Import / Export (file-chooser bodies are Task 14) ----------
+    // --- Save / Import / Export ---------------------------------------------
     options = options.withNativeFunction ("savePatch",
         [this] (const juce::Array<juce::var>& args, Completion completion)
         {
@@ -406,6 +406,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             const auto  r       = processor.getPatchBrowser().savePatchAsTfi (current, name);
             if (! r.path.isEmpty())
             {
+                emitPatchRootsChanged();
                 auto* obj = new juce::DynamicObject();
                 obj->setProperty ("ok",   true);
                 obj->setProperty ("path", r.path);
@@ -423,6 +424,8 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             const auto err = processor.getPatchBrowser().importPatchFile (args[0].toString());
             if (! err.empty())
                 emitNotify ("error", juce::String (err));
+            else
+                emitPatchRootsChanged();
             completion (makeStatusVar (err));
         });
 
@@ -436,6 +439,175 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             const auto err = processor.getPatchBrowser().exportPatchToPath (
                                  current, args[0].toString());
             completion (makeStatusVar (err));
+        });
+
+    // --- Patch browser — delete + native file choosers (Task 14) ------------
+    // Delete uses the message-thread fs::remove path in PatchBrowser, which
+    // rejects targets outside a writable root (Factory is read-only — the
+    // Delete button in the modal is also disabled on the JS side, but the
+    // backend check is the authoritative guard).
+    options = options.withNativeFunction ("deletePatch",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("path required")); return; }
+            const auto err = processor.getPatchBrowser().deletePatchFile (args[0].toString());
+            if (! err.empty())
+                emitNotify ("error", juce::String (err));
+            else
+                emitPatchRootsChanged();
+            completion (makeStatusVar (err));
+        });
+
+    // Import file dialog — open file, filter to .tfi/.vgi/.dmp, copy into the
+    // user-imported root via importPatchFile.
+    options = options.withNativeFunction ("importFileDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            importChooser = std::make_unique<juce::FileChooser> (
+                "Import patch file", juce::File{}, "*.tfi;*.vgi;*.dmp");
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles;
+
+            importChooser->launchAsync (flags,
+                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    const auto err = processor.getPatchBrowser()
+                                         .importPatchFile (file.getFullPathName());
+                    if (! err.empty())
+                        emitNotify ("error", juce::String (err));
+                    else
+                        emitPatchRootsChanged();
+                    completion (makeStatusVar (err));
+                });
+        });
+
+    // Export file dialog — save file; extension picks TFI vs VGI.
+    options = options.withNativeFunction ("exportFileDialog",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            // `format` arg (optional) picks the default extension; the user
+            // can still pick either via the OS dialog.
+            const juce::String format = (! args.isEmpty() && args[0].isString())
+                                            ? args[0].toString().toLowerCase()
+                                            : juce::String ("tfi");
+            const juce::String suggested = juce::String ("patch.")
+                                         + (format == "vgi" ? "vgi" : "tfi");
+
+            exportChooser = std::make_unique<juce::FileChooser> (
+                "Export patch", juce::File{}.getChildFile (suggested),
+                "*.tfi;*.vgi");
+
+            const auto flags = juce::FileBrowserComponent::saveMode
+                             | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting;
+
+            exportChooser->launchAsync (flags,
+                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    Patch current;
+                    processor.readLivePatch (selectedPart, current);
+                    const auto err = processor.getPatchBrowser()
+                                         .exportPatchToPath (current, file.getFullPathName());
+                    if (! err.empty())
+                        emitNotify ("error", juce::String (err));
+                    completion (makeStatusVar (err));
+                });
+        });
+
+    // Add folder dialog — picks a directory and registers it as a custom root.
+    options = options.withNativeFunction ("addFolderDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            folderChooser = std::make_unique<juce::FileChooser> (
+                "Add patch folder", juce::File{}, juce::String());
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectDirectories;
+
+            folderChooser->launchAsync (flags,
+                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File dir = fc.getResult();
+                    if (dir == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    const auto id = processor.getPatchBrowser()
+                                        .addCustomRoot (dir.getFullPathName());
+                    if (id.isEmpty())
+                    {
+                        emitNotify ("error",
+                            "Could not register folder: " + dir.getFullPathName());
+                        completion (makeStatusVar ("could not register folder"));
+                        return;
+                    }
+                    emitPatchRootsChanged();
+                    auto* obj = new juce::DynamicObject();
+                    obj->setProperty ("ok", true);
+                    obj->setProperty ("id", id);
+                    completion (juce::var (obj));
+                });
+        });
+
+    // Preview — synthetic middle-C note-on at the given velocity for ~1s on
+    // the currently selected FM part. The release is fired by an editor-side
+    // juce::Timer so the JS side can fire-and-forget; a second Preview click
+    // before the 1s lapses retriggers the timer.
+    options = options.withNativeFunction ("previewPatch",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            constexpr int kPreviewNote     = 60;     // middle C
+            constexpr int kPreviewVelocity = 100;
+            const int durationMs = (! args.isEmpty() && args[0].isInt())
+                                       ? juce::jlimit (50, 5000, (int) args[0])
+                                       : 1000;
+
+            // If a previous preview is still ringing on a different part, cut
+            // it before we start a fresh one — keeps voices free.
+            if (previewActivePart >= 0 && previewActiveNote >= 0)
+                processor.queuePreviewNoteOff (previewActivePart, previewActiveNote);
+
+            previewActivePart = selectedPart;
+            previewActiveNote = kPreviewNote;
+            processor.queuePreviewNoteOn (previewActivePart, previewActiveNote,
+                                          kPreviewVelocity);
+
+            // (Re)arm the release timer for `durationMs`.
+            class ReleaseTimer : public juce::Timer
+            {
+            public:
+                ReleaseTimer (GenVstAudioProcessorEditor& ed) : editor (ed) {}
+                void timerCallback() override
+                {
+                    stopTimer();
+                    if (editor.previewActivePart >= 0 && editor.previewActiveNote >= 0)
+                        editor.processor.queuePreviewNoteOff (editor.previewActivePart,
+                                                              editor.previewActiveNote);
+                    editor.previewActivePart = -1;
+                    editor.previewActiveNote = -1;
+                }
+            private:
+                GenVstAudioProcessorEditor& editor;
+            };
+
+            if (previewReleaseTimer == nullptr)
+                previewReleaseTimer = std::make_unique<ReleaseTimer> (*this);
+            previewReleaseTimer->stopTimer();
+            previewReleaseTimer->startTimer (durationMs);
+
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",   true);
+            obj->setProperty ("part", selectedPart);
+            completion (juce::var (obj));
         });
 
     // --- Channel paging ------------------------------------------------------
@@ -592,6 +764,82 @@ void GenVstAudioProcessorEditor::emitNotify (const juce::String& level,
     obj->setProperty ("level",   level);
     obj->setProperty ("message", message);
     webView.emitEventIfBrowserIsVisible ("notify", juce::var (obj));
+}
+
+void GenVstAudioProcessorEditor::emitPatchRootsChanged()
+{
+    // Pushed after any root-mutating action (save / import / delete / drop /
+    // add folder). The patch-browser modal and the main-window quick-access
+    // lists listen for this and re-call getRoots / getPatchList. Carrying an
+    // empty payload is fine — the listeners always refetch the full snapshot.
+    webView.emitEventIfBrowserIsVisible ("patchRootsChanged", juce::var());
+}
+
+bool GenVstAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    // 05-ui-ux.md "File drag-and-drop": accept directories (registered as
+    // custom roots) and any .tfi/.vgi/.dmp file (imported). Mixed drops are
+    // fine — each item is dispatched in filesDropped.
+    for (const auto& f : files)
+    {
+        const juce::File file (f);
+        if (file.isDirectory())
+            return true;
+        const auto ext = file.getFileExtension().toLowerCase();
+        if (ext == ".tfi" || ext == ".vgi" || ext == ".dmp")
+            return true;
+    }
+    return false;
+}
+
+void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files,
+                                               int /*x*/, int /*y*/)
+{
+    auto& browser = processor.getPatchBrowser();
+    bool changed = false;
+    int  imported = 0;
+    int  folders  = 0;
+    juce::StringArray errors;
+
+    for (const auto& f : files)
+    {
+        const juce::File file (f);
+        if (file.isDirectory())
+        {
+            const auto id = browser.addCustomRoot (file.getFullPathName());
+            if (id.isEmpty())
+                errors.add ("Could not register folder: " + file.getFileName());
+            else { ++folders; changed = true; }
+        }
+        else
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            if (ext != ".tfi" && ext != ".vgi" && ext != ".dmp")
+                continue;   // silently skip non-patch files in a mixed drop
+            const auto err = browser.importPatchFile (file.getFullPathName());
+            if (! err.empty())
+                errors.add (juce::String (err));
+            else { ++imported; changed = true; }
+        }
+    }
+
+    if (changed)
+        emitPatchRootsChanged();
+
+    if (! errors.isEmpty())
+        emitNotify ("error", errors.joinIntoString ("; "));
+    else if (imported > 0 || folders > 0)
+    {
+        juce::String msg;
+        if (imported > 0) msg << "Imported " << imported << " patch"
+                              << (imported == 1 ? "" : "es");
+        if (folders > 0)
+        {
+            if (msg.isNotEmpty()) msg << "; ";
+            msg << "Added " << folders << " folder" << (folders == 1 ? "" : "s");
+        }
+        emitNotify ("info", msg);
+    }
 }
 
 GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& proc)

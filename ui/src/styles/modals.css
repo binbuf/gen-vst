@@ -229,6 +229,180 @@ body[data-modal-open="true"] #chassis {
 }
 
 /* ============================================================================
+ * Patch browser modal — 08-ui-views.md view 4
+ * ========================================================================== */
+
+.patch-browser-body {
+  /* Override the default modal body's column/gap stacking — the browser is
+   * a stacked search-row + split + button-row that fills the panel. */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.pb-search-row {
+  display: flex;
+  gap: 4px;
+}
+
+.pb-search-input {
+  flex: 1 1 auto;
+  background: var(--lcd-base);
+  color: var(--lcd-pixel);
+  border: 1px solid var(--bevel-dark);
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  padding: 4px 6px;
+  text-transform: uppercase;
+}
+
+.pb-search-input::placeholder {
+  color: var(--lcd-base-hi);
+}
+
+.pb-split {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pb-tree,
+.pb-patches {
+  background: var(--lcd-base);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+  min-height: 0;
+}
+
+.pb-tree-row,
+.pb-patch-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  color: var(--lcd-pixel);
+}
+
+.pb-tree-row:hover,
+.pb-patch-row:hover {
+  background: var(--lcd-base-hi);
+}
+
+.pb-tree-row.pb-selected,
+.pb-patch-row.pb-selected {
+  background: var(--lcd-pixel);
+  color: var(--lcd-base);
+}
+
+.pb-tree-row.pb-selected .label,
+.pb-patch-row.pb-selected .label {
+  color: var(--lcd-base);
+}
+
+.pb-tri {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  width: 8px;
+  display: inline-block;
+  color: var(--lcd-pixel);
+}
+
+.pb-selected .pb-tri {
+  color: var(--lcd-base);
+}
+
+.pb-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pb-lock {
+  margin-left: 4px;
+  color: var(--led-on);
+}
+
+.pb-count {
+  color: var(--lcd-pixel-hi);
+  font-size: 8px;
+}
+
+.pb-selected .pb-count {
+  color: var(--lcd-base);
+}
+
+.pb-folder-hint {
+  color: var(--lcd-base-hi);
+  font-size: 8px;
+  margin-left: 6px;
+}
+
+.pb-selected .pb-folder-hint {
+  color: var(--lcd-base);
+}
+
+.pb-empty {
+  padding: 10px 12px;
+  color: var(--lcd-pixel-hi);
+}
+
+.pb-button-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--bevel-light);
+}
+
+.pb-spacer {
+  flex: 1 1 auto;
+}
+
+.pb-button {
+  background: var(--panel);
+  color: var(--label);
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.pb-button:active {
+  background: var(--bevel-light);
+}
+
+.pb-button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pb-export-host {
+  position: relative;
+}
+
+.pb-export-menu {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 0;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+}
+
+.pb-export-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+/* ============================================================================
  * Notification toast — 08-ui-views.md view 8
  * ========================================================================== */
 

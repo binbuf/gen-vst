@@ -16,14 +16,20 @@
 namespace genvst
 {
 
-// The three flavours of patch root the browser organises (ADR-0006):
-//   Factory — bundled patches; read-only, auto-loaded at startup.
-//   User    — <userAppData>/GenVst/patches/; writable.
-//   Custom  — any user-registered folder; paths persisted in plugin state.
+// The four flavours of patch root the browser organises (ADR-0006 +
+// 04-patch-system.md *Patch roots*):
+//   Factory       — bundled patches; read-only, auto-loaded at startup.
+//   UserSaved     — <userAppData>/GenVst/patches/saved/;    writable.
+//                   Populated only by savePatchAsTfi(). Feeds the PRESETS tab.
+//   UserImported  — <userAppData>/GenVst/patches/imported/; writable.
+//                   Populated only by importPatchFile() + drag-and-drop. Feeds
+//                   the IMPORT tab.
+//   Custom        — any user-registered folder; paths persisted in plugin state.
 enum class PatchRootKind
 {
     Factory,
-    User,
+    UserSaved,
+    UserImported,
     Custom
 };
 
@@ -216,13 +222,16 @@ public:
         std::string  error;     // empty on success
     };
 
-    // Write `patch` to the user root as `<name>.tfi`. Creates the user root
-    // if necessary. `name` is sanitised (replace OS-illegal chars with '_').
+    // Write `patch` to the user-saved root as `<name>.tfi`. Creates the saved
+    // root if necessary. `name` is sanitised (replace OS-illegal chars with
+    // '_'). 04-patch-system.md: savePatch() is the only path that populates
+    // the PRESETS tab.
     SaveResult savePatchAsTfi (const Patch& patch, const juce::String& name);
 
-    // Copy a file from `sourcePath` into the user root (preserving the file
-    // name). Used by the importPatch native function. Returns empty on success
-    // or an error string on failure.
+    // Copy a file from `sourcePath` into the user-imported root (preserving
+    // the file name). Used by the importPatch native function and by the
+    // drag-and-drop import path. Returns empty on success or an error string
+    // on failure.
     std::string importPatchFile (const juce::String& sourcePath);
 
     // Write `patch` to `destinationPath`, format selected by extension
@@ -230,6 +239,12 @@ public:
     // Returns empty on success or an error string on failure.
     std::string exportPatchToPath (const Patch&        patch,
                                    const juce::String& destinationPath);
+
+    // Delete a patch file from a writable root (UserSaved / UserImported).
+    // Refreshes the containing folder and schedules a search-index rebuild.
+    // Returns empty on success or an error string on failure (path not in any
+    // writable root, file does not exist, fs::remove failed).
+    std::string deletePatchFile (const juce::String& absolutePath);
 
     // -------------------------------------------------------------------------
     // JSON helpers for the WebView native functions
@@ -252,7 +267,11 @@ private:
     void run() override;
 
     // ---- Filesystem helpers ----------------------------------------------
-    static std::filesystem::path resolveUserRoot();
+    // resolveUserRootBase() returns <userAppData>/GenVst/patches/. The two
+    // writable subroots live under it as `saved/` and `imported/`.
+    static std::filesystem::path resolveUserRootBase();
+    static std::filesystem::path resolveUserSavedRoot();
+    static std::filesystem::path resolveUserImportedRoot();
     static juce::String          rootIdFor (PatchRootKind, const juce::String& absolutePath);
 
     static bool                 isPatchFileName (const std::filesystem::path&);
