@@ -38,6 +38,15 @@ public:
     static constexpr int kNumOpParams   = 11;   // per-operator FM params
     static constexpr int kNumPartParams = 7;    // per-part FM params
 
+    // Task 22 — Per-rack-slot routing relay counts. The pool covers every slot
+    // the rack UI can address: FM parts 1..6 (the widget exposes 1..5; part 6
+    // stays automatable via DAW), the four PSG channels (3 tones + noise), and
+    // the DAC. 7 params × 11 slots = 77 slider relays.
+    static constexpr int kNumRackParamsPerSlot = 7;
+    static constexpr int kNumRackSlotSuffixes  = PartManager::kNumParts
+                                               + SN76489Engine::kNumChannels
+                                               + 1;
+
     // Resolution of the scope payload pushed to the JS oscilloscope. ~768
     // points is what the design (05-ui-ux.md / 08-ui-views.md) calls for; the
     // payload is built once per timer tick and packed into the "meterData"
@@ -113,6 +122,14 @@ private:
     static std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> makePsgPanRelays();
     static std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> makePsgBendRelays();
 
+    // Task 22 — Per-rack-slot routing relays. One slider relay per (param,
+    // slot-suffix) pair. The 11 slot suffixes are: _part1..6, _psg_ch1, _psg_ch2,
+    // _psg_ch3, _psg_noise, _dac. Index layout matches rackRoutingSuffixes()
+    // below + rackRoutingParamBases().
+    static std::array<std::unique_ptr<juce::WebSliderRelay>,
+                      (std::size_t) (kNumRackParamsPerSlot * kNumRackSlotSuffixes)>
+        makeRackRoutingRelays();
+
     // Emit a notify event ({level, message}) into the JS toast pipeline
     // (05-ui-ux.md "C++ -> JS notifications"). Safe to call from the message
     // thread.
@@ -170,6 +187,15 @@ private:
     std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> psgPanRelays  { makePsgPanRelays()  };
     std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> psgBendRelays { makePsgBendRelays() };
 
+    // Task 22 — Per-rack-slot routing relays. One slider relay per (param,
+    // slot-suffix) pair, bound permanently to its apvts parameter. JS-side the
+    // rack-routing strip binds via `bindSlider("midi_ch_part1")` etc., and the
+    // existing relay path keeps the value in sync with apvts / DAW automation
+    // / state restore. See kNumRack* constants near the top of the class.
+    std::array<std::unique_ptr<juce::WebSliderRelay>,
+               (std::size_t) (kNumRackParamsPerSlot * kNumRackSlotSuffixes)>
+        rackRoutingRelays { makeRackRoutingRelays() };
+
    #if GENVST_DEV_SERVER
     // Widget-gallery scratch relays (Task 10). One per core widget kind, all
     // bound to the matching `gallery_*` parameters declared under the same
@@ -212,6 +238,14 @@ private:
     std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgVolAttachments;
     std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgPanAttachments;
     std::array<std::unique_ptr<juce::WebToggleButtonParameterAttachment>,  SN76489Engine::kNumChannels> psgBendAttachments;
+
+    // Task 22 — Per-rack-slot routing attachments. Matched 1:1 with
+    // rackRoutingRelays. Built once in the constructor, never rebuilt — the
+    // rack-routing strip rebinds JS-side by switching which apvts parameter
+    // name the widget asks for, while every relay remains pinned.
+    std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,
+               (std::size_t) (kNumRackParamsPerSlot * kNumRackSlotSuffixes)>
+        rackRoutingAttachments;
 
    #if GENVST_DEV_SERVER
     juce::WebSliderParameterAttachment       galleryKnobAttachment;

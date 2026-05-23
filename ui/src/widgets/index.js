@@ -33,6 +33,10 @@ export { ClipLed } from "./clip-led.js";
 export { WaveformDisplay } from "./waveform-display.js";
 export { NotificationToastHost } from "./notification-toast.js";
 
+// Task 22 widgets
+export { RangeSlider } from "./range-slider.js";
+export { InstrumentRack } from "./instrument-rack.js";
+
 // Global hover tooltips — installed once at startup; toggled by Settings.
 export { installTooltips, uninstallTooltips } from "./tooltip.js";
 

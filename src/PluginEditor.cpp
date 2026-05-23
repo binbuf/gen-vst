@@ -231,6 +231,53 @@ GenVstAudioProcessorEditor::makePsgBendRelays()
 
 namespace
 {
+    // Task 22 — Per-rack-slot routing relay schema. The slot-suffix list +
+    // param-base list together generate the 7 × 11 = 77 apvts param IDs the
+    // rack widget binds to.
+    constexpr std::array<const char*, GenVstAudioProcessorEditor::kNumRackParamsPerSlot>
+        kRackRoutingParamBases {
+            "midi_ch", "transpose_st", "transpose_oct",
+            "note_lo", "note_hi", "detune_cents", "balance"
+        };
+
+    // Build the 11 slot suffixes in a stable order: FM parts 1..6, PSG ch1..3,
+    // PSG noise, DAC. This is the index layout used by every per-rack-slot
+    // array in PluginEditor (relays + attachments).
+    std::array<juce::String, GenVstAudioProcessorEditor::kNumRackSlotSuffixes>
+        rackRoutingSuffixes()
+    {
+        std::array<juce::String, GenVstAudioProcessorEditor::kNumRackSlotSuffixes> out;
+        std::size_t idx = 0;
+        for (int p = 0; p < PartManager::kNumParts; ++p)
+            out[idx++] = "_part" + juce::String (p + 1);
+        out[idx++] = "_psg_ch1";
+        out[idx++] = "_psg_ch2";
+        out[idx++] = "_psg_ch3";
+        out[idx++] = "_psg_noise";
+        out[idx++] = "_dac";
+        jassert (idx == GenVstAudioProcessorEditor::kNumRackSlotSuffixes);
+        return out;
+    }
+}
+
+std::array<std::unique_ptr<juce::WebSliderRelay>,
+           (std::size_t) (GenVstAudioProcessorEditor::kNumRackParamsPerSlot
+                          * GenVstAudioProcessorEditor::kNumRackSlotSuffixes)>
+GenVstAudioProcessorEditor::makeRackRoutingRelays()
+{
+    std::array<std::unique_ptr<juce::WebSliderRelay>,
+               (std::size_t) (kNumRackParamsPerSlot * kNumRackSlotSuffixes)> result;
+    const auto suffixes = rackRoutingSuffixes();
+    std::size_t idx = 0;
+    for (std::size_t s = 0; s < (std::size_t) kNumRackSlotSuffixes; ++s)
+        for (std::size_t p = 0; p < (std::size_t) kNumRackParamsPerSlot; ++p)
+            result[idx++] = std::make_unique<juce::WebSliderRelay> (
+                juce::String (kRackRoutingParamBases[p]) + suffixes[s]);
+    return result;
+}
+
+namespace
+{
     juce::var makeDestinationVar (MidiRouter::Destination dest)
     {
         const char* kind = "off";
@@ -321,6 +368,11 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
     for (auto& r : psgVolRelays)  options = options.withOptionsFrom (*r);
     for (auto& r : psgPanRelays)  options = options.withOptionsFrom (*r);
     for (auto& r : psgBendRelays) options = options.withOptionsFrom (*r);
+
+    // Task 22 — Per-rack-slot routing relays (77 sliders covering every
+    // (midi_ch, transpose_st, transpose_oct, note_lo, note_hi, detune_cents,
+    // balance) × (FM part / PSG channel / DAC) pair).
+    for (auto& r : rackRoutingRelays) options = options.withOptionsFrom (*r);
 
     using Completion = juce::WebBrowserComponent::NativeFunctionCompletion;
 
@@ -683,6 +735,247 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             auto* obj = new juce::DynamicObject();
             obj->setProperty ("ok",   true);
             obj->setProperty ("part", n);
+            completion (juce::var (obj));
+        });
+
+    // --- Task 22 — Rack native functions -------------------------------------
+    // The instrument rack (08-ui-views.md view 1 revised) drives these:
+    //   getRackState           snapshot every active slot for the rack list
+    //   selectPart             pick (type, slotIndex) -> sets section + paging
+    //   clearPart              remove a row -> deactivates slot, clears patch
+    //   addInstrument          requests an empty slot of a given type
+    //
+    // Slot types map to the engine as:
+    //   FM   -> partManager FM slots 0..4 -> FM parts 0..4
+    //   SQ   -> 0..2 PSG tones, 3 = PSG noise
+    //   D    -> the single DAC slot
+
+    auto rackSlotTypeFromString = [] (const juce::String& s) -> std::optional<PartManager::InstrumentType>
+    {
+        if (s.equalsIgnoreCase ("fm"))  return PartManager::InstrumentType::FM;
+        if (s.equalsIgnoreCase ("sq"))  return PartManager::InstrumentType::SQ;
+        if (s.equalsIgnoreCase ("d"))   return PartManager::InstrumentType::D;
+        if (s.equalsIgnoreCase ("dac")) return PartManager::InstrumentType::D;
+        return std::nullopt;
+    };
+
+    auto rackSlotTypeToString = [] (PartManager::InstrumentType t) -> juce::String
+    {
+        switch (t)
+        {
+            case PartManager::InstrumentType::FM: return "fm";
+            case PartManager::InstrumentType::SQ: return "sq";
+            case PartManager::InstrumentType::D:  return "d";
+        }
+        return "fm";
+    };
+
+    options = options.withNativeFunction ("getRackState",
+        [this, rackSlotTypeToString]
+        (const juce::Array<juce::var>&, Completion completion)
+        {
+            auto& apvts   = processor.getValueTreeState();
+            auto& parts   = processor.getPartManager();
+            auto& browser = processor.getPatchBrowser();
+            auto& dac     = processor.getDacPlayer();
+
+            auto readInt = [&apvts] (const juce::String& id, int dflt) -> int
+            {
+                if (auto* p = apvts.getRawParameterValue (id))
+                    return juce::roundToInt (p->load());
+                return dflt;
+            };
+            auto readFloat = [&apvts] (const juce::String& id, float dflt) -> float
+            {
+                if (auto* p = apvts.getRawParameterValue (id))
+                    return p->load();
+                return dflt;
+            };
+
+            juce::Array<juce::var> rows;
+            auto pushRow = [&] (PartManager::SlotId slot,
+                                const juce::String& suffix,
+                                const juce::String& patchName,
+                                int defaultMidi)
+            {
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty ("type",         rackSlotTypeToString (slot.type));
+                obj->setProperty ("slotIndex",    slot.index);
+                obj->setProperty ("paramSuffix",  suffix);
+                obj->setProperty ("patchName",    patchName);
+                obj->setProperty ("midiCh",       readInt   ("midi_ch"       + suffix, defaultMidi));
+                obj->setProperty ("transposeSt",  readInt   ("transpose_st"  + suffix, 0));
+                obj->setProperty ("transposeOct", readInt   ("transpose_oct" + suffix, 0));
+                obj->setProperty ("noteLo",       readInt   ("note_lo"       + suffix, 0));
+                obj->setProperty ("noteHi",       readInt   ("note_hi"       + suffix, 127));
+                obj->setProperty ("detuneCents",  readInt   ("detune_cents"  + suffix, 0));
+                obj->setProperty ("balance",      readFloat ("balance"       + suffix, 0.0f));
+                rows.add (juce::var (obj));
+            };
+
+            // FM slots — first 5 parts; part 5 stays out of the rack pool.
+            for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
+            {
+                const PartManager::SlotId slot { PartManager::InstrumentType::FM, i };
+                if (! parts.isSlotActive (slot)) continue;
+                const auto path = browser.activePatchPath (i);
+                juce::String name = path.isNotEmpty()
+                    ? juce::File (path).getFileNameWithoutExtension()
+                    : juce::String ("— empty —");
+                pushRow (slot, "_part" + juce::String (i + 1), name, i + 1);
+            }
+
+            // SQ slots — 3 PSG tones plus PSG noise as slot 3.
+            static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackIds
+                { "ch1", "ch2", "ch3", "noise" };
+            static constexpr std::array<int, SN76489Engine::kNumChannels> kPsgDefaultCh
+                { 11, 12, 13, 14 };
+            static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackLabel
+                { "PSG 1", "PSG 2", "PSG 3", "PSG Noise" };
+            for (int i = 0; i < PartManager::kNumRackSqSlots; ++i)
+            {
+                const PartManager::SlotId slot { PartManager::InstrumentType::SQ, i };
+                if (! parts.isSlotActive (slot)) continue;
+                pushRow (slot,
+                         juce::String ("_psg_") + kPsgRackIds[(std::size_t) i],
+                         juce::String (kPsgRackLabel[(std::size_t) i]),
+                         kPsgDefaultCh[(std::size_t) i]);
+            }
+
+            // DAC slot.
+            for (int i = 0; i < PartManager::kNumRackDSlots; ++i)
+            {
+                const PartManager::SlotId slot { PartManager::InstrumentType::D, i };
+                if (! parts.isSlotActive (slot)) continue;
+                const juce::String name = dac.hasPcm()
+                    ? dac.getSampleName()
+                    : juce::String ("— no sample —");
+                pushRow (slot, "_dac", name, 16);
+            }
+
+            auto* outObj = new juce::DynamicObject();
+            outObj->setProperty ("ok",   true);
+            outObj->setProperty ("rows", juce::var (rows));
+            // Pool sizes the UI uses to clamp the + popover / empty-slot logic.
+            auto* pool = new juce::DynamicObject();
+            pool->setProperty ("fm", PartManager::kNumRackFmSlots);
+            pool->setProperty ("sq", PartManager::kNumRackSqSlots);
+            pool->setProperty ("d",  PartManager::kNumRackDSlots);
+            outObj->setProperty ("pool", juce::var (pool));
+            completion (juce::var (outObj));
+        });
+
+    options = options.withNativeFunction ("selectPart",
+        [this, rackSlotTypeFromString]
+        (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.size() < 2 || ! args[0].isString())
+            { completion (makeStatusVar ("type, slotIndex required")); return; }
+            const auto type = rackSlotTypeFromString (args[0].toString());
+            if (! type.has_value())
+            { completion (makeStatusVar ("invalid type")); return; }
+            const int slotIndex = (int) args[1];
+
+            // FM rows page the FM panel via the existing rebuildFmAttachments
+            // path. SQ / D rows simply tell the bottom region which section
+            // to display — the section pill is implied by the row click.
+            juce::String section;
+            switch (*type)
+            {
+                case PartManager::InstrumentType::FM:
+                {
+                    const int n = juce::jlimit (0, PartManager::kNumParts - 1, slotIndex);
+                    selectedPart = n;
+                    processor.setUiSelectedPart (n);
+                    rebuildFmAttachments (n);
+                    section = "FM";
+                    break;
+                }
+                case PartManager::InstrumentType::SQ: section = "SQ"; break;
+                case PartManager::InstrumentType::D:  section = "D";  break;
+            }
+
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",        true);
+            obj->setProperty ("type",      args[0].toString());
+            obj->setProperty ("slotIndex", slotIndex);
+            obj->setProperty ("section",   section);
+            completion (juce::var (obj));
+        });
+
+    options = options.withNativeFunction ("clearPart",
+        [this, rackSlotTypeFromString]
+        (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.size() < 2 || ! args[0].isString())
+            { completion (makeStatusVar ("type, slotIndex required")); return; }
+            const auto type = rackSlotTypeFromString (args[0].toString());
+            if (! type.has_value())
+            { completion (makeStatusVar ("invalid type")); return; }
+            const int slotIndex = (int) args[1];
+            const PartManager::SlotId slot { *type, slotIndex };
+            auto& parts = processor.getPartManager();
+
+            // Clear any patch / WAV bound to this slot, then deactivate it.
+            switch (*type)
+            {
+                case PartManager::InstrumentType::FM:
+                {
+                    if (slotIndex >= 0 && slotIndex < PartManager::kNumParts)
+                        processor.getPatchBrowser().clearActivePatchPath (slotIndex);
+                    break;
+                }
+                case PartManager::InstrumentType::SQ:
+                    // PSG channels keep their apvts state — clearing the row
+                    // is the user signalling "this slot is empty"; volumes /
+                    // pans stay so re-adding the row brings back the same
+                    // settings (Genny parity).
+                    break;
+                case PartManager::InstrumentType::D:
+                    processor.getDacPlayer().clearPcm();
+                    break;
+            }
+            parts.setSlotActive (slot, false);
+
+            completion (makeStatusVar ({}));
+        });
+
+    options = options.withNativeFunction ("addInstrument",
+        [this, rackSlotTypeFromString]
+        (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("type required")); return; }
+            const auto type = rackSlotTypeFromString (args[0].toString());
+            if (! type.has_value())
+            { completion (makeStatusVar ("invalid type")); return; }
+            auto& parts = processor.getPartManager();
+            const auto free = parts.getFreeSlot (*type);
+            auto* obj = new juce::DynamicObject();
+            if (! free.has_value())
+            {
+                obj->setProperty ("ok",    false);
+                obj->setProperty ("error", "All slots of this type are in use.");
+                completion (juce::var (obj));
+                return;
+            }
+            // Mark the slot active. The JS side then opens the patch browser
+            // (scoped to the requested type) and calls loadInstrument with the
+            // returned slotIndex (re-routed via setSelectedPartForSlot below).
+            parts.setSlotActive (*free, true);
+
+            // If this is an FM slot, also page the editor's FM attachments to
+            // it so the bottom panel + right column rebind immediately.
+            if (free->type == PartManager::InstrumentType::FM)
+            {
+                selectedPart = free->index;
+                processor.setUiSelectedPart (free->index);
+                rebuildFmAttachments (free->index);
+            }
+
+            obj->setProperty ("ok",        true);
+            obj->setProperty ("type",      args[0].toString());
+            obj->setProperty ("slotIndex", free->index);
             completion (juce::var (obj));
         });
 
@@ -1216,6 +1509,26 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
             *apvts.getParameter ("psg_bend_" + suffix), *psgBendRelays[(std::size_t) i], apvts.undoManager);
     }
 
+    // Task 22 — Rack-routing attachments. Iterate the same suffix list +
+    // param-base list used by makeRackRoutingRelays so the (slot, param)
+    // ↔ relay-array index mapping stays in lockstep.
+    {
+        auto& apvts = proc.getValueTreeState();
+        const auto suffixes = rackRoutingSuffixes();
+        std::size_t idx = 0;
+        for (std::size_t s = 0; s < (std::size_t) kNumRackSlotSuffixes; ++s)
+            for (std::size_t p = 0; p < (std::size_t) kNumRackParamsPerSlot; ++p)
+            {
+                const auto paramId = juce::String (kRackRoutingParamBases[p])
+                                   + suffixes[s];
+                if (auto* param = apvts.getParameter (paramId))
+                    rackRoutingAttachments[idx] =
+                        std::make_unique<juce::WebSliderParameterAttachment> (
+                            *param, *rackRoutingRelays[idx], apvts.undoManager);
+                ++idx;
+            }
+    }
+
    #if GENVST_DEV_SERVER
     // Hot-reload workflow: load the Vite dev server (npm run dev in ui/)
     // instead of the embedded bundle. Vite is pinned to port 5173. The page
@@ -1274,6 +1587,7 @@ GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
     for (auto& a : psgVolAttachments)  a.reset();
     for (auto& a : psgPanAttachments)  a.reset();
     for (auto& a : psgBendAttachments) a.reset();
+    for (auto& a : rackRoutingAttachments) a.reset();
 }
 
 void GenVstAudioProcessorEditor::rebuildFmAttachments (int part)

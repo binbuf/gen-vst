@@ -428,3 +428,180 @@ TEST (FmRegisterMap, MidiNoteToFreqAcceptsFractionalNotes)
     const double hzA5 = a5.fnum * 53267.0 / static_cast<double> (1 << (21 - a5.blk));
     EXPECT_NEAR (hzA5 / hzA4, 2.0, 0.01);
 }
+
+// --- Task 22 — Rack routing (range / transpose / detune) ---------------------
+
+TEST (MidiRoutingRack, NoteInRangeIsInclusiveAtBothEnds)
+{
+    // The widget's RNG slider is inclusive at both ends; a note exactly equal
+    // to lo or hi must still pass.
+    EXPECT_TRUE (MidiRouter::noteInRange (60, 60, 72));
+    EXPECT_TRUE (MidiRouter::noteInRange (72, 60, 72));
+    EXPECT_TRUE (MidiRouter::noteInRange (66, 60, 72));
+}
+
+TEST (MidiRoutingRack, NoteOutOfRangeIsDropped)
+{
+    EXPECT_FALSE (MidiRouter::noteInRange (59, 60, 72));
+    EXPECT_FALSE (MidiRouter::noteInRange (73, 60, 72));
+    EXPECT_FALSE (MidiRouter::noteInRange (0,  60, 72));
+    EXPECT_FALSE (MidiRouter::noteInRange (127, 60, 72));
+}
+
+TEST (MidiRoutingRack, NoteInRangeAcceptsFullKeyboard)
+{
+    for (int n : { 0, 1, 60, 64, 96, 127 })
+        EXPECT_TRUE (MidiRouter::noteInRange (n, 0, 127));
+}
+
+TEST (MidiRoutingRack, NoteInRangeIsRobustToSwappedLoHi)
+{
+    // If somehow lo > hi reaches the dispatcher, the helper still works.
+    EXPECT_TRUE  (MidiRouter::noteInRange (65, 72, 60));   // window 60..72
+    EXPECT_FALSE (MidiRouter::noteInRange (50, 72, 60));
+}
+
+TEST (MidiRoutingRack, TransposeSemitoneAndOctaveStack)
+{
+    // Transpose +12 (one octave up) sends C4 (60) to C5 (72).
+    EXPECT_EQ (MidiRouter::applyTranspose (60, 12, 0), 72);
+    // Transpose +1 octave sends C4 (60) to C5 (72).
+    EXPECT_EQ (MidiRouter::applyTranspose (60, 0,  1), 72);
+    // Mixed: +1 semitone + +1 octave = +13 semitones.
+    EXPECT_EQ (MidiRouter::applyTranspose (60, 1,  1), 73);
+    // Negative transpose lowers.
+    EXPECT_EQ (MidiRouter::applyTranspose (60, 0, -1), 48);
+    EXPECT_EQ (MidiRouter::applyTranspose (60, -7, -1), 41);
+}
+
+TEST (MidiRoutingRack, TransposeIsIdentityAtZero)
+{
+    for (int n : { 0, 60, 127 })
+        EXPECT_EQ (MidiRouter::applyTranspose (n, 0, 0), n);
+}
+
+TEST (MidiRoutingRack, DetuneCentsConvertsToFractionalSemitones)
+{
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (0),     0.0);
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (50),    0.5);
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (-50),  -0.5);
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (100),   1.0);
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (-100), -1.0);
+}
+
+TEST (MidiRoutingRack, DetuneCentsClampsOutOfRangeInput)
+{
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (200),   1.0);
+    EXPECT_DOUBLE_EQ (MidiRouter::detuneCentsToSemitones (-9999),-1.0);
+}
+
+TEST (MidiRoutingRack, TransposePlusRangeFiltersCorrectly)
+{
+    // Compose: an incoming note transposed by +12, then range-filtered.
+    // C4 (60) + 12 = C5 (72), and a window of C5..C6 (72..84) accepts it.
+    const int transposed = MidiRouter::applyTranspose (60, 12, 0);
+    EXPECT_EQ (transposed, 72);
+    EXPECT_TRUE (MidiRouter::noteInRange (transposed, 72, 84));
+
+    // C3 (48) transposed by +12 = C4 (60). A C5..C6 window now drops it.
+    const int below = MidiRouter::applyTranspose (48, 12, 0);
+    EXPECT_EQ (below, 60);
+    EXPECT_FALSE (MidiRouter::noteInRange (below, 72, 84));
+}
+
+TEST (MidiRoutingRack, DeferredChannelWriteRebuildsMaskInOneShot)
+{
+    MidiRouter router;
+    using Kind = MidiRouter::Destination::Kind;
+    const int fm0 = MidiRouter::destinationId ({ Kind::FmPart, 0 });
+    const int fm1 = MidiRouter::destinationId ({ Kind::FmPart, 1 });
+
+    router.setDestinationChannelDeferred (fm0, 7);
+    router.setDestinationChannelDeferred (fm1, 7);
+    // Until rebuild, the old mask is still in effect (FM0 still on ch1).
+    EXPECT_EQ (router.destinationFor (1).kind, Kind::FmPart);
+    EXPECT_EQ (router.destinationFor (1).index, 0);
+
+    router.rebuildChannelMaskAfterDeferredWrites();
+    // Now both share channel 7 — the layering test mirror of the existing
+    // forEachDestination coverage, exercised via the deferred path.
+    std::vector<MidiRouter::Destination::Kind> seen;
+    router.forEachDestination (7, [&] (MidiRouter::Destination d) { seen.push_back (d.kind); });
+    EXPECT_EQ (seen.size(), 2u);
+}
+
+// --- PartManager — Task 22 rack slot pool ------------------------------------
+
+TEST (PartManagerRack, DefaultStateHasOnlyFmSlotZeroActive)
+{
+    PartManager pm;
+    EXPECT_TRUE  (pm.isSlotActive ({ PartManager::InstrumentType::FM, 0 }));
+    for (int i = 1; i < PartManager::kNumRackFmSlots; ++i)
+        EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::FM, i }));
+    for (int i = 0; i < PartManager::kNumRackSqSlots; ++i)
+        EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::SQ, i }));
+    EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::D, 0 }));
+}
+
+TEST (PartManagerRack, GetFreeSlotReturnsLowestIndexAvailable)
+{
+    PartManager pm;
+    // Default: FM slot 0 active -> next free FM slot is index 1.
+    EXPECT_EQ (pm.getFreeSlot (PartManager::InstrumentType::FM)->index, 1);
+    // SQ + D pools start empty -> index 0 is free.
+    EXPECT_EQ (pm.getFreeSlot (PartManager::InstrumentType::SQ)->index, 0);
+    EXPECT_EQ (pm.getFreeSlot (PartManager::InstrumentType::D)->index,  0);
+}
+
+TEST (PartManagerRack, GetFreeSlotReturnsNulloptWhenPoolFull)
+{
+    PartManager pm;
+    for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
+        pm.setSlotActive ({ PartManager::InstrumentType::FM, i }, true);
+    EXPECT_FALSE (pm.getFreeSlot (PartManager::InstrumentType::FM).has_value());
+
+    pm.setSlotActive ({ PartManager::InstrumentType::D, 0 }, true);
+    EXPECT_FALSE (pm.getFreeSlot (PartManager::InstrumentType::D).has_value());
+}
+
+TEST (PartManagerRack, SetSlotActiveTogglesAreIdempotent)
+{
+    // The state change itself is straightforward to test; the
+    // ChangeBroadcaster dispatch is JUCE message-thread infrastructure and
+    // exercised by the running plugin, so we restrict the unit test to the
+    // observable PartManager state.
+    PartManager pm;
+    EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::SQ, 0 }));
+
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);
+    EXPECT_TRUE  (pm.isSlotActive ({ PartManager::InstrumentType::SQ, 0 }));
+
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);   // idempotent
+    EXPECT_TRUE  (pm.isSlotActive ({ PartManager::InstrumentType::SQ, 0 }));
+
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, false);
+    EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::SQ, 0 }));
+}
+
+TEST (PartManagerRack, SetSlotActiveRejectsOutOfRangeIndex)
+{
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::FM, -1 }, true);   // no-op
+    pm.setSlotActive ({ PartManager::InstrumentType::FM, 99 }, true);   // no-op
+    EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::FM, -1 }));
+    EXPECT_FALSE (pm.isSlotActive ({ PartManager::InstrumentType::FM, 99 }));
+}
+
+TEST (PartManagerRack, SlotPoolSizesMatchSpec)
+{
+    EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::FM),
+               PartManager::kNumRackFmSlots);
+    EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::SQ),
+               PartManager::kNumRackSqSlots);
+    EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::D),
+               PartManager::kNumRackDSlots);
+    // The pool sizes from the task spec: 5 FM + 4 SQ + 1 D.
+    EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::FM), 5);
+    EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::SQ), 4);
+    EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::D),  1);
+}

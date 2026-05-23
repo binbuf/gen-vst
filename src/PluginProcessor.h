@@ -238,6 +238,44 @@ private:
     std::array<std::atomic<float>*, PartManager::kNumParts> monoGlideParam    {};
     std::array<std::atomic<float>*, PartManager::kNumParts> unisonSpreadParam {};
 
+    // Task 22 — Per-rack-slot routing params (midi channel, transpose, range,
+    // detune cents, balance). Cached as raw atomic pointers so the audio
+    // thread doesn't pay a parameter-map lookup on every note-on.
+    //
+    // The rack pool is the union of FM parts (6), PSG channels (3 tones + 1
+    // noise) and DAC. For the FM parts we keep the full 6 slots cached even
+    // though the rack widget only exposes 5 — keeps the indexing trivial and
+    // leaves part 5 (channel 6 / DAC chip channel) under DAW-automation control.
+    struct RackParams
+    {
+        std::atomic<float>* midiCh      = nullptr;
+        std::atomic<float>* transposeSt = nullptr;
+        std::atomic<float>* transposeOct = nullptr;
+        std::atomic<float>* noteLo      = nullptr;
+        std::atomic<float>* noteHi      = nullptr;
+        std::atomic<float>* detuneCents = nullptr;
+        std::atomic<float>* balance     = nullptr;
+    };
+    std::array<RackParams, PartManager::kNumParts>            fmRackParams  {};
+    std::array<RackParams, SN76489Engine::kNumChannels>       psgRackParams {};
+    RackParams                                                dacRackParams {};
+
+    // Helper accessors for the rack-routing logic. These read the cached
+    // atomic pointers and apply the standard clamps. Audio-thread safe.
+    int    fmPartTransposedNote (int part, int noteIn) const noexcept;
+    bool   fmPartAcceptsNote    (int part, int transposedNote) const noexcept;
+    double fmPartDetuneSemitones(int part) const noexcept;
+    int    fmPartMidiChannel    (int part) const noexcept;
+    int    psgChannelMidiChannel(int psgCh) const noexcept;
+    int    dacMidiChannel       () const noexcept;
+
+    // Snapshot the per-rack-slot midi_ch params and reapply them to the
+    // routing table. Called whenever the message thread suspects the rack
+    // routing might be stale (UI change, state restore). Run on the message
+    // thread; audio thread uses the destChannel atomics directly via
+    // forEachDestination on the next block.
+    void syncRackRoutingToTable() noexcept;
+
     // Snapshot the apvts poly-mode params into the VoiceAllocator + cap the
     // pool to the Settings voice count. Called once per block from
     // processBlock, before any note-on / note-off dispatch.

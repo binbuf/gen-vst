@@ -23,6 +23,12 @@ namespace
     constexpr const char* kCustomRootsTag = "customRoots";
     constexpr const char* kRootTagInner   = "root";
     constexpr const char* kUiStateTag     = "uiState";
+    // Task 22 — Rack active-slot tag. Holds which rack rows the user has
+    // added (+) per type/index. The per-row routing values themselves live in
+    // the apvts under midi_ch_* / transpose_* / note_lo/hi_* / detune_cents_*
+    // / balance_*, so they save/restore through the existing apvts path.
+    constexpr const char* kRackTag        = "rack";
+    constexpr const char* kRackSlotTag    = "slot";
 
     using Kind = MidiRouter::Destination::Kind;
 
@@ -295,6 +301,27 @@ std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
     uiEl->setAttribute ("selectedPart", proc.uiSelectedPart());
     uiEl->setAttribute ("presetTab",    proc.uiPresetTab());
 
+    // Task 22 — Rack active-slot snapshot. Iterate every rack slot type and
+    // emit a <slot type="fm" index="0"/> entry for each currently-active slot.
+    // The per-slot routing values themselves ride on the apvts.
+    auto& parts = proc.getPartManager();
+    auto* rackEl = root->createNewChildElement (kRackTag);
+    auto saveActiveSlots = [&] (PartManager::InstrumentType type, const char* label)
+    {
+        const int n = PartManager::slotPoolSize (type);
+        for (int i = 0; i < n; ++i)
+        {
+            const PartManager::SlotId slot { type, i };
+            if (! parts.isSlotActive (slot)) continue;
+            auto* el = rackEl->createNewChildElement (kRackSlotTag);
+            el->setAttribute ("type",  label);
+            el->setAttribute ("index", i);
+        }
+    };
+    saveActiveSlots (PartManager::InstrumentType::FM, "fm");
+    saveActiveSlots (PartManager::InstrumentType::SQ, "sq");
+    saveActiveSlots (PartManager::InstrumentType::D,  "d");
+
     return root;
 }
 
@@ -335,6 +362,42 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
 
     restoreRouting (proc.getMidiRouter(), *wrapper);
     restoreDacPcm  (proc.getDacPlayer(),  *wrapper);
+
+    // Task 22 — Restore rack active-slot state. Default-reset every slot,
+    // then re-enable those listed in <rack>. Missing tag = no rack history;
+    // legacy projects then surface with whichever slots had something loaded
+    // (FM slot 0 is the constructor default — i.e. one row visible).
+    {
+        auto& parts = proc.getPartManager();
+        for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
+            parts.setSlotActive ({ PartManager::InstrumentType::FM, i }, false);
+        for (int i = 0; i < PartManager::kNumRackSqSlots; ++i)
+            parts.setSlotActive ({ PartManager::InstrumentType::SQ, i }, false);
+        for (int i = 0; i < PartManager::kNumRackDSlots; ++i)
+            parts.setSlotActive ({ PartManager::InstrumentType::D,  i }, false);
+
+        if (auto* rackEl = wrapper->getChildByName (kRackTag))
+        {
+            for (auto* slotEl : rackEl->getChildWithTagNameIterator (kRackSlotTag))
+            {
+                const auto typeStr = slotEl->getStringAttribute ("type");
+                const int  idx     = slotEl->getIntAttribute ("index", -1);
+                if (idx < 0) continue;
+                PartManager::InstrumentType type;
+                if      (typeStr == "fm") type = PartManager::InstrumentType::FM;
+                else if (typeStr == "sq") type = PartManager::InstrumentType::SQ;
+                else if (typeStr == "d")  type = PartManager::InstrumentType::D;
+                else continue;
+                if (idx >= PartManager::slotPoolSize (type)) continue;
+                parts.setSlotActive ({ type, idx }, true);
+            }
+        }
+        else
+        {
+            // Legacy state — re-mark FM slot 0 so the UI shows the default row.
+            parts.setSlotActive ({ PartManager::InstrumentType::FM, 0 }, true);
+        }
+    }
 
     // Restore the editor UI selection state from <uiState ...>. Missing or
     // out-of-range values fall back to the constructor defaults (part 0,

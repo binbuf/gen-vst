@@ -323,6 +323,72 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
                 d.lo, d.hi, d.lo));
     }
 
+    // --- Task 22 — Per-part rack routing params ------------------------------
+    // The instrument rack (08-ui-views.md view 1 revised) gives every rack row
+    // its own MIDI channel + transpose + range + detune + balance. Generated
+    // alongside the per-part FM params using the same naming convention.
+    // PSG channels and the DAC slot get the same fields under PSG/DAC-suffix
+    // IDs so the rack UI can bind every row through the standard relay path.
+    auto addRackParams = [&layout] (const juce::String& suffix,
+                                    int defaultMidiCh,
+                                    const juce::String& displaySuffix)
+    {
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "midi_ch" + suffix, 1 },
+            "MIDI Channel " + displaySuffix,
+            0, 16, defaultMidiCh));   // 0 = off, 1..16 mapped
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "transpose_st" + suffix, 1 },
+            "Transpose Semi " + displaySuffix,
+            -24, 24, 0));
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "transpose_oct" + suffix, 1 },
+            "Transpose Oct " + displaySuffix,
+            -2, 2, 0));
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "note_lo" + suffix, 1 },
+            "Note Lo " + displaySuffix,
+            0, 127, 0));
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "note_hi" + suffix, 1 },
+            "Note Hi " + displaySuffix,
+            0, 127, 127));
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "detune_cents" + suffix, 1 },
+            "Detune Cents " + displaySuffix,
+            -100, 100, 0));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { "balance" + suffix, 1 },
+            "Balance " + displaySuffix,
+            juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
+    };
+
+    // FM parts (parts 1..6 in apvts; rack widget uses only parts 1..5).
+    for (int part = 0; part < PartManager::kNumParts; ++part)
+    {
+        const juce::String suffix = "_part" + juce::String (part + 1);
+        addRackParams (suffix, part + 1, "Part " + juce::String (part + 1));
+    }
+
+    // PSG channels (rack SQ rows). Default MIDI channels match the existing
+    // MidiRouter defaults (11..13 for tones, 14 for noise) so a freshly-loaded
+    // plugin keeps the documented routing.
+    static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackIds
+        { "ch1", "ch2", "ch3", "noise" };
+    static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackDisplay
+        { "PSG 1", "PSG 2", "PSG 3", "PSG Noise" };
+    static constexpr std::array<int, SN76489Engine::kNumChannels> kPsgDefaultCh
+        { 11, 12, 13, 14 };
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+    {
+        const juce::String suffix = juce::String ("_psg_") + kPsgRackIds[(std::size_t) i];
+        addRackParams (suffix, kPsgDefaultCh[(std::size_t) i],
+                       juce::String (kPsgRackDisplay[(std::size_t) i]));
+    }
+
+    // DAC slot.
+    addRackParams ("_dac", 16, "DAC");
+
    #if GENVST_DEV_SERVER
     // Scratch parameters for the widget gallery (ui/src/gallery.*). Every
     // core widget mounts against one of these so the gallery exercises the
@@ -431,8 +497,44 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     psgDacParams.dacMode   = apvts.getRawParameterValue ("dac_mode");
     psgDacParams.dacLevel  = apvts.getRawParameterValue ("dac_level");
 
+    // Task 22 — Per-rack-slot routing param pointers. Cached once so the
+    // audio thread (and MidiRouter routing-table sync) never pay a parameter
+    // map lookup.
+    auto cacheRack = [&] (RackParams& dest, const juce::String& suffix)
+    {
+        dest.midiCh       = apvts.getRawParameterValue ("midi_ch"       + suffix);
+        dest.transposeSt  = apvts.getRawParameterValue ("transpose_st"  + suffix);
+        dest.transposeOct = apvts.getRawParameterValue ("transpose_oct" + suffix);
+        dest.noteLo       = apvts.getRawParameterValue ("note_lo"       + suffix);
+        dest.noteHi       = apvts.getRawParameterValue ("note_hi"       + suffix);
+        dest.detuneCents  = apvts.getRawParameterValue ("detune_cents"  + suffix);
+        dest.balance      = apvts.getRawParameterValue ("balance"       + suffix);
+    };
+    for (int part = 0; part < PartManager::kNumParts; ++part)
+        cacheRack (fmRackParams[(std::size_t) part],
+                   "_part" + juce::String (part + 1));
+    static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackSuffixIds
+        { "ch1", "ch2", "ch3", "noise" };
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+        cacheRack (psgRackParams[(std::size_t) i],
+                   juce::String ("_psg_") + kPsgRackSuffixIds[(std::size_t) i]);
+    cacheRack (dacRackParams, "_dac");
+
     buildCcParamLookup();
     loadDevDacSample();
+
+    // Sync the cached rack midi-channel params into the existing routing
+    // table so MidiRouter::forEachDestination sees the user-edited channel.
+    // Defaults match the legacy MidiRouter defaults (1..6, 11..14, 16), so
+    // this is a no-op on first launch and a meaningful update after any apvts
+    // edit / state restore.
+    syncRackRoutingToTable();
+
+    // Whenever an apvts param changes, the message thread is the writer; we
+    // re-sync the routing table from the cached `midi_ch_*` pointers on the
+    // next prepareToPlay / state-restore via syncRackRoutingToTable(). The
+    // direct UI write path also calls it explicitly through the editor's
+    // setRouting native function.
 }
 
 void GenVstAudioProcessor::buildCcParamLookup()
@@ -668,6 +770,12 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // values (Task 15 / view 10; 07-feature-spec.md "Polyphony Modes").
     pushPolyphonyParameters();
 
+    // Task 22 — Sync rack midi-channel params into the MidiRouter table so a
+    // step-field edit on a rack row reaches the dispatch on the next block.
+    // Cheap (11 atomic loads + ≤11 atomic stores) and only triggers the
+    // rebuildChannelMask path when an apvts value actually changed.
+    syncRackRoutingToTable();
+
     // Sample-accurate iteration (01-architecture.md "MIDI Pipeline"): for each
     // gap between consecutive MIDI events, render that exact sub-block, then
     // dispatch the event. Out-of-range timestamps (some hosts deliver events
@@ -776,27 +884,72 @@ void GenVstAudioProcessor::handleNoteOn (int channel, int note, int velocity)
     // isNoteOn / isNoteOff already filter on this, so we treat velocity > 0
     // arrivals here as keystrikes. Task 13: layering — one MIDI channel can
     // reach multiple destinations; we dispatch to each.
+    //
+    // Task 22: each rack row applies its own transpose + range filter +
+    // detune-cents offset before the voice path. Range-filtered notes are
+    // silently dropped (no voice taken, no PSG / DAC trigger). Slots that
+    // the rack widget has not activated (the user hasn't pressed "+") also
+    // skip the dispatch — clearing a row via "−" must immediately mute that
+    // destination even though the apvts midi-channel value persists.
     midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
     {
         if (dest.isFmPart())
         {
             const int part = dest.index;
+            if (! partManager.isSlotActive ({ PartManager::InstrumentType::FM, part })) return;
+            const int transposed = fmPartTransposedNote (part, note);
+            if (! fmPartAcceptsNote (part, transposed)) return;
+            const int finalNote = juce::jlimit (0, 127, transposed);
+
             paramCache.readPatch (part, noteOnPatch);
-            voiceAllocator.noteOn (part, note, velocity,
-                                   midiRouter.pitchBendSemitones (part),
+            const double effectiveBend = midiRouter.pitchBendSemitones (part)
+                                       + fmPartDetuneSemitones (part);
+            voiceAllocator.noteOn (part, finalNote, velocity,
+                                   effectiveBend,
                                    currentVelToTl(), noteOnPatch);
         }
         else if (dest.isPsgTone())
         {
-            psgEngine.noteOnTone (note, velocity);
+            const int psgCh = dest.index;
+            if (! partManager.isSlotActive ({ PartManager::InstrumentType::SQ, psgCh })) return;
+            // PSG rack params share the same suffix layout: psgRackParams[0..2]
+            // for tones, [3] for noise. Apply transpose + range the same way
+            // as the FM path so SQ rows behave consistently.
+            const auto& rp = psgRackParams[(std::size_t) psgCh];
+            const int st = (rp.transposeSt  != nullptr) ? juce::roundToInt (rp.transposeSt->load())  : 0;
+            const int oc = (rp.transposeOct != nullptr) ? juce::roundToInt (rp.transposeOct->load()) : 0;
+            const int lo = (rp.noteLo != nullptr) ? juce::roundToInt (rp.noteLo->load()) : 0;
+            const int hi = (rp.noteHi != nullptr) ? juce::roundToInt (rp.noteHi->load()) : 127;
+            const int transposed = MidiRouter::applyTranspose (note, st, oc);
+            if (! MidiRouter::noteInRange (transposed, lo, hi)) return;
+            psgEngine.noteOnTone (juce::jlimit (0, 127, transposed), velocity);
         }
         else if (dest.isPsgNoise())
         {
-            psgEngine.noteOnNoise (note, velocity);
+            if (! partManager.isSlotActive (
+                { PartManager::InstrumentType::SQ, PartManager::kPsgNoiseSqSlot })) return;
+            const auto& rp = psgRackParams[SN76489Engine::kNoiseCh];
+            const int st = (rp.transposeSt  != nullptr) ? juce::roundToInt (rp.transposeSt->load())  : 0;
+            const int oc = (rp.transposeOct != nullptr) ? juce::roundToInt (rp.transposeOct->load()) : 0;
+            const int lo = (rp.noteLo != nullptr) ? juce::roundToInt (rp.noteLo->load()) : 0;
+            const int hi = (rp.noteHi != nullptr) ? juce::roundToInt (rp.noteHi->load()) : 127;
+            const int transposed = MidiRouter::applyTranspose (note, st, oc);
+            if (! MidiRouter::noteInRange (transposed, lo, hi)) return;
+            psgEngine.noteOnNoise (juce::jlimit (0, 127, transposed), velocity);
         }
         else if (dest.isDac())
         {
-            dacPlayer.trigger (note, velocity);
+            if (! partManager.isSlotActive ({ PartManager::InstrumentType::D, 0 })) return;
+            // DAC sample triggers honour the rack's note range too — a DAC kit
+            // mapped to "C2..C3" stays silent on out-of-range notes.
+            const auto& rp = dacRackParams;
+            const int st = (rp.transposeSt  != nullptr) ? juce::roundToInt (rp.transposeSt->load())  : 0;
+            const int oc = (rp.transposeOct != nullptr) ? juce::roundToInt (rp.transposeOct->load()) : 0;
+            const int lo = (rp.noteLo != nullptr) ? juce::roundToInt (rp.noteLo->load()) : 0;
+            const int hi = (rp.noteHi != nullptr) ? juce::roundToInt (rp.noteHi->load()) : 127;
+            const int transposed = MidiRouter::applyTranspose (note, st, oc);
+            if (! MidiRouter::noteInRange (transposed, lo, hi)) return;
+            dacPlayer.trigger (juce::jlimit (0, 127, transposed), velocity);
         }
     });
 }
@@ -808,15 +961,26 @@ void GenVstAudioProcessor::handleNoteOff (int channel, int note)
         if (dest.isFmPart())
         {
             const int part = dest.index;
-            voiceAllocator.noteOff (part, note, midiRouter.sustainPedalHeld (part));
+            const int transposed = fmPartTransposedNote (part, note);
+            const int finalNote = juce::jlimit (0, 127, transposed);
+            voiceAllocator.noteOff (part, finalNote, midiRouter.sustainPedalHeld (part));
         }
         else if (dest.isPsgTone())
         {
-            psgEngine.noteOffTone (note);
+            const int psgCh = dest.index;
+            const auto& rp = psgRackParams[(std::size_t) psgCh];
+            const int st = (rp.transposeSt  != nullptr) ? juce::roundToInt (rp.transposeSt->load())  : 0;
+            const int oc = (rp.transposeOct != nullptr) ? juce::roundToInt (rp.transposeOct->load()) : 0;
+            psgEngine.noteOffTone (juce::jlimit (0, 127,
+                MidiRouter::applyTranspose (note, st, oc)));
         }
         else if (dest.isPsgNoise())
         {
-            psgEngine.noteOffNoise (note);
+            const auto& rp = psgRackParams[SN76489Engine::kNoiseCh];
+            const int st = (rp.transposeSt  != nullptr) ? juce::roundToInt (rp.transposeSt->load())  : 0;
+            const int oc = (rp.transposeOct != nullptr) ? juce::roundToInt (rp.transposeOct->load()) : 0;
+            psgEngine.noteOffNoise (juce::jlimit (0, 127,
+                MidiRouter::applyTranspose (note, st, oc)));
         }
         else if (dest.isDac())
         {
@@ -1027,6 +1191,89 @@ int GenVstAudioProcessor::currentAftertouchTarget() const noexcept
 {
     if (aftertouchTargetParam == nullptr) return 1;
     return juce::jlimit (0, 2, juce::roundToInt (aftertouchTargetParam->load()));
+}
+
+// --- Task 22 — Rack routing helpers ------------------------------------------
+
+int GenVstAudioProcessor::fmPartTransposedNote (int part, int noteIn) const noexcept
+{
+    if (part < 0 || part >= PartManager::kNumParts) return noteIn;
+    const auto& p = fmRackParams[(std::size_t) part];
+    const int st = (p.transposeSt  != nullptr) ? juce::roundToInt (p.transposeSt->load())  : 0;
+    const int oc = (p.transposeOct != nullptr) ? juce::roundToInt (p.transposeOct->load()) : 0;
+    return MidiRouter::applyTranspose (noteIn, st, oc);
+}
+
+bool GenVstAudioProcessor::fmPartAcceptsNote (int part, int transposedNote) const noexcept
+{
+    if (part < 0 || part >= PartManager::kNumParts) return true;
+    const auto& p = fmRackParams[(std::size_t) part];
+    const int lo = (p.noteLo != nullptr) ? juce::roundToInt (p.noteLo->load()) : 0;
+    const int hi = (p.noteHi != nullptr) ? juce::roundToInt (p.noteHi->load()) : 127;
+    return MidiRouter::noteInRange (transposedNote, lo, hi);
+}
+
+double GenVstAudioProcessor::fmPartDetuneSemitones (int part) const noexcept
+{
+    if (part < 0 || part >= PartManager::kNumParts) return 0.0;
+    const auto& p = fmRackParams[(std::size_t) part];
+    if (p.detuneCents == nullptr) return 0.0;
+    return MidiRouter::detuneCentsToSemitones (juce::roundToInt (p.detuneCents->load()));
+}
+
+int GenVstAudioProcessor::fmPartMidiChannel (int part) const noexcept
+{
+    if (part < 0 || part >= PartManager::kNumParts) return part + 1;
+    const auto& p = fmRackParams[(std::size_t) part];
+    if (p.midiCh == nullptr) return part + 1;
+    return juce::jlimit (0, 16, juce::roundToInt (p.midiCh->load()));
+}
+
+int GenVstAudioProcessor::psgChannelMidiChannel (int psgCh) const noexcept
+{
+    if (psgCh < 0 || psgCh >= SN76489Engine::kNumChannels)
+        return 0;
+    const auto& p = psgRackParams[(std::size_t) psgCh];
+    if (p.midiCh == nullptr) return 0;
+    return juce::jlimit (0, 16, juce::roundToInt (p.midiCh->load()));
+}
+
+int GenVstAudioProcessor::dacMidiChannel() const noexcept
+{
+    if (dacRackParams.midiCh == nullptr) return 16;
+    return juce::jlimit (0, 16, juce::roundToInt (dacRackParams.midiCh->load()));
+}
+
+void GenVstAudioProcessor::syncRackRoutingToTable() noexcept
+{
+    // Push every cached rack midi-channel into the MidiRouter destination
+    // table. Audio-thread safe — setDestinationChannelDeferred only writes
+    // the destChannel atomic; the consolidated rebuildChannelMask runs once
+    // at the end. The audio thread reads the destChannel atomics on the next
+    // forEachDestination call.
+    bool anyChanged = false;
+    auto sync = [&] (MidiRouter::Destination dest, int channel)
+    {
+        const int destId = MidiRouter::destinationId (dest);
+        if (destId < 0) return;
+        if (midiRouter.destinationChannel (destId) != channel)
+        {
+            midiRouter.setDestinationChannelDeferred (destId, channel);
+            anyChanged = true;
+        }
+    };
+    for (int part = 0; part < PartManager::kNumParts; ++part)
+        sync ({ MidiRouter::Destination::Kind::FmPart, part },
+              fmPartMidiChannel (part));
+    for (int t = 0; t < 3; ++t)
+        sync ({ MidiRouter::Destination::Kind::PsgTone, t },
+              psgChannelMidiChannel (t));
+    sync ({ MidiRouter::Destination::Kind::PsgNoise, 0 },
+          psgChannelMidiChannel (SN76489Engine::kNoiseCh));
+    sync ({ MidiRouter::Destination::Kind::Dac, 0 }, dacMidiChannel());
+
+    if (anyChanged)
+        midiRouter.rebuildChannelMaskAfterDeferredWrites();
 }
 
 juce::AudioProcessorEditor* GenVstAudioProcessor::createEditor()

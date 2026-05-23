@@ -200,6 +200,19 @@ void MidiRouter::setDestinationChannel (int destId, int midiChannel) noexcept
     rebuildChannelMask();
 }
 
+void MidiRouter::setDestinationChannelDeferred (int destId, int midiChannel) noexcept
+{
+    if (destId < 0 || destId >= kNumDestinations) return;
+    const std::int8_t c = static_cast<std::int8_t> (
+        midiChannel < 0 || midiChannel > 16 ? 0 : midiChannel);
+    destChannel[static_cast<std::size_t> (destId)].store (c, std::memory_order_relaxed);
+}
+
+void MidiRouter::rebuildChannelMaskAfterDeferredWrites() noexcept
+{
+    rebuildChannelMask();
+}
+
 int MidiRouter::destinationChannel (int destId) const noexcept
 {
     if (destId < 0 || destId >= kNumDestinations) return 0;
@@ -291,4 +304,25 @@ void MidiRouter::resetControllers (int part) noexcept
     if (part < 0 || part >= PartManager::kNumParts) return;
     bendSemitones[static_cast<std::size_t> (part)] = 0.0;
     sustainHeld  [static_cast<std::size_t> (part)] = false;
+}
+
+// --- Task 22 — Rack routing helpers ------------------------------------------
+
+bool MidiRouter::noteInRange (int transposedNote, int noteLo, int noteHi) noexcept
+{
+    // The widget's two-thumb range slider clamps lo <= hi at the source, but
+    // defending here keeps the dispatch safe against weird automation values.
+    const int lo = std::min (noteLo, noteHi);
+    const int hi = std::max (noteLo, noteHi);
+    return transposedNote >= lo && transposedNote <= hi;
+}
+
+int MidiRouter::applyTranspose (int note, int transposeSemitones, int transposeOctaves) noexcept
+{
+    return note + transposeSemitones + 12 * transposeOctaves;
+}
+
+double MidiRouter::detuneCentsToSemitones (int detuneCents) noexcept
+{
+    return std::clamp (detuneCents, -100, 100) / 100.0;
 }

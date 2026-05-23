@@ -60,11 +60,19 @@ function makeState() {
   };
 }
 
-export function openPatchBrowserModal() {
+export function openPatchBrowserModal(options = {}) {
   const state = makeState();
+  // Task 22: optional scope filter. `'fm' | 'sq' | 'dac'` narrows the visible
+  // roots so a `+ → FM` rack click only auditions FM patches (which today is
+  // every supported format — the rack just uses the scope as a UI hint and
+  // an optional onLoaded callback to wire the loaded patch back into a
+  // specific rack slot).
+  state.scopeFilter = options.scope ?? null;
+  state.onLoaded    = typeof options.onLoaded === "function" ? options.onLoaded : null;
+  state.titleSuffix = options.titleSuffix ?? "";
 
   openModal({
-    title: "PATCH BROWSER",
+    title: "PATCH BROWSER" + (state.titleSuffix ? " · " + state.titleSuffix : ""),
     width: 880,
     height: 480,
     build: (body, ctx) => {
@@ -247,7 +255,14 @@ function renderTree(state) {
   // Top-level roots in the order PatchBrowser returns them: factory, saved,
   // imported, then any custom roots. Each is a row + a (possibly empty) list
   // of its children below it when expanded.
-  for (const root of state.roots) {
+  //
+  // Task 22: an optional scope filter narrows the visible roots. Today every
+  // supported patch format (TFI/VGI/DMP/Y12/OPM) is an FM patch, so the FM
+  // scope shows every root unchanged; the PSG and DAC scopes are reserved
+  // for future patch-format work (the rack opens the WAV loader directly for
+  // DAC slots and skips the browser entirely for SQ slots).
+  const filtered = filterRootsByScope(state.roots, state.scopeFilter);
+  for (const root of filtered) {
     appendNode(state, treePane, {
       path: root.path,
       name: root.displayName,
@@ -259,6 +274,23 @@ function renderTree(state) {
       writable: root.writable,
     }, 0);
   }
+}
+
+function filterRootsByScope(roots, scope) {
+  if (!scope || scope === "fm") return roots;
+  if (scope === "psg") {
+    // No dedicated PSG patch root today — return an empty list so the user
+    // gets a clear "no roots" view rather than an FM tree under a PSG-titled
+    // modal. The rack's "+ → SQ" path doesn't open the browser, so this
+    // branch is reserved for future PSG patch-format work.
+    return [];
+  }
+  if (scope === "dac") {
+    // DAC patches are .wav files, surfaced via the existing WAV loader
+    // dialog. Same rationale as PSG.
+    return [];
+  }
+  return roots;
 }
 
 function appendNode(state, parent, node, depth) {
@@ -456,11 +488,19 @@ function makePatchRow(state, hit, showFolderPath) {
         .forEach(el => el.classList.remove("pb-selected"));
     row.classList.add("pb-selected");
     updateDeleteButtonState(state);
-    await loadInstrument(hit.path);
+    const result = await loadInstrument(hit.path);
+    if (state.onLoaded) {
+      try { state.onLoaded({ path: hit.path, name: hit.name, result }); }
+      catch (e) { console.error(e); }
+    }
   });
 
   row.addEventListener("dblclick", async () => {
-    await loadInstrument(hit.path);
+    const result = await loadInstrument(hit.path);
+    if (state.onLoaded) {
+      try { state.onLoaded({ path: hit.path, name: hit.name, result }); }
+      catch (e) { console.error(e); }
+    }
   });
 
   return row;

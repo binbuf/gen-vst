@@ -202,18 +202,72 @@
   cursor: ns-resize;
 }
 
-/* ---- Center column — Instruments + routing ------------------------------- */
+/* ---- Center column — Instrument rack + per-instrument routing ------------ */
 
-/* The lower half of the center column reads as part of the same green LCD as
- * the Instruments list above it (08-ui-views.md view 1 + genny-ui.md): one
- * big screen with dark-on-green labels and inset LED placeholders, rather
- * than a separate dark-chassis routing strip. */
+/* Task 22 — the lower half of the center column reads as part of the same
+ * green LCD as the rack list above it (08-ui-views.md view 1 revised). The
+ * rack widget takes the upper portion; the per-instrument routing strip and
+ * the per-part polyphony group share the lower portion. */
 #col-center .panel-body {
   display: grid;
   grid-template-columns: 268px 124px;
   gap: 8px;
   background: var(--lcd-base);
 }
+
+/* Header buttons for + / - rack actions. Live in the panel-header so the
+ * user can hit them without scrolling past the list. */
+.rack-pill-btn {
+  background: var(--lcd-base-hi);
+  color: var(--lcd-text-dark);
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  border: 1px solid;
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  border-right-color: var(--bevel-dark);
+  border-bottom-color: var(--bevel-dark);
+  margin-left: 2px;
+  padding: 0 4px;
+  height: 14px;
+  cursor: pointer;
+}
+.rack-pill-btn:hover {
+  background: var(--select);
+  color: var(--label);
+}
+
+/* The Add Instrument popover — three rows of FM / SQ / D buttons. Positioned
+ * via inline `position: fixed`; the bevel-raised look matches the rest of
+ * the chunky chassis buttons. */
+.rack-add-popover {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  padding: 2px;
+  gap: 2px;
+}
+
+.rack-add-row {
+  background: var(--lcd-base-hi);
+  color: var(--lcd-text-dark);
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  border: 1px solid;
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  border-right-color: var(--bevel-dark);
+  border-bottom-color: var(--bevel-dark);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.rack-add-row:hover { background: var(--select); color: var(--label); }
+.rack-add-row.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.rack-add-row.disabled:hover { background: var(--lcd-base-hi); color: var(--lcd-text-dark); }
 
 .center-controls {
   display: flex;
@@ -296,6 +350,25 @@
   border-left-color: var(--bevel-dark);
   border-right-color: var(--bevel-light);
   border-bottom-color: var(--bevel-light);
+}
+
+/* Task 22 — per-instrument routing strip cells. Each cell hosts a step-field
+ * or canvas widget, so we just want the cell to fill its grid column and
+ * align center-vertically. */
+#rack-routing-group #rack-midi-cell,
+#rack-routing-group .trps-cell,
+#rack-routing-group .rng-cell,
+#rack-routing-group .rack-det-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+#rack-routing-group #rack-trps-st-cell,
+#rack-routing-group #rack-trps-oct-cell {
+  display: flex;
+  align-items: center;
 }
 
 

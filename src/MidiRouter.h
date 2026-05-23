@@ -94,6 +94,13 @@ public:
     void setDestinationChannel (int destId, int midiChannel) noexcept;
     int  destinationChannel    (int destId) const noexcept;
 
+    // Batch-write variant for the rack-routing sync (Task 22). Writes only the
+    // destChannel atomic and skips the rebuildChannelMask pass — the caller
+    // must invoke rebuildChannelMaskAfterDeferredWrites() once after the last
+    // batched update so a single mask rebuild covers all of them.
+    void setDestinationChannelDeferred (int destId, int midiChannel) noexcept;
+    void rebuildChannelMaskAfterDeferredWrites() noexcept;
+
     // Channel-centric backward-compat shims. `setDestination` is a
     // destination-move: it places `dest` on `midiChannel`, removing it from
     // any previous channel. (The pre-Task-13 channel-centric semantics — where
@@ -131,9 +138,30 @@ public:
     // sustain released. Does not touch the routing table.
     void resetControllers (int part) noexcept;
 
+    // --- Task 22 — Rack routing helpers (pure, unit-tested) -------------------
+    //
+    // A rack row is described by its (midi_ch, transpose_st, transpose_oct,
+    // note_lo, note_hi, detune_cents) tuple — these helpers wrap the simple
+    // arithmetic so the MidiRouter unit tests can pin the behaviour without
+    // standing up an AudioProcessor.
+
+    // True if the incoming MIDI note (after transpose) lies inside the
+    // inclusive [noteLo, noteHi] window. Out-of-range notes are silently
+    // dropped at the dispatch site (08-ui-views.md view 1 revised, RNG row).
+    static bool noteInRange (int transposedNote, int noteLo, int noteHi) noexcept;
+
+    // Combine semitone + octave transpose. Returns the post-transpose MIDI
+    // note (may be outside 0..127 — callers should clamp before use).
+    static int applyTranspose (int note, int transposeSemitones, int transposeOctaves) noexcept;
+
+    // Convert a detune-cents value (-100..+100) into a fractional semitone
+    // offset to add onto the part's pitch-bend amount.
+    static double detuneCentsToSemitones (int detuneCents) noexcept;
+
 private:
     // Recompute channelDestMask from destChannel. Called on every routing
-    // edit. Message thread only.
+    // edit. Message thread only (rebuildChannelMaskAfterDeferredWrites is the
+    // public batch entry point).
     void rebuildChannelMask() noexcept;
 
     // Source of truth: each destination's assigned MIDI channel (0 = off).

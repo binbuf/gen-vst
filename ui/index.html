@@ -67,23 +67,46 @@
           </div>
         </section>
 
-        <!-- Center column — Instruments + channel routing -->
+        <!-- Center column — Instrument rack + per-instrument routing
+             (Task 22 / 08-ui-views.md view 1 revised). The rack list replaces
+             the old fixed Instruments LCD + section pills + global routing
+             strip; type tab + channel slots stay visible as read-only context
+             for the selected row. -->
         <section class="column" id="col-center">
           <div class="panel bevel-raised">
-            <div class="panel-header"><span class="label">Instruments</span></div>
+            <div class="panel-header">
+              <span class="label">Instruments</span>
+              <button id="rack-add-btn" type="button" class="rack-pill-btn" data-tip="ADD INSTRUMENT (FM / SQ / D)">+</button>
+              <button id="rack-remove-btn" type="button" class="rack-pill-btn" data-tip="REMOVE SELECTED INSTRUMENT">&minus;</button>
+            </div>
             <div class="panel-body">
-              <canvas id="instruments-list" width="268" height="210" data-tip="FACTORY INSTRUMENT PATCHES (CLICK TO LOAD)"></canvas>
+              <canvas id="instrument-rack" width="268" height="160" data-tip="RACK ROWS: CLICK TO SELECT, + TO ADD, - TO REMOVE"></canvas>
               <div class="center-controls">
+                <!-- Type indicator (read-only this pass — row click picks the type). -->
                 <canvas id="section-pills" width="120" height="16" data-tip="SECTION: FM / SQ (PSG) / D (DAC)"></canvas>
                 <span class="center-label">Channels</span>
                 <div id="channels-row"></div>
 
-                <div class="routing-group">
-                  <span>MIDI</span><div class="placeholder">1</div>
-                  <span>TRPS</span><div class="placeholder">0 0</div>
-                  <span>RNG</span><div class="placeholder">0&ndash;127</div>
-                  <span>DEL</span><div class="placeholder">0</div>
-                  <span>PAN</span><canvas id="pan-slider" width="90" height="14" data-tip="STEREO PAN (L / BOTH / R)"></canvas>
+                <!-- Per-instrument routing strip — binds to the selected
+                     rack row's apvts params via the canonical helpers. -->
+                <div class="routing-group" id="rack-routing-group">
+                  <span>MIDI</span><div id="rack-midi-cell"></div>
+                  <span>TRPS</span>
+                  <div class="trps-cell">
+                    <div id="rack-trps-st-cell"></div>
+                    <div id="rack-trps-oct-cell"></div>
+                  </div>
+                  <span>RNG</span>
+                  <div class="rng-cell">
+                    <canvas id="rack-range-slider" width="78" height="14" data-tip="NOTE RANGE (LO ... HI)"></canvas>
+                    <canvas id="rack-range-readout" class="led" width="48" height="14" data-tip="NOTE RANGE LO-HI"></canvas>
+                  </div>
+                  <span>DET</span>
+                  <div class="rack-det-cell">
+                    <canvas id="rack-detune-slider" width="78" height="14" data-tip="DETUNE IN CENTS"></canvas>
+                    <canvas id="rack-detune-readout" class="led" width="28" height="14"></canvas>
+                  </div>
+                  <span>BAL</span><canvas id="rack-balance-slider" width="120" height="14" data-tip="L/R BALANCE"></canvas>
                 </div>
 
                 <!-- View 10 — per-part polyphony. The mode selector is always
