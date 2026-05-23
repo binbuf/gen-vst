@@ -20,3 +20,5 @@ extra/
 # verification (see docs/tasks/08…). Never committed, never linked into the
 # build (ADR-0012, 04-patch-system.md).
 third_party/furnace/
+
+/Screenshot*.png
