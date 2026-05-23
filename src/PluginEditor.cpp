@@ -139,6 +139,29 @@ namespace
             obj->setProperty ("error", juce::String (errorMessage));
         return juce::var (obj);
     }
+
+    // Build the JS-side DAC info object consumed by the D-section view
+    // (08-ui-views.md view 3) — name, length, bit-depth and a peaks array.
+    // The `empty` flag is set when no sample is loaded so the JS can render
+    // the empty-state placeholder.
+    juce::var buildDacInfoVar (const DACPlayer& dac, int numPeakBuckets)
+    {
+        auto* obj = new juce::DynamicObject();
+        if (! dac.hasPcm())
+        {
+            obj->setProperty ("empty", true);
+            return juce::var (obj);
+        }
+        obj->setProperty ("name",      dac.getSampleName());
+        obj->setProperty ("lengthSec", dac.getSampleLengthSeconds());
+        obj->setProperty ("bitDepth",  dac.getSampleBitDepth());
+
+        juce::Array<juce::var> peaks;
+        for (float p : dac.computePeaks (numPeakBuckets))
+            peaks.add (juce::var (p));
+        obj->setProperty ("peaks", juce::var (peaks));
+        return juce::var (obj);
+    }
 }
 
 std::vector<std::unique_ptr<juce::WebSliderRelay>>
@@ -165,6 +188,74 @@ GenVstAudioProcessorEditor::makePartRelays()
     return result;
 }
 
+namespace
+{
+    constexpr std::array<const char*, SN76489Engine::kNumChannels> kPsgChannelIds {
+        "ch1", "ch2", "ch3", "noise"
+    };
+}
+
+std::array<std::unique_ptr<juce::WebSliderRelay>, SN76489Engine::kNumChannels>
+GenVstAudioProcessorEditor::makePsgVolRelays()
+{
+    std::array<std::unique_ptr<juce::WebSliderRelay>, SN76489Engine::kNumChannels> result;
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+        result[(std::size_t) i] = std::make_unique<juce::WebSliderRelay> (
+            juce::String ("psg_vol_") + kPsgChannelIds[(std::size_t) i]);
+    return result;
+}
+
+std::array<std::unique_ptr<juce::WebSliderRelay>, SN76489Engine::kNumChannels>
+GenVstAudioProcessorEditor::makePsgPanRelays()
+{
+    std::array<std::unique_ptr<juce::WebSliderRelay>, SN76489Engine::kNumChannels> result;
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+        result[(std::size_t) i] = std::make_unique<juce::WebSliderRelay> (
+            juce::String ("psg_pan_") + kPsgChannelIds[(std::size_t) i]);
+    return result;
+}
+
+std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels>
+GenVstAudioProcessorEditor::makePsgBendRelays()
+{
+    std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> result;
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+        result[(std::size_t) i] = std::make_unique<juce::WebToggleButtonRelay> (
+            juce::String ("psg_bend_") + kPsgChannelIds[(std::size_t) i]);
+    return result;
+}
+
+namespace
+{
+    juce::var makeDestinationVar (MidiRouter::Destination dest)
+    {
+        const char* kind = "off";
+        int         idx  = 0;
+        switch (dest.kind)
+        {
+            case MidiRouter::Destination::Kind::FmPart:   kind = "fm";        idx = dest.index; break;
+            case MidiRouter::Destination::Kind::PsgTone:  kind = "psg-tone";  idx = dest.index; break;
+            case MidiRouter::Destination::Kind::PsgNoise: kind = "psg-noise"; idx = 0; break;
+            case MidiRouter::Destination::Kind::Dac:      kind = "dac";       idx = 0; break;
+            default: break;
+        }
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty ("kind",  juce::String (kind));
+        obj->setProperty ("index", idx);
+        return juce::var (obj);
+    }
+
+    MidiRouter::Destination destinationFromKindIndex (const juce::String& kind, int index)
+    {
+        using Kind = MidiRouter::Destination::Kind;
+        if (kind == "fm")        return { Kind::FmPart,   index };
+        if (kind == "psg-tone")  return { Kind::PsgTone,  index };
+        if (kind == "psg-noise") return { Kind::PsgNoise, 0 };
+        if (kind == "dac")       return { Kind::Dac,      0 };
+        return {};
+    }
+}
+
 juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
 {
     auto options = juce::WebBrowserComponent::Options{}
@@ -177,6 +268,21 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             .withBackgroundColour (juce::Colours::black))
         .withNativeIntegrationEnabled()
         .withOptionsFrom (masterGainRelay)
+        // Task 13 — global PSG / DAC / Settings relays.
+        .withOptionsFrom (psgMixRelay)
+        .withOptionsFrom (psgLayerRelay)
+        .withOptionsFrom (psgNoiseTypeRelay)
+        .withOptionsFrom (psgNoiseRateRelay)
+        .withOptionsFrom (psgNoiseAutoRelay)
+        .withOptionsFrom (dacEnableRelay)
+        .withOptionsFrom (dacRateRelay)
+        .withOptionsFrom (dacModeRelay)
+        .withOptionsFrom (dacLevelRelay)
+        .withOptionsFrom (bendRangeRelay)
+        .withOptionsFrom (velToTlRelay)
+        .withOptionsFrom (aftertouchTargetRelay)
+        .withOptionsFrom (voiceCountRelay)
+        .withOptionsFrom (uiScaleRelay)
        #if GENVST_DEV_SERVER
         // Widget gallery relays (Task 10) — dev-server builds only.
         .withOptionsFrom (galleryKnobRelay)
@@ -200,6 +306,11 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         options = options.withOptionsFrom (*r);
     for (auto& r : partRelays)
         options = options.withOptionsFrom (*r);
+
+    // Per-PSG-channel relays — same heap-pinning lifetime as the FM relays.
+    for (auto& r : psgVolRelays)  options = options.withOptionsFrom (*r);
+    for (auto& r : psgPanRelays)  options = options.withOptionsFrom (*r);
+    for (auto& r : psgBendRelays) options = options.withOptionsFrom (*r);
 
     using Completion = juce::WebBrowserComponent::NativeFunctionCompletion;
 
@@ -253,12 +364,17 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         });
 
     // --- Patch loading (UI -> audio thread via the lock-free queue) ---------
+    // Failures route through emitNotify so the toast (08-ui-views.md view 8)
+    // surfaces patch-load errors automatically — JS does not need to inspect
+    // the {ok,error} result.
     options = options.withNativeFunction ("loadInstrument",
         [this] (const juce::Array<juce::var>& args, Completion completion)
         {
             if (args.isEmpty() || ! args[0].isString())
             { completion (makeStatusVar ("path required")); return; }
             auto err = processor.getPatchBrowser().loadIntoPart (selectedPart, args[0].toString());
+            if (! err.empty())
+                emitNotify ("error", juce::String (err));
             completion (makeStatusVar (err));
         });
 
@@ -271,6 +387,8 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             if (args.isEmpty() || ! args[0].isString())
             { completion (makeStatusVar ("path required")); return; }
             auto err = processor.getPatchBrowser().loadIntoPart (selectedPart, args[0].toString());
+            if (! err.empty())
+                emitNotify ("error", juce::String (err));
             completion (makeStatusVar (err));
         });
 
@@ -303,6 +421,8 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             if (args.isEmpty() || ! args[0].isString())
             { completion (makeStatusVar ("path required")); return; }
             const auto err = processor.getPatchBrowser().importPatchFile (args[0].toString());
+            if (! err.empty())
+                emitNotify ("error", juce::String (err));
             completion (makeStatusVar (err));
         });
 
@@ -334,11 +454,11 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         });
 
     // --- Section switch (FM / SQ / D) ---------------------------------------
-    // The FM region is built in this task; SQ and D land in Task 13. Until
-    // then this function records the selection and reports it back so the JS
-    // can render the placeholder regions, but it has no effect on the C++
-    // side (no attachments to rebuild — the SQ/D relays are part of the
-    // global set and bind once).
+    // Records the section pill choice — the bottom-region content is swapped
+    // by the JS view orchestrator (body[data-section]), so this function is
+    // currently a no-op on the C++ side. Kept as a native function so future
+    // C++-side section-switch work (e.g. selectively disabling FM telemetry
+    // when SQ/D is visible) plugs in without a relay redesign.
     options = options.withNativeFunction ("selectSection",
         [] (const juce::Array<juce::var>& args, Completion completion)
         {
@@ -350,11 +470,128 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             completion (juce::var (obj));
         });
 
+    // --- Routing (Task 13) ---------------------------------------------------
+    // The routing modal + the inline MIDI step-fields on views 1/2/3 all
+    // edit the same MidiRouter table via these three native functions
+    // (08-ui-views.md view 5). Returns / accepts a destination-centric view:
+    // fmParts[6] / psgTones[3] / psgNoise / dac, each holding a MIDI channel
+    // (0=off, 1..16).
+    options = options.withNativeFunction ("getRouting",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            auto& router = processor.getMidiRouter();
+            auto* obj = new juce::DynamicObject();
+
+            juce::Array<juce::var> fm;
+            for (int p = 0; p < PartManager::kNumParts; ++p)
+                fm.add ((int) router.destinationChannel (
+                            MidiRouter::destinationId ({ MidiRouter::Destination::Kind::FmPart, p })));
+            obj->setProperty ("fmParts", fm);
+
+            juce::Array<juce::var> tones;
+            for (int t = 0; t < 3; ++t)
+                tones.add ((int) router.destinationChannel (
+                              MidiRouter::destinationId ({ MidiRouter::Destination::Kind::PsgTone, t })));
+            obj->setProperty ("psgTones", tones);
+
+            obj->setProperty ("psgNoise", (int) router.destinationChannel (
+                                  MidiRouter::destinationId ({ MidiRouter::Destination::Kind::PsgNoise, 0 })));
+            obj->setProperty ("dac",      (int) router.destinationChannel (
+                                  MidiRouter::destinationId ({ MidiRouter::Destination::Kind::Dac, 0 })));
+
+            completion (juce::var (obj));
+        });
+
+    options = options.withNativeFunction ("setRouting",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.size() < 3 || ! args[0].isString())
+            { completion (makeStatusVar ("kind, index, channel required")); return; }
+            const auto kind    = args[0].toString();
+            const int  index   = (int) args[1];
+            const int  channel = (int) args[2];
+            const auto dest    = destinationFromKindIndex (kind, index);
+            const int  destId  = MidiRouter::destinationId (dest);
+            if (destId < 0) { completion (makeStatusVar ("invalid destination")); return; }
+            processor.getMidiRouter().setDestinationChannel (destId, channel);
+            completion (makeStatusVar ({}));
+        });
+
+    options = options.withNativeFunction ("resetRouting",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            processor.getMidiRouter().resetRouting();
+            completion (makeStatusVar ({}));
+        });
+
+    // --- DAC (Task 13 D view) ------------------------------------------------
+    // LOAD WAV… uses the native juce::FileChooser (08-ui-views.md view 11)
+    // and feeds the result into DACPlayer::loadWav. Failure surfaces through
+    // emitNotify, then resolves to {ok:false}. The chooser is launched
+    // asynchronously, so completion is captured by the lambda.
+    options = options.withNativeFunction ("loadWavDialog",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            wavChooser = std::make_unique<juce::FileChooser> (
+                "Load WAV", juce::File{}, "*.wav");
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles;
+
+            wavChooser->launchAsync (flags,
+                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    {
+                        // User cancelled — silent.
+                        completion (makeStatusVar ({}));
+                        return;
+                    }
+                    if (! processor.getDacPlayer().loadWav (file))
+                    {
+                        emitNotify ("error", "Failed to load WAV: " + file.getFileName());
+                        completion (makeStatusVar ("WAV load failed"));
+                        return;
+                    }
+
+                    auto* obj = new juce::DynamicObject();
+                    obj->setProperty ("ok",   true);
+                    obj->setProperty ("info", buildDacInfoVar (processor.getDacPlayer(), 220));
+                    completion (juce::var (obj));
+                });
+        });
+
+    options = options.withNativeFunction ("clearDac",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            processor.getDacPlayer().clearPcm();
+            completion (makeStatusVar ({}));
+        });
+
+    options = options.withNativeFunction ("getDacInfo",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            int numBuckets = 220;
+            if (! args.isEmpty() && args[0].isInt())
+                numBuckets = juce::jlimit (16, 1024, (int) args[0]);
+            completion (buildDacInfoVar (processor.getDacPlayer(), numBuckets));
+        });
+
    #if ! GENVST_DEV_SERVER
     options = options.withResourceProvider ([] (const auto& url) { return getWebResource (url); });
    #endif
 
     return options;
+}
+
+void GenVstAudioProcessorEditor::emitNotify (const juce::String& level,
+                                             const juce::String& message)
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty ("level",   level);
+    obj->setProperty ("message", message);
+    webView.emitEventIfBrowserIsVisible ("notify", juce::var (obj));
 }
 
 GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& proc)
@@ -363,7 +600,35 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
       webView (makeOptions()),
       masterGainAttachment (*proc.getValueTreeState().getParameter ("master_gain"),
                             masterGainRelay,
-                            proc.getValueTreeState().undoManager)
+                            proc.getValueTreeState().undoManager),
+      psgMixAttachment       (*proc.getValueTreeState().getParameter ("psg_mix"),
+                              psgMixRelay, proc.getValueTreeState().undoManager),
+      psgLayerAttachment     (*proc.getValueTreeState().getParameter ("psg_layer"),
+                              psgLayerRelay, proc.getValueTreeState().undoManager),
+      psgNoiseTypeAttachment (*proc.getValueTreeState().getParameter ("psg_noise_type"),
+                              psgNoiseTypeRelay, proc.getValueTreeState().undoManager),
+      psgNoiseRateAttachment (*proc.getValueTreeState().getParameter ("psg_noise_rate"),
+                              psgNoiseRateRelay, proc.getValueTreeState().undoManager),
+      psgNoiseAutoAttachment (*proc.getValueTreeState().getParameter ("psg_noise_auto"),
+                              psgNoiseAutoRelay, proc.getValueTreeState().undoManager),
+      dacEnableAttachment    (*proc.getValueTreeState().getParameter ("dac_enable"),
+                              dacEnableRelay, proc.getValueTreeState().undoManager),
+      dacRateAttachment      (*proc.getValueTreeState().getParameter ("dac_rate"),
+                              dacRateRelay, proc.getValueTreeState().undoManager),
+      dacModeAttachment      (*proc.getValueTreeState().getParameter ("dac_mode"),
+                              dacModeRelay, proc.getValueTreeState().undoManager),
+      dacLevelAttachment     (*proc.getValueTreeState().getParameter ("dac_level"),
+                              dacLevelRelay, proc.getValueTreeState().undoManager),
+      bendRangeAttachment        (*proc.getValueTreeState().getParameter ("bend_range"),
+                                  bendRangeRelay, proc.getValueTreeState().undoManager),
+      velToTlAttachment          (*proc.getValueTreeState().getParameter ("vel_to_tl"),
+                                  velToTlRelay, proc.getValueTreeState().undoManager),
+      aftertouchTargetAttachment (*proc.getValueTreeState().getParameter ("aftertouch_target"),
+                                  aftertouchTargetRelay, proc.getValueTreeState().undoManager),
+      voiceCountAttachment       (*proc.getValueTreeState().getParameter ("voice_count"),
+                                  voiceCountRelay, proc.getValueTreeState().undoManager),
+      uiScaleAttachment          (*proc.getValueTreeState().getParameter ("ui_scale"),
+                                  uiScaleRelay, proc.getValueTreeState().undoManager)
      #if GENVST_DEV_SERVER
       , galleryKnobAttachment    (*proc.getValueTreeState().getParameter ("gallery_knob"),
                                   galleryKnobRelay,
@@ -400,6 +665,24 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
     opAttachments.resize ((std::size_t) (kNumOps * kNumOpParams));
     partAttachments.resize ((std::size_t) kNumPartParams);
     rebuildFmAttachments (0);
+
+    // Per-PSG-channel attachments — one psg_vol_*, psg_pan_*, psg_bend_*
+    // per channel. Heap-pinned to match the relays' NON_MOVEABLE storage.
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+    {
+        const juce::String suffix = (i == 0) ? "ch1"
+                                  : (i == 1) ? "ch2"
+                                  : (i == 2) ? "ch3"
+                                             : "noise";
+        auto& apvts = proc.getValueTreeState();
+
+        psgVolAttachments[(std::size_t) i] = std::make_unique<juce::WebSliderParameterAttachment> (
+            *apvts.getParameter ("psg_vol_"  + suffix), *psgVolRelays[(std::size_t) i],  apvts.undoManager);
+        psgPanAttachments[(std::size_t) i] = std::make_unique<juce::WebSliderParameterAttachment> (
+            *apvts.getParameter ("psg_pan_"  + suffix), *psgPanRelays[(std::size_t) i],  apvts.undoManager);
+        psgBendAttachments[(std::size_t) i] = std::make_unique<juce::WebToggleButtonParameterAttachment> (
+            *apvts.getParameter ("psg_bend_" + suffix), *psgBendRelays[(std::size_t) i], apvts.undoManager);
+    }
 
    #if GENVST_DEV_SERVER
     // Hot-reload workflow: load the Vite dev server (npm run dev in ui/)
@@ -440,6 +723,9 @@ GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
     // the lifetime contract auditable.
     opAttachments.clear();
     partAttachments.clear();
+    for (auto& a : psgVolAttachments)  a.reset();
+    for (auto& a : psgPanAttachments)  a.reset();
+    for (auto& a : psgBendAttachments) a.reset();
 }
 
 void GenVstAudioProcessorEditor::rebuildFmAttachments (int part)

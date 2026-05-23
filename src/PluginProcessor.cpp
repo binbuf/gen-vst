@@ -193,6 +193,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         juce::StringArray { "Off", "LFO Depth", "Carrier TL" },
         1));   // default = LFO Depth, the MVP-chosen target
 
+    // Task 13 — Settings parameters wired into the Settings modal now;
+    // VOICE COUNT becomes functional in Task 15 and UI SCALE in Task 17.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "voice_count", 1 },
+        "Voice Count",
+        juce::StringArray { "8", "12", "16" },
+        2));   // default = 16 voices (07-feature-spec.md)
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "ui_scale", 1 },
+        "UI Scale",
+        juce::StringArray { "1x", "2x", "3x" },
+        0));   // default = 1x (ADR-0017)
+
     // --- PSG (SN76489) parameters --------------------------------------------
     // 03-psg-synthesis.md: per-channel volume, pan, opt-in pitch bend; direct
     // noise control (type/rate + optional auto-mode); global mix level; PSG
@@ -668,119 +681,127 @@ void GenVstAudioProcessor::handleNoteOn (int channel, int note, int velocity)
 {
     // A velocity-0 note-on is a note-off per the MIDI spec — JUCE's
     // isNoteOn / isNoteOff already filter on this, so we treat velocity > 0
-    // arrivals here as keystrikes.
-    const auto dest = midiRouter.destinationFor (channel);
-    if (dest.isFmPart())
+    // arrivals here as keystrikes. Task 13: layering — one MIDI channel can
+    // reach multiple destinations; we dispatch to each.
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
     {
-        const int part = dest.index;
-        paramCache.readPatch (part, noteOnPatch);
-        voiceAllocator.noteOn (part, note, velocity,
-                               midiRouter.pitchBendSemitones (part),
-                               currentVelToTl(), noteOnPatch);
-    }
-    else if (dest.isPsgTone())
-    {
-        psgEngine.noteOnTone (note, velocity);
-    }
-    else if (dest.isPsgNoise())
-    {
-        psgEngine.noteOnNoise (note, velocity);
-    }
-    else if (dest.isDac())
-    {
-        dacPlayer.trigger (note, velocity);
-    }
+        if (dest.isFmPart())
+        {
+            const int part = dest.index;
+            paramCache.readPatch (part, noteOnPatch);
+            voiceAllocator.noteOn (part, note, velocity,
+                                   midiRouter.pitchBendSemitones (part),
+                                   currentVelToTl(), noteOnPatch);
+        }
+        else if (dest.isPsgTone())
+        {
+            psgEngine.noteOnTone (note, velocity);
+        }
+        else if (dest.isPsgNoise())
+        {
+            psgEngine.noteOnNoise (note, velocity);
+        }
+        else if (dest.isDac())
+        {
+            dacPlayer.trigger (note, velocity);
+        }
+    });
 }
 
 void GenVstAudioProcessor::handleNoteOff (int channel, int note)
 {
-    const auto dest = midiRouter.destinationFor (channel);
-    if (dest.isFmPart())
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
     {
-        const int part = dest.index;
-        voiceAllocator.noteOff (part, note, midiRouter.sustainPedalHeld (part));
-    }
-    else if (dest.isPsgTone())
-    {
-        psgEngine.noteOffTone (note);
-    }
-    else if (dest.isPsgNoise())
-    {
-        psgEngine.noteOffNoise (note);
-    }
-    else if (dest.isDac())
-    {
-        dacPlayer.release();
-    }
+        if (dest.isFmPart())
+        {
+            const int part = dest.index;
+            voiceAllocator.noteOff (part, note, midiRouter.sustainPedalHeld (part));
+        }
+        else if (dest.isPsgTone())
+        {
+            psgEngine.noteOffTone (note);
+        }
+        else if (dest.isPsgNoise())
+        {
+            psgEngine.noteOffNoise (note);
+        }
+        else if (dest.isDac())
+        {
+            dacPlayer.release();
+        }
+    });
 }
 
 void GenVstAudioProcessor::handlePitchBend (int channel, int bend14bit)
 {
-    const auto dest = midiRouter.destinationFor (channel);
     const double semitones = MidiRouter::pitchBendToSemitones (bend14bit, currentBendRangeSemitones());
 
-    if (dest.isFmPart())
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
     {
-        const int part = dest.index;
-        midiRouter.setPitchBendSemitones (part, semitones);
+        if (dest.isFmPart())
+        {
+            const int part = dest.index;
+            midiRouter.setPitchBendSemitones (part, semitones);
 
-        // Reflect the bend into every active voice of this part — the dirty-diff
-        // sees only the frequency registers change.
-        paramCache.readPatch (part, partPatches[(size_t) part]);
-        voiceAllocator.setPitchBend (part, semitones, partPatches[(size_t) part], currentVelToTl());
-    }
-    else if (dest.isPsgTone())
-    {
-        psgEngine.setPitchBendSemitones (dest.index, semitones);
-    }
-    // PSG noise has no pitch; DAC has no bend either.
+            // Reflect the bend into every active voice of this part — the
+            // dirty-diff sees only the frequency registers change.
+            paramCache.readPatch (part, partPatches[(size_t) part]);
+            voiceAllocator.setPitchBend (part, semitones, partPatches[(size_t) part], currentVelToTl());
+        }
+        else if (dest.isPsgTone())
+        {
+            psgEngine.setPitchBendSemitones (dest.index, semitones);
+        }
+        // PSG noise has no pitch; DAC has no bend either.
+    });
 }
 
 void GenVstAudioProcessor::handleAftertouch (int channel, int pressure)
 {
-    const auto dest = midiRouter.destinationFor (channel);
-    if (! dest.isFmPart()) return;
-
     const int target = currentAftertouchTarget();
     if (target == 0) return;   // Off
 
-    const int part = dest.index;
-
-    if (target == 1)   // LFO Depth -> PMS (0..7), routed through CC 73
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
     {
-        const int pmsValue = MidiRouter::scaleCC (pressure, 7);
-        writeIntParam (ccParamLookup[(size_t) part][73], pmsValue);
-        paramCache.readPatch (part, partPatches[(size_t) part]);
-        voiceAllocator.updateActiveVoicesForPart (part, partPatches[(size_t) part], currentVelToTl());
-    }
-    // target == 2 (Carrier TL): the Settings selector lands in Task 13; the
-    // routing slot is reserved but not yet wired into a TL modulation path,
-    // so this branch is a no-op today.
+        if (! dest.isFmPart()) return;
+        const int part = dest.index;
+
+        if (target == 1)   // LFO Depth -> PMS (0..7), routed through CC 73
+        {
+            const int pmsValue = MidiRouter::scaleCC (pressure, 7);
+            writeIntParam (ccParamLookup[(size_t) part][73], pmsValue);
+            paramCache.readPatch (part, partPatches[(size_t) part]);
+            voiceAllocator.updateActiveVoicesForPart (part, partPatches[(size_t) part], currentVelToTl());
+        }
+        // target == 2 (Carrier TL): the Settings selector exists from Task 13
+        // but the TL modulation path is reserved for a later task.
+    });
 }
 
 void GenVstAudioProcessor::handleProgramChange (int channel, int program)
 {
-    const auto dest = midiRouter.destinationFor (channel);
-    if (! dest.isFmPart()) return;
-
-    const int part = dest.index;
     const Patch* patch = patchBrowser.factoryPatchByIndex (program);
     if (patch == nullptr)
         return;   // out-of-range PC indices silently no-op (MIDI convention)
 
-    // Audio-thread apply via raw atomic stores — same path the delivery-queue
-    // drain takes. No allocation, no message-thread bounce; the dirty-diff on
-    // the rest of this block routes the new register values into sounding and
-    // newly-started voices on `part`. Bypasses setValueNotifyingHost, so the
-    // host's automation lane / UI knobs catch up on their next poll (a tiny
-    // visual lag, never an audio glitch).
-    applyPatchOnAudioThread (part, *patch);
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
+    {
+        if (! dest.isFmPart()) return;
+        const int part = dest.index;
+
+        // Audio-thread apply via raw atomic stores — same path the
+        // delivery-queue drain takes. No allocation, no message-thread bounce;
+        // the dirty-diff on the rest of this block routes the new register
+        // values into sounding and newly-started voices on `part`. Bypasses
+        // setValueNotifyingHost, so the host's automation lane / UI knobs
+        // catch up on their next poll (a tiny visual lag, never an audio
+        // glitch).
+        applyPatchOnAudioThread (part, *patch);
+    });
 }
 
 void GenVstAudioProcessor::handleControlChange (int channel, int cc, int value)
 {
-    const auto dest = midiRouter.destinationFor (channel);
-
     // Panic + reset apply globally and don't need a routing destination.
     if (cc == 120)   // All Sound Off — immediate, no release
     {
@@ -818,66 +839,71 @@ void GenVstAudioProcessor::handleControlChange (int channel, int cc, int value)
         return;
     }
 
-    if (! dest.isFmPart()) return;
-    const int part = dest.index;
-
-    // Sustain pedal (CC 64): >= 64 = down, < 64 = up. On pedal-up, release
-    // every voice this part had deferred during the hold.
-    if (cc == 64)
-    {
-        const bool wasHeld = midiRouter.sustainPedalHeld (part);
-        const bool nowHeld = value >= 64;
-        midiRouter.setSustainPedalHeld (part, nowHeld);
-        if (wasHeld && ! nowHeld)
-            voiceAllocator.releaseSustained (part);
-        return;
-    }
-
-    // Pan (CC 10) — three-zone L/center/R, the YM2612 output-enable bits.
-    if (cc == 10)
-    {
-        int lr;
-        if (value <= 63)      lr = 2;   // L only
-        else if (value == 64) lr = 3;   // both (center)
-        else                  lr = 1;   // R only
-
-        writeIntParam (lrParamLookup[(size_t) part], lr);
-        paramCache.readPatch (part, partPatches[(size_t) part]);
-        voiceAllocator.updateActiveVoicesForPart (part, partPatches[(size_t) part], currentVelToTl());
-        return;
-    }
-
     // CC 7 (master volume) has no per-part volume parameter yet, so we
     // accept-and-ignore it rather than rejecting the message.
     if (cc == 7)
         return;
 
-    // The mapped-CC table covers the operator/channel FM parameters. Anything
-    // unmapped (mod wheel range, etc. — except those handled above) silently
-    // no-ops, matching standard MIDI behavior.
-    auto* target = ccParamLookup[(size_t) part][(size_t) cc];
-    if (target == nullptr) return;
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
+    {
+        if (! dest.isFmPart()) return;
+        const int part = dest.index;
 
-    const int max = MidiRouter::ccMaxValue (cc);
-    if (max <= 0) return;
+        // Sustain pedal (CC 64): >= 64 = down, < 64 = up. On pedal-up,
+        // release every voice this part had deferred during the hold.
+        if (cc == 64)
+        {
+            const bool wasHeld = midiRouter.sustainPedalHeld (part);
+            const bool nowHeld = value >= 64;
+            midiRouter.setSustainPedalHeld (part, nowHeld);
+            if (wasHeld && ! nowHeld)
+                voiceAllocator.releaseSustained (part);
+            return;
+        }
 
-    const int hardwareValue = MidiRouter::scaleCC (value, max);
-    writeIntParam (target, hardwareValue);
-    paramCache.readPatch (part, partPatches[(size_t) part]);
-    voiceAllocator.updateActiveVoicesForPart (part, partPatches[(size_t) part], currentVelToTl());
+        // Pan (CC 10) — three-zone L/center/R, the YM2612 output-enable bits.
+        if (cc == 10)
+        {
+            int lr;
+            if (value <= 63)      lr = 2;   // L only
+            else if (value == 64) lr = 3;   // both (center)
+            else                  lr = 1;   // R only
+
+            writeIntParam (lrParamLookup[(size_t) part], lr);
+            paramCache.readPatch (part, partPatches[(size_t) part]);
+            voiceAllocator.updateActiveVoicesForPart (part, partPatches[(size_t) part], currentVelToTl());
+            return;
+        }
+
+        // The mapped-CC table covers the operator/channel FM parameters.
+        // Anything unmapped (mod wheel range, etc. — except those handled
+        // above) silently no-ops, matching standard MIDI behavior.
+        auto* target = ccParamLookup[(size_t) part][(size_t) cc];
+        if (target == nullptr) return;
+
+        const int max = MidiRouter::ccMaxValue (cc);
+        if (max <= 0) return;
+
+        const int hardwareValue = MidiRouter::scaleCC (value, max);
+        writeIntParam (target, hardwareValue);
+        paramCache.readPatch (part, partPatches[(size_t) part]);
+        voiceAllocator.updateActiveVoicesForPart (part, partPatches[(size_t) part], currentVelToTl());
+    });
 }
 
 void GenVstAudioProcessor::resetControllersForChannel (int channel)
 {
-    const auto dest = midiRouter.destinationFor (channel);
-    if (! dest.isFmPart()) return;
+    midiRouter.forEachDestination (channel, [&] (MidiRouter::Destination dest)
+    {
+        if (! dest.isFmPart()) return;
 
-    const int part = dest.index;
-    midiRouter.resetControllers (part);
-    voiceAllocator.releaseSustained (part);
+        const int part = dest.index;
+        midiRouter.resetControllers (part);
+        voiceAllocator.releaseSustained (part);
 
-    paramCache.readPatch (part, partPatches[(size_t) part]);
-    voiceAllocator.setPitchBend (part, 0.0, partPatches[(size_t) part], currentVelToTl());
+        paramCache.readPatch (part, partPatches[(size_t) part]);
+        voiceAllocator.setPitchBend (part, 0.0, partPatches[(size_t) part], currentVelToTl());
+    });
 }
 
 void GenVstAudioProcessor::writeIntParam (std::atomic<float>* target, int value) noexcept

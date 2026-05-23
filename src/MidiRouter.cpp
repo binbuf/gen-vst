@@ -83,10 +83,14 @@ namespace
             case 82: return { "amon", 2, 1 };
             case 83: return { "amon", 3, 1 };
 
-            // CC 84/85 (DAC enable / PSG mix) are Task 07.
+            // CC 84/85 (DAC enable / PSG mix) are handled in the processor.
             default: return {};
         }
     }
+
+    constexpr int kPsgToneId0  = 6;
+    constexpr int kPsgNoiseId  = 9;
+    constexpr int kDacId       = 10;
 }
 
 int MidiRouter::scaleCC (int ccValue, int maxValue) noexcept
@@ -128,6 +132,41 @@ int MidiRouter::ccMaxValue (int ccNumber) noexcept
     return (e.base != nullptr && e.maxVal > 0) ? e.maxVal : -1;
 }
 
+// --- Destination ID conversion -----------------------------------------------
+
+int MidiRouter::destinationId (Destination d) noexcept
+{
+    switch (d.kind)
+    {
+        case Destination::Kind::FmPart:
+            if (d.index < 0 || d.index >= PartManager::kNumParts) return -1;
+            return d.index;                                 // 0..5
+        case Destination::Kind::PsgTone:
+            if (d.index < 0 || d.index >= 3) return -1;
+            return kPsgToneId0 + d.index;                   // 6..8
+        case Destination::Kind::PsgNoise:
+            return kPsgNoiseId;                             // 9
+        case Destination::Kind::Dac:
+            return kDacId;                                  // 10
+        default:
+            return -1;
+    }
+}
+
+MidiRouter::Destination MidiRouter::destinationFromId (int id) noexcept
+{
+    if (id < 0 || id >= kNumDestinations) return {};
+    if (id < PartManager::kNumParts)
+        return { Destination::Kind::FmPart, id };
+    if (id < kPsgNoiseId)
+        return { Destination::Kind::PsgTone, id - kPsgToneId0 };
+    if (id == kPsgNoiseId)
+        return { Destination::Kind::PsgNoise, 0 };
+    return { Destination::Kind::Dac, 0 };
+}
+
+// --- Routing table -----------------------------------------------------------
+
 MidiRouter::MidiRouter()
 {
     resetRouting();
@@ -135,41 +174,92 @@ MidiRouter::MidiRouter()
 
 void MidiRouter::resetRouting() noexcept
 {
-    for (auto& d : channelMap)
-        d = { Destination::Kind::None, -1 };
-
-    // FM parts: channels 1..6 -> parts 0..5.
+    // Default binding (07-feature-spec.md "MIDI Routing").
     for (int part = 0; part < PartManager::kNumParts; ++part)
-        channelMap[static_cast<std::size_t> (part + 1)] =
-            { Destination::Kind::FmPart, part };
+        destChannel[static_cast<std::size_t> (part)].store ((std::int8_t) (part + 1),
+                                                             std::memory_order_relaxed);
 
-    // PSG tone channels: MIDI 11..13 -> SN76489 tone slots 0..2.
-    for (int i = 0; i < 3; ++i)
-        channelMap[static_cast<std::size_t> (11 + i)] =
-            { Destination::Kind::PsgTone, i };
+    destChannel[kPsgToneId0 + 0].store (11, std::memory_order_relaxed);
+    destChannel[kPsgToneId0 + 1].store (12, std::memory_order_relaxed);
+    destChannel[kPsgToneId0 + 2].store (13, std::memory_order_relaxed);
+    destChannel[kPsgNoiseId  ].store (14, std::memory_order_relaxed);
+    destChannel[kDacId       ].store (16, std::memory_order_relaxed);
 
-    // PSG noise: MIDI 14.
-    channelMap[14] = { Destination::Kind::PsgNoise, 0 };
-
-    // DAC: MIDI 16.
-    channelMap[16] = { Destination::Kind::Dac, 0 };
+    rebuildChannelMask();
 
     bendSemitones.fill (0.0);
     sustainHeld.fill (false);
 }
 
+void MidiRouter::setDestinationChannel (int destId, int midiChannel) noexcept
+{
+    if (destId < 0 || destId >= kNumDestinations) return;
+    const std::int8_t c = static_cast<std::int8_t> (
+        midiChannel < 0 || midiChannel > 16 ? 0 : midiChannel);
+    destChannel[static_cast<std::size_t> (destId)].store (c, std::memory_order_relaxed);
+    rebuildChannelMask();
+}
+
+int MidiRouter::destinationChannel (int destId) const noexcept
+{
+    if (destId < 0 || destId >= kNumDestinations) return 0;
+    return destChannel[static_cast<std::size_t> (destId)]
+              .load (std::memory_order_relaxed);
+}
+
 void MidiRouter::setDestination (int midiChannel, Destination dest) noexcept
 {
-    if (midiChannel < 1 || midiChannel > 16)
+    if (midiChannel < 0 || midiChannel > 16) return;
+
+    if (dest.kind == Destination::Kind::None)
+    {
+        // Channel-clear: drop every destination on this channel. (Pre-Task-13
+        // single-destination semantics — clearing one channel only.)
+        const std::uint16_t old = channelDestMask[static_cast<std::size_t> (midiChannel)]
+                                      .load (std::memory_order_relaxed);
+        for (int d = 0; d < kNumDestinations; ++d)
+        {
+            if ((old >> d) & 1u)
+                destChannel[static_cast<std::size_t> (d)].store (0, std::memory_order_relaxed);
+        }
+        rebuildChannelMask();
         return;
-    channelMap[static_cast<std::size_t> (midiChannel)] = dest;
+    }
+
+    const int id = destinationId (dest);
+    if (id < 0) return;
+
+    setDestinationChannel (id, midiChannel);
 }
 
 MidiRouter::Destination MidiRouter::destinationFor (int midiChannel) const noexcept
 {
-    if (midiChannel < 1 || midiChannel > 16)
-        return {};
-    return channelMap[static_cast<std::size_t> (midiChannel)];
+    if (midiChannel < 1 || midiChannel > 16) return {};
+    const std::uint16_t bits = channelDestMask[static_cast<std::size_t> (midiChannel)]
+                                  .load (std::memory_order_relaxed);
+    if (bits == 0u) return {};
+    // Return the first set bit's destination — the audio thread iterates the
+    // full mask via forEachDestination; this single-destination accessor is a
+    // backward-compat shim for older callers and tests.
+    for (int d = 0; d < kNumDestinations; ++d)
+        if ((bits >> d) & 1u)
+            return destinationFromId (d);
+    return {};
+}
+
+void MidiRouter::rebuildChannelMask() noexcept
+{
+    std::array<std::uint16_t, 17> next {};
+    for (int d = 0; d < kNumDestinations; ++d)
+    {
+        const int c = destChannel[static_cast<std::size_t> (d)]
+                          .load (std::memory_order_relaxed);
+        if (c >= 1 && c <= 16)
+            next[static_cast<std::size_t> (c)] |= static_cast<std::uint16_t> (1u << d);
+    }
+    for (int c = 0; c < 17; ++c)
+        channelDestMask[static_cast<std::size_t> (c)]
+            .store (next[static_cast<std::size_t> (c)], std::memory_order_relaxed);
 }
 
 double MidiRouter::pitchBendSemitones (int part) const noexcept

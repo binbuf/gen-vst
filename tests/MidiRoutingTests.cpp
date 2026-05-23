@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "FmRegisterMap.h"
 #include "MidiRouter.h"
 #include "PartManager.h"
@@ -195,18 +198,74 @@ TEST (MidiRouting, DefaultBindingMapsChannel16ToDac)
     EXPECT_FALSE (d.isFmPart());
 }
 
-TEST (MidiRouting, SetDestinationRoundtrips)
+TEST (MidiRouting, SetDestinationMovesDestinationToChannel)
 {
     MidiRouter router;
-    // Reassign channel 10 -> FM part 0 (a deliberate cross-binding).
+    // Reassign channel 10 -> FM part 0. Destination-centric semantics
+    // (Task 13): a destination has at most one MIDI channel, so FM Part 0
+    // moves OFF channel 1 onto channel 10.
     router.setDestination (10, { MidiRouter::Destination::Kind::FmPart, 0 });
 
     EXPECT_TRUE (router.destinationFor (10).isFmPart());
     EXPECT_EQ   (router.destinationFor (10).index, 0);
 
-    // The default binding of channel 1 still resolves to part 0 — multiple
-    // channels can target the same destination.
-    EXPECT_EQ (router.destinationFor (1).index, 0);
+    // Channel 1 no longer routes anywhere — FM Part 0 moved.
+    EXPECT_EQ (router.destinationFor (1).kind, MidiRouter::Destination::Kind::None);
+}
+
+TEST (MidiRouting, SetDestinationChannelMovesDestination)
+{
+    MidiRouter router;
+    using Kind = MidiRouter::Destination::Kind;
+    const int fm0 = MidiRouter::destinationId ({ Kind::FmPart, 0 });
+
+    router.setDestinationChannel (fm0, 7);
+    EXPECT_EQ (router.destinationChannel (fm0), 7);
+
+    EXPECT_EQ (router.destinationFor (7).kind, Kind::FmPart);
+    EXPECT_EQ (router.destinationFor (7).index, 0);
+    EXPECT_EQ (router.destinationFor (1).kind, Kind::None);
+
+    // Setting to channel 0 means "Off" — no channel routes to FM Part 0.
+    router.setDestinationChannel (fm0, 0);
+    EXPECT_EQ (router.destinationChannel (fm0), 0);
+    EXPECT_EQ (router.destinationFor (7).kind, Kind::None);
+}
+
+TEST (MidiRouting, ForEachDestinationCoversAllOnChannel)
+{
+    MidiRouter router;
+    using Kind = MidiRouter::Destination::Kind;
+    const int fm0   = MidiRouter::destinationId ({ Kind::FmPart, 0 });
+    const int noise = MidiRouter::destinationId ({ Kind::PsgNoise, 0 });
+
+    // Channel 7 has no default destination — pick it so the layering
+    // assertion isn't contaminated by the default FM mapping.
+    router.setDestinationChannel (fm0,   7);
+    router.setDestinationChannel (noise, 7);
+
+    std::vector<MidiRouter::Destination::Kind> seen;
+    router.forEachDestination (7, [&] (MidiRouter::Destination d) { seen.push_back (d.kind); });
+
+    EXPECT_EQ (seen.size(), 2u);
+    EXPECT_NE (std::find (seen.begin(), seen.end(), Kind::FmPart),   seen.end());
+    EXPECT_NE (std::find (seen.begin(), seen.end(), Kind::PsgNoise), seen.end());
+}
+
+TEST (MidiRouting, DestinationIdRoundTripsThroughDestination)
+{
+    using Kind = MidiRouter::Destination::Kind;
+    const auto check = [] (MidiRouter::Destination d) {
+        const int id = MidiRouter::destinationId (d);
+        const auto back = MidiRouter::destinationFromId (id);
+        EXPECT_EQ (back.kind, d.kind);
+        if (d.kind == Kind::FmPart || d.kind == Kind::PsgTone)
+            EXPECT_EQ (back.index, d.index);
+    };
+    for (int i = 0; i < 6; ++i) check ({ Kind::FmPart, i });
+    for (int i = 0; i < 3; ++i) check ({ Kind::PsgTone, i });
+    check ({ Kind::PsgNoise, 0 });
+    check ({ Kind::Dac,      0 });
 }
 
 TEST (MidiRouting, SetDestinationIgnoresInvalidChannel)

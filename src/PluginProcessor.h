@@ -73,6 +73,19 @@ public:
     PartManager&          getPartManager()  noexcept       { return partManager;  }
     const PartManager&    getPartManager()  const noexcept { return partManager;  }
 
+    // Exposed for the Task 13 routing modal + inline routing step-fields
+    // (08-ui-views.md views 1-3, 5). The UI manipulates the routing table via
+    // the editor's getRouting/setRouting/resetRouting native functions, which
+    // forward to this object.
+    MidiRouter&           getMidiRouter()  noexcept        { return midiRouter; }
+    const MidiRouter&     getMidiRouter()  const noexcept  { return midiRouter; }
+
+    // Exposed for the Task 13 D-section view (08-ui-views.md view 3): the
+    // editor's loadWavDialog / clearDac / getDacInfo native functions call
+    // into the DAC player.
+    DACPlayer&            getDacPlayer()   noexcept        { return dacPlayer;  }
+    const DACPlayer&      getDacPlayer()   const noexcept  { return dacPlayer;  }
+
     // Exposed for the editor's ~30 Hz telemetry timer (08-ui-views.md "Header
     // meter bay"). The audio thread writes lock-free; the editor reads
     // snapshots and emits a combined "meterData" event.

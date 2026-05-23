@@ -28,5 +28,9 @@ export { VuMeter } from "./vu-meter.js";
 export { VoiceLeds } from "./voice-leds.js";
 export { ClipLed } from "./clip-led.js";
 
+// Task 13 widgets
+export { WaveformDisplay } from "./waveform-display.js";
+export { NotificationToastHost } from "./notification-toast.js";
+
 export * from "./pixel.js";
 export * from "../binding.js";

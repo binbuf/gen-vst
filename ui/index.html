@@ -108,9 +108,17 @@
       </div>
 
       <!-- =========================== BOTTOM ============================= -->
-      <div id="bottom">
-        <!-- Operator panels are appended by fm-view.js so the layout stays
-             in lockstep with kNumOps (4) without duplicating markup. -->
+      <!-- One physical bottom region; its content is one of three sibling
+           views (FM operator panels / SQ panels / D sample+playback) toggled
+           by body[data-section] (see sections.css). Each view is mounted by
+           its own module — main.js owns the orchestration. -->
+      <div id="bottom-host">
+        <div id="bottom">
+          <!-- Operator panels are appended by fm-view.js so the layout stays
+               in lockstep with kNumOps (4) without duplicating markup. -->
+        </div>
+        <div id="bottom-sq"></div>
+        <div id="bottom-d"></div>
       </div>
     </div>
 

@@ -49,6 +49,25 @@ public:
     void clearPcm();
     bool hasPcm() const noexcept;
 
+    // --- Sample-info accessors (Task 13 D-view) ------------------------------
+
+    // Filename of the most-recently loaded WAV (sans path). Empty if no
+    // sample is loaded.
+    juce::String getSampleName() const noexcept { return sampleName; }
+
+    // Length of the loaded sample in seconds (computed at the current
+    // dacRate). 0.0 when nothing is loaded.
+    double getSampleLengthSeconds() const noexcept;
+
+    // The DAC always stores 8-bit unsigned PCM (07-feature-spec.md). Returned
+    // as a constant for parity with the JS DAC-info contract.
+    int getSampleBitDepth() const noexcept { return 8; }
+
+    // Compute `numBuckets` peak magnitudes (each in [0, 1]) for the loaded
+    // PCM, used by the waveform-display widget. Returns an empty vector when
+    // no sample is loaded.
+    std::vector<float> computePeaks (int numBuckets) const;
+
     // --- Parameters ----------------------------------------------------------
 
     void setEnabled (bool on) noexcept     { enabled = on; }
@@ -111,6 +130,9 @@ private:
     // changes can resample without forcing a WAV reload.
     std::vector<float> srcFloat;
     double             srcRate = 0.0;
+
+    // Filename of the most-recently loaded WAV (for the Task 13 D view).
+    juce::String       sampleName;
 
     // Playback cursor (in pcm[] indices) and phase accumulator for the
     // per-native-sample DAC write timing.

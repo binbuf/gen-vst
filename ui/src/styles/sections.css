@@ -1,0 +1,231 @@
+/*
+ * Task 13 — SQ and D bottom-region styles + the FM/SQ/D section toggle.
+ *
+ * The bottom region (~220px) is shared between the FM operator panels (#bottom),
+ * the SQ section (#bottom-sq), and the D section (#bottom-d). Visibility is
+ * driven by body[data-section]. The section pills in fm-view.js set the
+ * attribute; the CSS hides the inactive views — no layout reflow, just display.
+ */
+
+#bottom-host {
+  position: relative;
+  display: grid;
+  grid-template-areas: "stack";
+  /* The 220px bottom region (see #chassis rule in chassis.css). */
+}
+
+#bottom,
+#bottom-sq,
+#bottom-d {
+  grid-area: stack;
+  width: 100%;
+  height: 100%;
+}
+
+/* FM is the default view. */
+body[data-section="FM"] #bottom    { display: grid; }
+body[data-section="FM"] #bottom-sq { display: none; }
+body[data-section="FM"] #bottom-d  { display: none; }
+
+body[data-section="SQ"] #bottom    { display: none; }
+body[data-section="SQ"] #bottom-sq { display: flex; flex-direction: column; }
+body[data-section="SQ"] #bottom-d  { display: none; }
+
+body[data-section="D"]  #bottom    { display: none; }
+body[data-section="D"]  #bottom-sq { display: none; }
+body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
+
+/* ============================================================================
+ * Section-header band (shared between SQ and D)
+ * ========================================================================== */
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+  background: var(--chassis);
+  border-bottom: 1px solid var(--bevel-light);
+}
+
+.section-title {
+  flex: 1 1 auto;
+}
+
+.header-cell {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ============================================================================
+ * SQ (PSG) section
+ * ========================================================================== */
+
+.sq-section {
+  padding: 4px;
+  gap: 4px;
+}
+
+.sq-panels {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 4px;
+}
+
+.sq-panel {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sq-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sq-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+}
+
+.sq-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sq-midi-row {
+  justify-content: space-between;
+}
+
+.sq-knob-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.sq-knob-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.sq-pan-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sq-toggle-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sq-choice-cell {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.sq-note-row {
+  margin-top: auto;
+}
+
+.sq-note-value {
+  color: var(--led-on);
+}
+
+/* ============================================================================
+ * D (DAC) section
+ * ========================================================================== */
+
+.d-section {
+  padding: 4px;
+  gap: 4px;
+}
+
+.d-body {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 6px;
+  padding: 4px;
+}
+
+.d-panel {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.d-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.d-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.d-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.d-level-row {
+  margin-top: auto;
+}
+
+.d-button {
+  background: var(--panel);
+  color: var(--label);
+  border: none;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.d-button:disabled {
+  color: var(--bevel-light);
+  cursor: default;
+}
+
+.sample-body {
+  gap: 4px;
+}
+
+.sample-name {
+  flex: 1 1 auto;
+  color: var(--lcd-pixel);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sample-meta {
+  color: var(--lcd-pixel);
+}
+
+.waveform-display {
+  background: var(--lcd-base);
+}

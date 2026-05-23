@@ -8,6 +8,7 @@
 
 #include "PartManager.h"
 #include "PluginProcessor.h"
+#include "SN76489Engine.h"
 #include "Telemetry.h"
 
 // Hosts the Gen VST web UI: a juce::WebBrowserComponent filling the fixed
@@ -77,6 +78,18 @@ private:
     // "lr", "lfo_enable", "lfo_rate") with the same stripped-name convention.
     static std::vector<std::unique_ptr<juce::WebSliderRelay>> makePartRelays();
 
+    // Build the per-PSG-channel relays (one per SN76489 channel for each of
+    // psg_vol_*, psg_pan_*, psg_bend_*). Each must be heap-pinned for the
+    // same NON_MOVEABLE reason as the FM relays.
+    static std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> makePsgVolRelays();
+    static std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> makePsgPanRelays();
+    static std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> makePsgBendRelays();
+
+    // Emit a notify event ({level, message}) into the JS toast pipeline
+    // (05-ui-ux.md "C++ -> JS notifications"). Safe to call from the message
+    // thread.
+    void emitNotify (const juce::String& level, const juce::String& message);
+
     GenVstAudioProcessor& processor;
 
     // The currently edited FM part. The JS UI moves it via selectChannel; the
@@ -98,6 +111,29 @@ private:
     std::vector<std::unique_ptr<juce::WebSliderRelay>> opRelays   { makeOpRelays() };
     std::vector<std::unique_ptr<juce::WebSliderRelay>> partRelays { makePartRelays() };
 
+    // Task 13 — global PSG / DAC / Settings relays.
+    juce::WebSliderRelay        psgMixRelay         { "psg_mix" };
+    juce::WebToggleButtonRelay  psgLayerRelay       { "psg_layer" };
+    juce::WebComboBoxRelay      psgNoiseTypeRelay   { "psg_noise_type" };
+    juce::WebComboBoxRelay      psgNoiseRateRelay   { "psg_noise_rate" };
+    juce::WebToggleButtonRelay  psgNoiseAutoRelay   { "psg_noise_auto" };
+
+    juce::WebToggleButtonRelay  dacEnableRelay      { "dac_enable" };
+    juce::WebComboBoxRelay      dacRateRelay        { "dac_rate" };
+    juce::WebComboBoxRelay      dacModeRelay        { "dac_mode" };
+    juce::WebSliderRelay        dacLevelRelay       { "dac_level" };
+
+    juce::WebComboBoxRelay      bendRangeRelay        { "bend_range" };
+    juce::WebToggleButtonRelay  velToTlRelay          { "vel_to_tl" };
+    juce::WebComboBoxRelay      aftertouchTargetRelay { "aftertouch_target" };
+    juce::WebComboBoxRelay      voiceCountRelay       { "voice_count" };
+    juce::WebComboBoxRelay      uiScaleRelay          { "ui_scale" };
+
+    // Per-PSG-channel relays — same NON_MOVEABLE pinning as the FM relays.
+    std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> psgVolRelays  { makePsgVolRelays()  };
+    std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> psgPanRelays  { makePsgPanRelays()  };
+    std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> psgBendRelays { makePsgBendRelays() };
+
    #if GENVST_DEV_SERVER
     // Widget-gallery scratch relays (Task 10). One per core widget kind, all
     // bound to the matching `gallery_*` parameters declared under the same
@@ -117,6 +153,28 @@ private:
 
     // --- Global attachments (bound once) ------------------------------------
     juce::WebSliderParameterAttachment masterGainAttachment;
+
+    // Task 13 — global attachments.
+    juce::WebSliderParameterAttachment        psgMixAttachment;
+    juce::WebToggleButtonParameterAttachment  psgLayerAttachment;
+    juce::WebComboBoxParameterAttachment      psgNoiseTypeAttachment;
+    juce::WebComboBoxParameterAttachment      psgNoiseRateAttachment;
+    juce::WebToggleButtonParameterAttachment  psgNoiseAutoAttachment;
+
+    juce::WebToggleButtonParameterAttachment  dacEnableAttachment;
+    juce::WebComboBoxParameterAttachment      dacRateAttachment;
+    juce::WebComboBoxParameterAttachment      dacModeAttachment;
+    juce::WebSliderParameterAttachment        dacLevelAttachment;
+
+    juce::WebComboBoxParameterAttachment      bendRangeAttachment;
+    juce::WebToggleButtonParameterAttachment  velToTlAttachment;
+    juce::WebComboBoxParameterAttachment      aftertouchTargetAttachment;
+    juce::WebComboBoxParameterAttachment      voiceCountAttachment;
+    juce::WebComboBoxParameterAttachment      uiScaleAttachment;
+
+    std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgVolAttachments;
+    std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgPanAttachments;
+    std::array<std::unique_ptr<juce::WebToggleButtonParameterAttachment>,  SN76489Engine::kNumChannels> psgBendAttachments;
 
    #if GENVST_DEV_SERVER
     juce::WebSliderParameterAttachment       galleryKnobAttachment;
@@ -138,6 +196,12 @@ private:
     // Scratch buffer for the per-tick telemetry scope read — sized at
     // kScopeReadSamples and reused so the timer callback does no allocation.
     std::array<float, kScopeReadSamples> scopeScratch {};
+
+    // Owned native file chooser for the Task 13 LOAD WAV button. Kept as a
+    // unique_ptr so each launch creates a fresh dialog without re-using state
+    // — the dialog must outlive the async callback, which is why it lives
+    // here rather than as a local in the native-function lambda.
+    std::unique_ptr<juce::FileChooser> wavChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessorEditor)
 };

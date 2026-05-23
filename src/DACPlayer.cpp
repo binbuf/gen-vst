@@ -86,6 +86,7 @@ bool DACPlayer::loadWav (const juce::File& file)
             srcFloat[static_cast<std::size_t> (i)] += src[i] * invChans;
     }
 
+    sampleName = file.getFileName();
     regeneratePcmFromSource();
     return ! pcm.empty();
 }
@@ -95,8 +96,41 @@ void DACPlayer::clearPcm()
     pcm.clear();
     srcFloat.clear();
     srcRate = 0.0;
+    sampleName = juce::String();
     playing = false;
     playPos = 0;
+}
+
+double DACPlayer::getSampleLengthSeconds() const noexcept
+{
+    if (pcm.empty() || dacRate <= 0) return 0.0;
+    return static_cast<double> (pcm.size()) / static_cast<double> (dacRate);
+}
+
+std::vector<float> DACPlayer::computePeaks (int numBuckets) const
+{
+    std::vector<float> out;
+    if (srcFloat.empty() || numBuckets <= 0) return out;
+
+    out.assign (static_cast<std::size_t> (numBuckets), 0.0f);
+
+    const std::size_t total = srcFloat.size();
+    // Bucket the source samples into `numBuckets` columns and record the
+    // absolute peak in each. Using the original float source (not the 8-bit
+    // PCM) gives a sharper visualisation that isn't affected by dacRate
+    // changes; the strip is informational only, not what the chip plays.
+    for (int b = 0; b < numBuckets; ++b)
+    {
+        const std::size_t lo = (static_cast<std::size_t> (b)     * total) /
+                                static_cast<std::size_t> (numBuckets);
+        const std::size_t hi = (static_cast<std::size_t> (b + 1) * total) /
+                                static_cast<std::size_t> (numBuckets);
+        float peak = 0.0f;
+        for (std::size_t i = lo; i < hi; ++i)
+            peak = std::max (peak, std::fabs (srcFloat[i]));
+        out[static_cast<std::size_t> (b)] = std::min (1.0f, peak);
+    }
+    return out;
 }
 
 bool DACPlayer::hasPcm() const noexcept
