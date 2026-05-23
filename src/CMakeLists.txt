@@ -82,8 +82,11 @@ juce_add_plugin(GenVst
     VERSION                     "0.1.0")
 
 # --- Standalone patch directory (per-platform runtime data dir) ---------------
+# Normalise to forward slashes so embedding the value as a C string literal in
+# GENVST_STANDALONE_PATCH_DIR doesn't accidentally produce escape sequences
+# (e.g. \U, \A) from a Windows LOCALAPPDATA path.
 if(WIN32)
-    set(GENVST_STANDALONE_PATCH_DIR "$ENV{LOCALAPPDATA}/GenVst/patches")
+    file(TO_CMAKE_PATH "$ENV{LOCALAPPDATA}/GenVst/patches" GENVST_STANDALONE_PATCH_DIR)
 elseif(APPLE)
     set(GENVST_STANDALONE_PATCH_DIR "$ENV{HOME}/Library/Application Support/GenVst/patches")
 else()
@@ -115,6 +118,7 @@ target_sources(GenVst PRIVATE
     MidiRouter.cpp        MidiRouter.h
     FmRegisterMap.cpp     FmRegisterMap.h
     PatchSystem.cpp       PatchSystem.h
+    PatchBrowser.cpp      PatchBrowser.h
     SN76489Wrapper.cpp    SN76489Wrapper.h
     SN76489Engine.cpp     SN76489Engine.h
     DACPlayer.cpp         DACPlayer.h
@@ -168,10 +172,15 @@ target_compile_definitions(GenVst PUBLIC
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     $<$<BOOL:${GENVST_DEV_SERVER}>:GENVST_DEV_SERVER=1>)
 
-# --- Dev patch path (Task 04) -------------------------------------------------
-# Task 04 loads a factory .tfi from this directory at construction so the single
-# voice plays a real timbre. Superseded by the patch browser (Task 09).
+# --- Factory-root runtime paths (Task 09 / ADR-0005) --------------------------
+# PatchBrowser::resolveFactoryRoot uses these:
+#   * Standalone reads from the platform data directory the install rule
+#     populates.
+#   * Plugin formats (VST3/AU) find the factory bank inside the bundle's
+#     Contents/Resources/patches/ at runtime. The dev path is a fall-back so a
+#     fresh `cmake --build` plays without an install step.
 target_compile_definitions(GenVst PRIVATE
+    GENVST_STANDALONE_PATCH_DIR="${GENVST_STANDALONE_PATCH_DIR}"
     GENVST_DEV_PATCH_DIR="${CMAKE_SOURCE_DIR}/extern/patches")
 # ------------------------------------------------------------------------------
 

@@ -94,6 +94,22 @@ namespace
 }
 #endif
 
+namespace
+{
+    // Build a tiny `{ ok: true|false, error?: "..." }` result var for the
+    // load/save/import/export native functions. JS-side: `const r = await
+    // loadInstrument(path); if (!r.ok) showToast(r.error);` is the standard
+    // pattern.
+    juce::var makeStatusVar (const std::string& errorMessage)
+    {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty ("ok", errorMessage.empty());
+        if (! errorMessage.empty())
+            obj->setProperty ("error", juce::String (errorMessage));
+        return juce::var (obj);
+    }
+}
+
 juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
 {
     auto options = juce::WebBrowserComponent::Options{}
@@ -111,6 +127,140 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             juce::Logger::writeToLog ("Gen VST: uiReady received from WebView");
         });
 
+    using Completion = juce::WebBrowserComponent::NativeFunctionCompletion;
+
+    // --- Folder-tree queries -------------------------------------------------
+    options = options.withNativeFunction ("getRoots",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            completion (processor.getPatchBrowser().rootsAsJson());
+        });
+
+    options = options.withNativeFunction ("getPatchList",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            // No-arg form -> top-level roots; with a folder path, the children
+            // of that folder. Triggers a lazy scan if the folder isn't yet.
+            if (args.isEmpty() || ! args[0].isString())
+                completion (processor.getPatchBrowser().rootsAsJson());
+            else
+                completion (processor.getPatchBrowser().folderAsJson (args[0].toString()));
+        });
+
+    options = options.withNativeFunction ("searchPatches",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            const auto q = args.isEmpty() || ! args[0].isString()
+                               ? juce::String() : args[0].toString();
+            completion (processor.getPatchBrowser().searchAsJson (q));
+        });
+
+    // --- Custom roots --------------------------------------------------------
+    options = options.withNativeFunction ("addCustomRoot",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("path required")); return; }
+            const auto id = processor.getPatchBrowser().addCustomRoot (args[0].toString());
+            if (id.isEmpty()) { completion (makeStatusVar ("could not register root")); return; }
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok", true);
+            obj->setProperty ("id", id);
+            completion (juce::var (obj));
+        });
+
+    options = options.withNativeFunction ("removeCustomRoot",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("id required")); return; }
+            const auto ok = processor.getPatchBrowser().removeCustomRoot (args[0].toString());
+            completion (makeStatusVar (ok ? std::string{} : std::string{"unknown root id"}));
+        });
+
+    // --- Patch loading (UI -> audio thread via the lock-free queue) ---------
+    options = options.withNativeFunction ("loadInstrument",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("path required")); return; }
+            auto err = processor.getPatchBrowser().loadIntoPart (selectedPart, args[0].toString());
+            completion (makeStatusVar (err));
+        });
+
+    // loadPreset is functionally identical to loadInstrument — the two-name
+    // split exists only because the Genny layout has two separate LCD lists.
+    // Folder-tree mode (ADR-0006) treats them as the same operation.
+    options = options.withNativeFunction ("loadPreset",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("path required")); return; }
+            auto err = processor.getPatchBrowser().loadIntoPart (selectedPart, args[0].toString());
+            completion (makeStatusVar (err));
+        });
+
+    // --- Save / Import / Export (file-chooser bodies are Task 14) ----------
+    options = options.withNativeFunction ("savePatch",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            const juce::String name = (! args.isEmpty() && args[0].isString())
+                                          ? args[0].toString() : juce::String ("Patch");
+            // Snapshot the live apvts so saves capture whatever the user is
+            // hearing — CC edits, automation, the result of a load that came
+            // through the queue, etc. — not a stale PartManager copy.
+            Patch current;
+            processor.readLivePatch (selectedPart, current);
+            const auto  r       = processor.getPatchBrowser().savePatchAsTfi (current, name);
+            if (! r.path.isEmpty())
+            {
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty ("ok",   true);
+                obj->setProperty ("path", r.path);
+                completion (juce::var (obj));
+                return;
+            }
+            completion (makeStatusVar (r.error.empty() ? std::string{"save failed"} : r.error));
+        });
+
+    options = options.withNativeFunction ("importPatch",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("path required")); return; }
+            const auto err = processor.getPatchBrowser().importPatchFile (args[0].toString());
+            completion (makeStatusVar (err));
+        });
+
+    options = options.withNativeFunction ("exportPatch",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isString())
+            { completion (makeStatusVar ("path required")); return; }
+            Patch current;
+            processor.readLivePatch (selectedPart, current);
+            const auto err = processor.getPatchBrowser().exportPatchToPath (
+                                 current, args[0].toString());
+            completion (makeStatusVar (err));
+        });
+
+    // --- Channel paging ------------------------------------------------------
+    options = options.withNativeFunction ("selectChannel",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isInt())
+            { completion (makeStatusVar ("part index required")); return; }
+            const int n = juce::jlimit (0, PartManager::kNumParts - 1, (int) args[0]);
+            selectedPart = n;
+            // Task 14 owns the attachment-rebind that paints the new part's
+            // values into the UI relays. For now we just track the index — the
+            // patch-load native functions target it correctly.
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",   true);
+            obj->setProperty ("part", n);
+            completion (juce::var (obj));
+        });
+
    #if ! GENVST_DEV_SERVER
     options = options.withResourceProvider ([] (const auto& url) { return getWebResource (url); });
    #endif
@@ -118,12 +268,13 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
     return options;
 }
 
-GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& processor)
-    : juce::AudioProcessorEditor (processor),
+GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& proc)
+    : juce::AudioProcessorEditor (proc),
+      processor (proc),
       webView (makeOptions()),
-      masterGainAttachment (*processor.getValueTreeState().getParameter ("master_gain"),
+      masterGainAttachment (*proc.getValueTreeState().getParameter ("master_gain"),
                             masterGainRelay,
-                            processor.getValueTreeState().undoManager)
+                            proc.getValueTreeState().undoManager)
 {
     setOpaque (true);
     addAndMakeVisible (webView);

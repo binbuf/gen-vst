@@ -1,0 +1,312 @@
+#pragma once
+
+#include <array>
+#include <atomic>
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include <juce_core/juce_core.h>
+
+#include "PartManager.h"
+#include "PatchSystem.h"
+
+namespace genvst
+{
+
+// The three flavours of patch root the browser organises (ADR-0006):
+//   Factory — bundled patches; read-only, auto-loaded at startup.
+//   User    — <userAppData>/GenVst/patches/; writable.
+//   Custom  — any user-registered folder; paths persisted in plugin state.
+enum class PatchRootKind
+{
+    Factory,
+    User,
+    Custom
+};
+
+// One patch file inside a folder. `path` is the absolute filesystem path and
+// also serves as the file's stable id for the UI.
+struct PatchEntry
+{
+    juce::String name;     // filename stem (display)
+    juce::String path;     // absolute path (stable id)
+};
+
+// A node in the lazy folder tree. The root scan only walks each PatchRoot's
+// immediate children, so subfolder nodes start with `scanned == false` and
+// `patchCount == -1`; both fields fill in once the user expands the node.
+// `path` (absolute) doubles as the folder's stable id.
+struct PatchFolder
+{
+    juce::String                              name;
+    juce::String                              path;
+    bool                                      scanned    = false;
+    int                                       patchCount = -1;
+    std::vector<std::unique_ptr<PatchFolder>> subfolders;   // alphabetical
+    std::vector<PatchEntry>                   patches;      // alphabetical
+};
+
+// A patch root: one navigable tree, rooted at `folder`. The `id` is stable for
+// the lifetime of the process and is what the UI sends back in
+// removeCustomRoot / getPatchList calls.
+struct PatchRoot
+{
+    PatchRootKind                kind;
+    juce::String                 id;
+    juce::String                 displayName;
+    bool                         writable;
+    std::unique_ptr<PatchFolder> folder;
+};
+
+// The C++ backend for the folder-tree patch browser (Task 09 / ADR-0006).
+//
+// Owns: the three kinds of root, the lazy folder tree, the background
+// name-search index, the lock-free SPSC (part, Patch) delivery queue to the
+// audio thread, and the factory-patches list Program Change indexes.
+//
+// Thread model:
+//  - Folder-tree mutation (expand, custom roots) and patch loading run on the
+//    message thread.
+//  - The search index is rebuilt on a background thread (juce::Thread).
+//  - The audio thread is read-only against:
+//        * `factoryPatches` (populated once at initialize() and not touched
+//          afterwards);
+//        * the SPSC delivery queue (it is the sole consumer).
+class PatchBrowser : private juce::Thread
+{
+public:
+    // The audio-thread delivery queue is capacity 4 — the UI typically loads
+    // one patch per click and the audio thread drains every block, so a tiny
+    // ring is enough (04-patch-system.md "Audio Thread Delivery").
+    static constexpr int kQueueCapacity = 4;
+
+    PatchBrowser();
+    ~PatchBrowser() override;
+
+    PatchBrowser (const PatchBrowser&)            = delete;
+    PatchBrowser& operator= (const PatchBrowser&) = delete;
+
+    // -------------------------------------------------------------------------
+    // Lifecycle
+    // -------------------------------------------------------------------------
+
+    // Initialise with a resolved factory root path (the caller resolves it —
+    // ADR-0005: plugin bundle vs standalone data dir). Ensures the user root
+    // exists, scans each root's immediate children, populates `factoryPatches`
+    // by loading the factory root's top-level files, and starts the background
+    // search-index thread. Idempotent — repeat calls are no-ops.
+    //
+    // Passing an empty path is allowed (no factory bank shipped); the factory
+    // root then has zero patches and an unscanned folder.
+    void initialize (const std::filesystem::path& factoryRoot);
+
+    // Stop the background thread (idempotent). Called from the destructor; can
+    // also be invoked explicitly during teardown.
+    void shutdown();
+
+    // -------------------------------------------------------------------------
+    // Folder tree (message thread)
+    // -------------------------------------------------------------------------
+
+    const std::vector<std::unique_ptr<PatchRoot>>& roots() const noexcept { return rootList; }
+
+    // Ensure `folder.path`'s immediate children are scanned; no-op if already.
+    // Counts and subfolder lists are filled in on this call.
+    void expandFolder (PatchFolder& folder);
+
+    // Lookup a folder anywhere in any root by its absolute-path id. Returns
+    // nullptr if no folder with that path exists (it might never have been
+    // scanned). Message thread only.
+    PatchFolder* findFolderByPath (const juce::String& absolutePath);
+
+    // -------------------------------------------------------------------------
+    // Custom roots (message thread)
+    // -------------------------------------------------------------------------
+
+    // Register `absolutePath` as a custom root. The root's immediate children
+    // are scanned eagerly; deeper folders stay lazy. On success returns the new
+    // root id; on failure (path is not a directory, already registered) returns
+    // an empty string.
+    juce::String addCustomRoot (const juce::String& absolutePath);
+
+    // Unregister a custom root by id. Files on disk are never touched.
+    bool removeCustomRoot (const juce::String& rootId);
+
+    // -------------------------------------------------------------------------
+    // Background search
+    // -------------------------------------------------------------------------
+
+    struct SearchHit
+    {
+        juce::String name;          // filename stem
+        juce::String path;          // absolute path
+        juce::String rootId;
+        juce::String folderPath;    // path of the containing folder
+    };
+
+    // Case-insensitive substring search against the background index. Never
+    // triggers a full filesystem scan; returns whatever the indexer has
+    // produced so far. Thread-safe (uses an internal mutex).
+    std::vector<SearchHit> search (const juce::String& query,
+                                   int                 maxResults = 200) const;
+
+    bool isSearchIndexReady() const noexcept { return indexBuilt.load (std::memory_order_acquire); }
+
+    // -------------------------------------------------------------------------
+    // Patch loading (message thread -> audio thread)
+    // -------------------------------------------------------------------------
+
+    // Parse the patch at `absolutePath` and push (part, Patch) into the
+    // audio-thread delivery queue. Returns empty on success; a non-empty
+    // string on parse failure (a corrupt file or wrong extension), in which
+    // case the audio thread sees nothing — the load failure is purely a
+    // message-thread concern (04-patch-system.md "Audio Thread Delivery").
+    std::string loadIntoPart (int part, const juce::String& absolutePath);
+
+    // The current "active patch path" for `part`. Empty until a patch is
+    // loaded into this part via loadIntoPart (or until a PC-driven path is
+    // wired in by Task 06's PC handler). Exposed for Task 16's state save.
+    juce::String activePatchPath (int part) const;
+
+    // -------------------------------------------------------------------------
+    // Audio-thread queue drain
+    // -------------------------------------------------------------------------
+
+    // Pop every pending delivery in FIFO order and pass it to `apply(part,
+    // patch)`. Lock-free, allocation-free. Audio thread only.
+    template <typename Fn>
+    void drainAudioThreadQueue (Fn&& apply) noexcept
+    {
+        int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+        const int ready = deliveryFifo.getNumReady();
+        deliveryFifo.prepareToRead (ready, start1, size1, start2, size2);
+
+        for (int i = 0; i < size1; ++i)
+            apply (deliveryPartSlots[(std::size_t) (start1 + i)],
+                   deliveryPatchSlots[(std::size_t) (start1 + i)]);
+        for (int i = 0; i < size2; ++i)
+            apply (deliveryPartSlots[(std::size_t) (start2 + i)],
+                   deliveryPatchSlots[(std::size_t) (start2 + i)]);
+
+        deliveryFifo.finishedRead (size1 + size2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Factory patches (Program Change source of truth)
+    // -------------------------------------------------------------------------
+
+    int          numFactoryPatches() const noexcept;
+
+    // Returns nullptr if `n` is out of range. The returned pointer is valid
+    // for the lifetime of the PatchBrowser — the factory list is built once at
+    // initialize() and not modified afterwards, so audio-thread reads are
+    // safe (07-feature-spec.md "Program Change").
+    const Patch* factoryPatchByIndex (int n) const noexcept;
+
+    // -------------------------------------------------------------------------
+    // Save / Import / Export (message thread)
+    // -------------------------------------------------------------------------
+
+    struct SaveResult
+    {
+        juce::String path;      // absolute path written, empty on failure
+        std::string  error;     // empty on success
+    };
+
+    // Write `patch` to the user root as `<name>.tfi`. Creates the user root
+    // if necessary. `name` is sanitised (replace OS-illegal chars with '_').
+    SaveResult savePatchAsTfi (const Patch& patch, const juce::String& name);
+
+    // Copy a file from `sourcePath` into the user root (preserving the file
+    // name). Used by the importPatch native function. Returns empty on success
+    // or an error string on failure.
+    std::string importPatchFile (const juce::String& sourcePath);
+
+    // Write `patch` to `destinationPath`, format selected by extension
+    // (`.tfi` -> TFI, `.vgi` -> VGI). Used by the exportPatch native function.
+    // Returns empty on success or an error string on failure.
+    std::string exportPatchToPath (const Patch&        patch,
+                                   const juce::String& destinationPath);
+
+    // -------------------------------------------------------------------------
+    // JSON helpers for the WebView native functions
+    // -------------------------------------------------------------------------
+
+    // [{kind, id, displayName, writable, path, scanned, patchCount,
+    //   subfolders: [{path, name, scanned, patchCount}, ...]}, ...]
+    juce::var rootsAsJson() const;
+
+    // { path, name, scanned, patchCount,
+    //   subfolders: [...], patches: [{path, name}, ...] }
+    // If the folder hasn't been scanned yet, scans it before returning.
+    juce::var folderAsJson (const juce::String& folderPath);
+
+    // [{name, path, rootId, folderPath}, ...]
+    juce::var searchAsJson (const juce::String& query) const;
+
+private:
+    // ---- Background thread (search-index builder) -------------------------
+    void run() override;
+
+    // ---- Filesystem helpers ----------------------------------------------
+    static std::filesystem::path resolveUserRoot();
+    static juce::String          rootIdFor (PatchRootKind, const juce::String& absolutePath);
+
+    static bool                 isPatchFileName (const std::filesystem::path&);
+    static juce::String         sanitiseFileName (const juce::String&);
+
+    // ---- Tree management --------------------------------------------------
+    void                  scanImmediateChildren (PatchFolder& folder);
+    void                  addRoot (std::unique_ptr<PatchRoot> root);
+    PatchFolder*          findFolderImpl (PatchFolder& start, const juce::String& path);
+
+    // ---- Search index -----------------------------------------------------
+    struct IndexEntry
+    {
+        juce::String name;
+        juce::String path;
+        juce::String rootId;
+        juce::String folderPath;
+    };
+
+    void                       indexAllRoots();
+    void                       indexFolder (const std::filesystem::path& folder,
+                                            const juce::String&          rootId,
+                                            std::vector<IndexEntry>&     out);
+
+    // ---- JSON helpers -----------------------------------------------------
+    static juce::var folderSummaryJson (const PatchFolder&);
+    static juce::var folderFullJson    (const PatchFolder&);
+
+    // ---- Data members -----------------------------------------------------
+    std::vector<std::unique_ptr<PatchRoot>> rootList;
+
+    // Lock-free SPSC delivery queue. Producer = message thread (loadIntoPart);
+    // consumer = audio thread (drainAudioThreadQueue). Capacity 4 ring.
+    juce::AbstractFifo                            deliveryFifo { kQueueCapacity };
+    std::array<int,   (std::size_t) kQueueCapacity> deliveryPartSlots {};
+    std::array<Patch, (std::size_t) kQueueCapacity> deliveryPatchSlots {};
+
+    // Factory patches, sorted by filename. Populated at initialize(); read-only
+    // afterwards so the audio thread (Program Change handler) can read with no
+    // synchronisation (07-feature-spec.md "Program Change").
+    std::vector<Patch> factoryPatches;
+
+    // Per-part active patch path (the file path each part was loaded from).
+    // Set by loadIntoPart on the message thread, read by state-save (Task 16).
+    std::array<juce::String, PartManager::kNumParts> activePaths;
+    mutable juce::CriticalSection                     activePathLock;
+
+    // Search index — protected by indexMutex; populated by the background
+    // thread. `indexBuilt` is the cheap "is it ready yet?" probe.
+    mutable std::mutex      indexMutex;
+    std::vector<IndexEntry> searchIndex;
+    std::atomic<bool>       indexBuilt { false };
+
+    bool initialised = false;
+};
+
+} // namespace genvst

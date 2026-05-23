@@ -11,6 +11,55 @@
 
 namespace
 {
+    // Resolve the factory-root path at runtime (ADR-0005). For Standalone we
+    // use the platform data directory the install rule writes to; for VST3 /
+    // AU / etc. the factory patches sit inside the bundle at
+    // Contents/Resources/patches/. The exact layout differs per platform
+    // (.vst3 on Windows/Linux, .vst3/.component on macOS, etc.), so we walk
+    // upwards from the loaded binary file looking for Resources/patches.
+    std::filesystem::path resolveFactoryRoot (juce::AudioProcessor::WrapperType wt)
+    {
+        if (wt == juce::AudioProcessor::wrapperType_Standalone)
+        {
+           #ifdef GENVST_STANDALONE_PATCH_DIR
+            return std::filesystem::path { GENVST_STANDALONE_PATCH_DIR };
+           #else
+            return {};
+           #endif
+        }
+
+        const auto exec = juce::File::getSpecialLocation (
+                              juce::File::SpecialLocationType::currentExecutableFile);
+
+        juce::File cur = exec.getParentDirectory();
+        for (int i = 0; i < 6 && cur.exists(); ++i)
+        {
+            const auto candidate1 = cur.getChildFile ("Resources").getChildFile ("patches");
+            if (candidate1.isDirectory())
+                return std::filesystem::path (candidate1.getFullPathName().toRawUTF8());
+
+            const auto candidate2 = cur.getChildFile ("Contents").getChildFile ("Resources").getChildFile ("patches");
+            if (candidate2.isDirectory())
+                return std::filesystem::path (candidate2.getFullPathName().toRawUTF8());
+
+            cur = cur.getParentDirectory();
+        }
+
+        // Dev fallback (cmake --build, plugin not yet packaged):
+        // GENVST_DEV_PATCH_DIR points at extern/patches/ in the source tree,
+        // so a fresh build is playable without an install step.
+       #ifdef GENVST_DEV_PATCH_DIR
+        {
+            const std::filesystem::path devDir { GENVST_DEV_PATCH_DIR };
+            std::error_code ec;
+            if (std::filesystem::is_directory (devDir, ec))
+                return devDir;
+        }
+       #endif
+
+        return {};
+    }
+
     // Soft-clip guard: leaves |x| <= 0.9 untouched and saturates beyond toward
     // +/-1.0, so the output stays bounded even if the summed FM mix runs hot.
     inline float softClip (float x) noexcept
@@ -291,11 +340,7 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     psgDacParams.dacMode   = apvts.getRawParameterValue ("dac_mode");
     psgDacParams.dacLevel  = apvts.getRawParameterValue ("dac_level");
 
-    for (auto& slot : pendingProgramChange)
-        slot.store (-1, std::memory_order_relaxed);
-
     buildCcParamLookup();
-    loadFactoryPatches();
     loadDevDacSample();
 }
 
@@ -320,10 +365,8 @@ void GenVstAudioProcessor::buildCcParamLookup()
 
 GenVstAudioProcessor::~GenVstAudioProcessor()
 {
-    // AsyncUpdater must cancel pending callbacks before its owner destructs,
-    // otherwise a late-arriving handleAsyncUpdate would race into a torn-down
-    // processor.
-    cancelPendingUpdate();
+    // Stop the patch browser's background indexer before its owner destructs.
+    patchBrowser.shutdown();
 }
 
 void GenVstAudioProcessor::applyPatchToPart (int part, const Patch& patch)
@@ -332,52 +375,21 @@ void GenVstAudioProcessor::applyPatchToPart (int part, const Patch& patch)
     writePatchToParams (apvts, part, patch);
 }
 
-void GenVstAudioProcessor::loadFactoryPatches()
+void GenVstAudioProcessor::applyPatchOnAudioThread (int part, const Patch& patch) noexcept
 {
-    // Dev wiring: load two distinct factory patches so the plugin sounds — and
-    // demonstrably plays multitimbral — before the patch browser exists.
-    // organ.tfi fills every part; bass.tfi overrides part 1, so notes on MIDI
-    // channels 1 and 2 play two different timbres. Superseded by Task 09.
-    //
-    // The full sorted list also feeds Program Change (07-feature-spec.md):
-    // PC value N picks the Nth factory patch by filename, kept in memory so
-    // the audio-thread swap is allocation-free.
-#ifdef GENVST_DEV_PATCH_DIR
-    const std::filesystem::path dir { GENVST_DEV_PATCH_DIR };
-    if (! std::filesystem::is_directory (dir))
-        return;
+    // Atomic-stores into the same raw float pointers the dirty-diff in
+    // paramCache.readPatch reads from below — so the per-block dirty-diff
+    // picks up the new patch on this very block, with no setValueNotifyingHost
+    // call (which would allocate / take locks). Mirrors the kOpParams /
+    // kPartParams tables used to declare the apvts parameters.
+    for (int d = 0; d < FmParamCache::kNumOpParams; ++d)
+        for (int op = 0; op < FmParamCache::kNumOps; ++op)
+            writeIntParam (paramCache.opParam[d][part][op],
+                           (patch.*(kOpParams[d].field))[op]);
 
-    std::vector<std::filesystem::path> tfiFiles;
-    for (const auto& entry : std::filesystem::directory_iterator (dir))
-        if (entry.is_regular_file() && entry.path().extension() == ".tfi")
-            tfiFiles.push_back (entry.path());
-
-    // Sort by filename for a stable PC index — this minimal enumeration is
-    // superseded by the patch-browser roots in Task 09.
-    std::sort (tfiFiles.begin(), tfiFiles.end(),
-               [] (const auto& a, const auto& b) { return a.filename() < b.filename(); });
-
-    factoryPatches.reserve (tfiFiles.size());
-    for (const auto& path : tfiFiles)
-        if (auto result = loadTFI (path); result.patch.has_value())
-            factoryPatches.push_back (std::move (*result.patch));
-
-    // Initial dev patches: organ on every part, bass overriding part 1.
-    const auto findByName = [this] (const juce::String& name) -> const Patch*
-    {
-        for (const auto& p : factoryPatches)
-            if (juce::String (p.name).equalsIgnoreCase (name))
-                return &p;
-        return nullptr;
-    };
-
-    if (const Patch* organ = findByName ("organ"))
-        for (int part = 0; part < PartManager::kNumParts; ++part)
-            applyPatchToPart (part, *organ);
-
-    if (const Patch* bass = findByName ("bass"))
-        applyPatchToPart (1, *bass);
-#endif
+    for (int d = 0; d < FmParamCache::kNumPartParams; ++d)
+        writeIntParam (paramCache.partParam[d][part],
+                       patch.*(kPartParams[d].field));
 }
 
 void GenVstAudioProcessor::loadDevDacSample()
@@ -389,20 +401,6 @@ void GenVstAudioProcessor::loadDevDacSample()
 #endif
 }
 
-void GenVstAudioProcessor::handleAsyncUpdate()
-{
-    // Drain the per-part pending Program Change slots and apply each on the
-    // message thread — applyPatchToPart calls setValueNotifyingHost, which is
-    // safe here. Last-write-wins per part: a flurry of PCs collapses to the
-    // most recent one.
-    for (int part = 0; part < PartManager::kNumParts; ++part)
-    {
-        const int index = pendingProgramChange[(size_t) part].exchange (-1, std::memory_order_acq_rel);
-        if (index >= 0 && index < static_cast<int> (factoryPatches.size()))
-            applyPatchToPart (part, factoryPatches[(size_t) index]);
-    }
-}
-
 void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Build the raw-pointer parameter cache (per part) and the voice pool.
@@ -411,6 +409,37 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     psgEngine.prepare (sampleRate, samplesPerBlock);
     dacPlayer.prepare (sampleRate, samplesPerBlock);
     monoScratch.allocate ((size_t) juce::jmax (1, samplesPerBlock), true);
+
+    // The patch browser needs the plugin's wrapperType to find the factory
+    // root (the bundle's Resources/patches/ vs the standalone data dir —
+    // ADR-0005). wrapperType isn't valid in the constructor (the JUCE plugin
+    // client sets it after createPluginFilter returns), so we defer first
+    // initialisation to here. Idempotent — repeat prepareToPlay calls do not
+    // re-scan the disk.
+    if (! patchBrowserInitialised)
+    {
+        patchBrowser.initialize (resolveFactoryRoot (wrapperType));
+        patchBrowserInitialised = true;
+
+        // Dev wiring (Task 05/06 parity): until the patch browser UI ships
+        // (Task 14), seed every part with "organ" if present and override
+        // part 1 with "bass" — so a fresh launch sounds multitimbral. This
+        // is a message-thread call (we're in prepareToPlay), so going
+        // through setValueNotifyingHost via applyPatchToPart is fine.
+        const auto findFactory = [this] (const juce::String& name) -> const Patch*
+        {
+            for (int i = 0; i < patchBrowser.numFactoryPatches(); ++i)
+                if (auto* p = patchBrowser.factoryPatchByIndex (i);
+                    p != nullptr && juce::String (p->name).equalsIgnoreCase (name))
+                    return p;
+            return nullptr;
+        };
+        if (const Patch* organ = findFactory ("organ"))
+            for (int part = 0; part < PartManager::kNumParts; ++part)
+                applyPatchToPart (part, *organ);
+        if (const Patch* bass = findFactory ("bass"))
+            applyPatchToPart (1, *bass);
+    }
 }
 
 void GenVstAudioProcessor::pushPsgDacParameters()
@@ -473,6 +502,14 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             dispatchMidi (metadata.getMessage());
         return;
     }
+
+    // Drain the patch-delivery queue (04-patch-system.md "Audio Thread
+    // Delivery"): each (part, Patch) was pushed by the message thread after a
+    // patch file parsed successfully. Applying first means paramCache.readPatch
+    // below sees the new values on this very block, so newly-started voices
+    // pick up the new patch and sounding voices catch up via the dirty-diff.
+    patchBrowser.drainAudioThreadQueue (
+        [this] (int part, const Patch& p) { applyPatchOnAudioThread (part, p); });
 
     // Snapshot every part's current parameters and seed every active voice
     // with the dirty-diff (catches DAW automation that landed between blocks).
@@ -656,15 +693,17 @@ void GenVstAudioProcessor::handleProgramChange (int channel, int program)
     if (! dest.isFmPart()) return;
 
     const int part = dest.index;
-    if (program < 0 || program >= static_cast<int> (factoryPatches.size()))
-        return;
+    const Patch* patch = patchBrowser.factoryPatchByIndex (program);
+    if (patch == nullptr)
+        return;   // out-of-range PC indices silently no-op (MIDI convention)
 
-    // Hand the load to the message thread — applyPatchToPart calls
-    // setValueNotifyingHost (heap-allocates, takes the parameter lock) and is
-    // not audio-thread safe. The audio thread keeps rendering the current
-    // patch until the swap completes — a tiny latency, no glitch.
-    pendingProgramChange[(size_t) part].store (program, std::memory_order_release);
-    triggerAsyncUpdate();
+    // Audio-thread apply via raw atomic stores — same path the delivery-queue
+    // drain takes. No allocation, no message-thread bounce; the dirty-diff on
+    // the rest of this block routes the new register values into sounding and
+    // newly-started voices on `part`. Bypasses setValueNotifyingHost, so the
+    // host's automation lane / UI knobs catch up on their next poll (a tiny
+    // visual lag, never an audio glitch).
+    applyPatchOnAudioThread (part, *patch);
 }
 
 void GenVstAudioProcessor::handleControlChange (int channel, int cc, int value)

@@ -9,6 +9,7 @@
 #include "DACPlayer.h"
 #include "MidiRouter.h"
 #include "PartManager.h"
+#include "PatchBrowser.h"
 #include "PatchSystem.h"
 #include "SN76489Engine.h"
 #include "VoiceAllocator.h"
@@ -35,8 +36,7 @@ struct FmParamCache
     std::atomic<float>* partParam[kNumPartParams][PartManager::kNumParts] {};
 };
 
-class GenVstAudioProcessor : public juce::AudioProcessor,
-                             private juce::AsyncUpdater
+class GenVstAudioProcessor : public juce::AudioProcessor
 {
 public:
     GenVstAudioProcessor();
@@ -66,19 +66,36 @@ public:
 
     juce::AudioProcessorValueTreeState& getValueTreeState() { return apvts; }
 
+    // Exposed for the editor's WebView native functions and for state-save
+    // (Task 16), which needs read access to active patch paths + custom roots.
+    genvst::PatchBrowser& getPatchBrowser() noexcept       { return patchBrowser; }
+    PartManager&          getPartManager()  noexcept       { return partManager;  }
+    const PartManager&    getPartManager()  const noexcept { return partManager;  }
+
+    // Snapshot a part's live patch from the apvts (the audio-thread source of
+    // truth — kept fresher than PartManager's stored copy, which only updates
+    // through message-thread paths). Used by savePatch / exportPatch so they
+    // capture whatever the user is currently hearing, not the last
+    // applyPatchToPart write.
+    void readLivePatch (int part, Patch& dest) const noexcept
+    {
+        paramCache.readPatch (part, dest);
+    }
+
     // Public so unit tests and the MidiRoutingTests fixture can build the
     // full layout standalone (no AudioProcessor instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
     // Store `patch` on `part` and push its values into the apvts parameter
-    // tree. Message thread only.
+    // tree. Message thread only — uses setValueNotifyingHost.
     void applyPatchToPart (int part, const Patch& patch);
 
-    // Dev wiring: load factory .tfi files into the parts so the plugin sounds
-    // before the patch browser exists (Task 09). Also populates the
-    // factoryPatches list used by Program Change.
-    void loadFactoryPatches();
+    // Audio-thread patch apply: atomic-stores every per-part FM parameter
+    // from `patch` into the apvts via the raw-pointer cache. Lock-free, no
+    // allocation. Used by the patch-delivery queue drain at the top of
+    // processBlock and by Program Change (audio thread).
+    void applyPatchOnAudioThread (int part, const Patch& patch) noexcept;
 
     // Dev wiring: load a known WAV from GENVST_DEV_DAC_WAV (if present) into
     // the DAC so a note on MIDI channel 16 plays an 8-bit sample without
@@ -88,9 +105,6 @@ private:
     // Resolve every per-part apvts parameter pointer needed by the CC
     // dispatch ahead of time, so the audio thread does no juce::String work.
     void buildCcParamLookup();
-
-    // Message-thread async drain: applies pending Program Change patches.
-    void handleAsyncUpdate() override;
 
     // Sample-accurate MIDI dispatch (Task 06): the per-event handlers called
     // from processBlock. They mutate partPatches/voiceAllocator/apvts directly
@@ -128,12 +142,13 @@ private:
     std::array<std::array<std::atomic<float>*, 128>, PartManager::kNumParts> ccParamLookup {};
     std::array<std::atomic<float>*, PartManager::kNumParts> lrParamLookup {};   // CC 10 (pan) target
 
-    PartManager    partManager;
-    VoiceAllocator voiceAllocator;
-    FmParamCache   paramCache;
-    MidiRouter     midiRouter;
-    SN76489Engine  psgEngine;
-    DACPlayer      dacPlayer;
+    PartManager          partManager;
+    VoiceAllocator       voiceAllocator;
+    FmParamCache         paramCache;
+    MidiRouter           midiRouter;
+    SN76489Engine        psgEngine;
+    DACPlayer            dacPlayer;
+    genvst::PatchBrowser patchBrowser;
 
     // Per-block PSG / DAC parameter snapshot — apvts pointers cached at
     // prepareToPlay so the audio thread reads with no map lookup. Pushed
@@ -163,17 +178,10 @@ private:
 
     juce::HeapBlock<float> monoScratch;   // R-channel sink when the host bus is mono
 
-    // Factory patches kept resident so a Program Change is a memcpy, not a
-    // file load (07-feature-spec.md "Program Change"). Populated at
-    // construction (message thread); read-only thereafter.
-    std::vector<Patch> factoryPatches;
-
-    // Audio-thread -> message-thread queue: per-part latest pending Program
-    // Change index, -1 == nothing pending. The audio thread stamps the slot
-    // and triggerAsyncUpdate(); the message thread drains and applies via
-    // applyPatchToPart. Last-write-wins per part is intentional — rapid
-    // duplicate PCs collapse to the final patch.
-    std::array<std::atomic<int>, PartManager::kNumParts> pendingProgramChange {};
+    // First-prepareToPlay flag: the patch browser needs the wrapper type (set
+    // by the plugin client wrapper after the constructor returns), so its
+    // initialisation is deferred to the first prepareToPlay call.
+    bool patchBrowserInitialised = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

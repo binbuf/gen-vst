@@ -12,6 +12,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(GenVstTests
     SmokeTest.cpp
     PatchLoaderTests.cpp
+    PatchBrowserTests.cpp
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
     VoiceAllocatorTests.cpp
@@ -19,6 +20,7 @@ add_executable(GenVstTests
     PsgDacTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
+    "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
     "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"
     "${CMAKE_SOURCE_DIR}/src/MidiRouter.cpp"
@@ -62,6 +64,7 @@ target_compile_definitions(GenVstTests PRIVATE
 target_link_libraries(GenVstTests PRIVATE
     GTest::gtest_main
     juce::juce_core
+    juce::juce_events           # PatchBrowser inherits juce::Thread
     juce::juce_audio_basics
     juce::juce_audio_formats)   # DACPlayer::loadWav
 
