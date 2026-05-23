@@ -27,6 +27,9 @@ void Voice::reset()
     voiceState     = State::Idle;
     partIndex      = -1;
     midiNote       = -1;
+    noteVelocity   = 127;
+    bendSemitones  = 0.0;
+    sustained      = false;
     lastNoteOnTime = 0;
 }
 
@@ -42,13 +45,15 @@ void Voice::writeReg (std::uint8_t reg, std::uint8_t value)
     chip.write (1, value);
 }
 
-void Voice::noteOn (int part, int note, const Patch& patch, std::uint64_t timestamp)
+void Voice::noteOn (int part, int note, int velocity, double bend,
+                    bool velToTl, const Patch& patch, std::uint64_t timestamp)
 {
     // Apply the full note-on sequence unconditionally — a stolen voice's chip
     // still holds the previous patch — and seed the shadow with every param
     // register so later dirty-diffs have a baseline. The two 0x28 key writes
     // are never shadowed: they are events, not state.
-    for (const auto& w : FmRegisterMap::buildNoteOn (patch, note))
+    const FmRegisterMap::NoteParams np { velocity, velToTl, bend };
+    for (const auto& w : FmRegisterMap::buildNoteOn (patch, note, np))
     {
         writeReg (w.reg, w.value);
         if (w.reg != 0x28)
@@ -58,6 +63,9 @@ void Voice::noteOn (int part, int note, const Patch& patch, std::uint64_t timest
     voiceState     = State::Active;
     partIndex      = part;
     midiNote       = note;
+    noteVelocity   = velocity;
+    bendSemitones  = bend;
+    sustained      = false;
     lastNoteOnTime = timestamp;
 }
 
@@ -66,15 +74,18 @@ void Voice::noteOff()
     const RegWrite off = FmRegisterMap::buildKeyOff();
     writeReg (off.reg, off.value);
     voiceState = State::Released;
+    sustained  = false;
 }
 
-void Voice::updateRegisters (const Patch& patch)
+void Voice::updateRegisters (const Patch& patch, bool velToTl)
 {
     // Re-derive the param register set and write only what changed vs the
     // shadow. The 0x28 key events are skipped — re-sending them would retrigger
-    // the envelope. The frequency registers are included but, with no pitch
-    // bend yet, never differ for a held note.
-    for (const auto& w : FmRegisterMap::buildNoteOn (patch, midiNote))
+    // the envelope. The frequency registers fall out of the diff naturally for
+    // a static note; a pitch-bend or note change updates them through this same
+    // path.
+    const FmRegisterMap::NoteParams np { noteVelocity, velToTl, bendSemitones };
+    for (const auto& w : FmRegisterMap::buildNoteOn (patch, midiNote, np))
     {
         if (w.reg == 0x28)
             continue;
@@ -85,6 +96,12 @@ void Voice::updateRegisters (const Patch& patch)
             shadow[w.reg] = w.value;
         }
     }
+}
+
+void Voice::setPitchBend (double bend, const Patch& patch, bool velToTl)
+{
+    bendSemitones = bend;
+    updateRegisters (patch, velToTl);
 }
 
 void Voice::renderAdd (float* accumL, float* accumR, int numSamples)

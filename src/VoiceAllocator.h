@@ -32,13 +32,28 @@ public:
     // Allocate working buffers and reset every voice. Call from prepareToPlay.
     void prepare (double hostSampleRate, int maxBlockSize);
 
-    // --- MIDI events (block-granular for Task 05) ----------------------------
+    // --- MIDI events (sample-accurate; Task 06) ------------------------------
 
-    // Take a voice for (part, note) and key it on with `patch`.
-    void noteOn (int part, int note, int velocity, const Patch& patch);
+    // Take a voice for (part, note) and key it on with `patch`. `velocity` and
+    // `velToTl` drive carrier-TL scaling; `bendSemitones` is the part's
+    // current pitch-wheel offset (so the new voice starts in tune with held
+    // notes of the same part).
+    void noteOn (int part, int note, int velocity, double bendSemitones,
+                 bool velToTl, const Patch& patch);
 
-    // Release the sounding voice matching (part, note), if any.
-    void noteOff (int part, int note);
+    // Release the sounding voice matching (part, note). When `sustainHeld` is
+    // true the voice is marked sustained instead — releaseSustained() lets it
+    // go on pedal-up.
+    void noteOff (int part, int note, bool sustainHeld);
+
+    // Pedal-up companion to noteOff(..., sustainHeld=true): release every
+    // sustained voice on the given part.
+    void releaseSustained (int part);
+
+    // Pitch-bend dispatch: update every active/released voice of `part` so its
+    // frequency registers reflect the new offset, via the dirty-diff path.
+    void setPitchBend (int part, double bendSemitones,
+                       const Patch& patch, bool velToTl);
 
     // Key off every sounding voice; envelopes release naturally.
     void allNotesOff();
@@ -48,8 +63,14 @@ public:
 
     // --- Per-block render ----------------------------------------------------
 
-    // Dirty-diff every sounding voice against its part's current patch.
-    void updateActiveVoices (const std::array<Patch, kNumParts>& partPatches);
+    // Dirty-diff every sounding voice against its part's current patch. The
+    // diff respects velocity -> TL (per voice) and pitch bend (per voice).
+    void updateActiveVoices (const std::array<Patch, kNumParts>& partPatches,
+                             bool velToTl);
+
+    // Same as updateActiveVoices but limited to voices serving `part` — used
+    // when a single CC/AT/PC event mutated just one part's patch.
+    void updateActiveVoicesForPart (int part, const Patch& patch, bool velToTl);
 
     // Render `numSamples` of host-rate stereo audio: sum all sounding voices at
     // the native rate, then resample the mix to the host rate in one pass.

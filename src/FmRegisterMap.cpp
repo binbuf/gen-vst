@@ -16,9 +16,9 @@ namespace
 namespace FmRegisterMap
 {
 
-FreqRegs midiNoteToFreq (int midiNote)
+FreqRegs midiNoteToFreq (double midiNote)
 {
-    const double noteHz = 440.0 * std::pow (2.0, (midiNote - 69) / 12.0);
+    const double noteHz = 440.0 * std::pow (2.0, (midiNote - 69.0) / 12.0);
 
     // fnum(blk) = noteHz * 2^(21-blk) / nativeRate. Start at block 4 and raise
     // the block — halving the F-number each step — until it fits 0x000-0x7FF.
@@ -44,7 +44,27 @@ uint8_t detuneToRegister (uint8_t tfiDetune)
     return static_cast<uint8_t> (tfiDetune < 4 ? tfiDetune : tfiDetune + 1);
 }
 
-std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch, int midiNote)
+uint8_t scaleCarrierTl (uint8_t patchTl, int patchAlg, int opIndex,
+                        int velocity, bool velToTl) noexcept
+{
+    if (! velToTl)
+        return patchTl;
+
+    const uint8_t carrierMask = kCarrierMaskByAlg[static_cast<std::size_t> (patchAlg & 0x07)];
+    if (((carrierMask >> opIndex) & 0x01) == 0)
+        return patchTl;   // modulator — TL controls timbre, leave it untouched
+
+    // Half-range linear attenuation: v=127 -> no change, v=0 -> +63 TL
+    // (~47 dB drop). A full-range offset (127 - v) is too dramatic for typical
+    // playing; this keeps the dynamic envelope musically usable.
+    const int offset    = (127 - std::clamp (velocity, 0, 127)) / 2;
+    const int effective = std::clamp (static_cast<int> (patchTl) + offset, 0, 127);
+    return static_cast<uint8_t> (effective);
+}
+
+std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch,
+                                                     int midiNote,
+                                                     NoteParams params)
 {
     std::array<RegWrite, kNoteOnWriteCount> writes {};
     int n = 0;
@@ -75,8 +95,11 @@ std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch, int mid
         const uint8_t slRr   = static_cast<uint8_t> (((patch.sl[op] & 0x0F) << 4)
                                                        | (patch.rr[op] & 0x0F));
 
+        const uint8_t tl = scaleCarrierTl (patch.tl[op], patch.alg, op,
+                                           params.velocity, params.velToTl);
+
         emit (static_cast<uint8_t> (0x30 + off), dtMul);
-        emit (static_cast<uint8_t> (0x40 + off), patch.tl[op] & 0x7F);
+        emit (static_cast<uint8_t> (0x40 + off), tl & 0x7F);
         emit (static_cast<uint8_t> (0x50 + off), ksAr);
         emit (static_cast<uint8_t> (0x60 + off), amonDr);
         emit (static_cast<uint8_t> (0x70 + off), patch.sr[op] & 0x1F);
@@ -92,7 +115,7 @@ std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch, int mid
     emit (0xB4, (left << 7) | (right << 6) | ((patch.ams & 0x03) << 4) | (patch.pms & 0x07));
 
     // 4. Frequency: HIGH byte (BLK + F-number high bits) before LOW byte.
-    const FreqRegs f = midiNoteToFreq (midiNote);
+    const FreqRegs f = midiNoteToFreq (static_cast<double> (midiNote) + params.bendSemitones);
     emit (0xA4, ((f.blk & 0x07) << 3) | ((f.fnum >> 8) & 0x07));
     emit (0xA0, f.fnum & 0xFF);
 

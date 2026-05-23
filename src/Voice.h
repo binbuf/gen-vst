@@ -35,16 +35,30 @@ public:
 
     // Key on: apply the full note-on register sequence for `patch` at `note`,
     // seed the register shadow, and record the serving part / note / timestamp.
-    void noteOn (int part, int note, const Patch& patch, std::uint64_t timestamp);
+    // velocity / velToTl drive the carrier-TL scaling; bendSemitones is the
+    // current pitch-wheel offset for the part.
+    void noteOn (int part, int note, int velocity, double bendSemitones,
+                 bool velToTl, const Patch& patch, std::uint64_t timestamp);
 
     // Key off: release the envelope. The voice keeps sounding its release tail
     // and stays allocated (State::Released) until it is reused.
     void noteOff();
 
-    // Dirty-diff: re-derive the param registers from `patch` and write only the
-    // ones that differ from the shadow, so a live parameter edit reaches a
-    // sounding voice without retriggering its envelope.
-    void updateRegisters (const Patch& patch);
+    // Dirty-diff: re-derive the param registers from `patch` (with the voice's
+    // current velocity, bend and velToTl applied) and write only the ones that
+    // differ from the shadow, so a live parameter edit reaches a sounding
+    // voice without retriggering its envelope.
+    void updateRegisters (const Patch& patch, bool velToTl);
+
+    // Update this voice's pitch-bend offset and refresh its frequency
+    // registers via the dirty-diff path (no retrigger).
+    void setPitchBend (double bendSemitones, const Patch& patch, bool velToTl);
+
+    // CC 64 hold state. While `sustained`, a note-off arriving on this voice
+    // defers the release; the VoiceAllocator releases on pedal-up.
+    void markSustained() noexcept             { sustained = true; }
+    void clearSustained() noexcept            { sustained = false; }
+    bool isSustained() const noexcept         { return sustained; }
 
     // Generate `numSamples` native-rate samples, accumulating (+=) into the
     // caller's mix buffers.
@@ -59,6 +73,8 @@ public:
     bool          isReleasing() const noexcept { return voiceState == State::Released; }
     int           part()      const noexcept { return partIndex; }
     int           note()      const noexcept { return midiNote; }
+    int           velocity()  const noexcept { return noteVelocity; }
+    double        pitchBend() const noexcept { return bendSemitones; }
     std::uint64_t timestamp() const noexcept { return lastNoteOnTime; }
 
 private:
@@ -70,6 +86,9 @@ private:
     State         voiceState     = State::Idle;
     int           partIndex      = -1;
     int           midiNote       = -1;
+    int           noteVelocity   = 127;
+    double        bendSemitones  = 0.0;
+    bool          sustained      = false;
     std::uint64_t lastNoteOnTime = 0;
 
     // Last value written to each bank-0 register, indexed by register address;

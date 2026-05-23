@@ -56,28 +56,45 @@ Voice& VoiceAllocator::allocateVoice()
     return oldestReleased != nullptr ? *oldestReleased : *oldestActive;
 }
 
-void VoiceAllocator::noteOn (int part, int note, int velocity, const Patch& patch)
+void VoiceAllocator::noteOn (int part, int note, int velocity, double bendSemitones,
+                              bool velToTl, const Patch& patch)
 {
-    // Velocity -> TL scaling is configurable and arrives with the full MIDI
-    // pipeline in Task 06.
-    juce::ignoreUnused (velocity);
-
     Voice& v = allocateVoice();
-    v.noteOn (part, note, patch, nextTimestamp++);
+    v.noteOn (part, note, velocity, bendSemitones, velToTl, patch, nextTimestamp++);
 }
 
-void VoiceAllocator::noteOff (int part, int note)
+void VoiceAllocator::noteOff (int part, int note, bool sustainHeld)
 {
     // Release the first Active voice serving this (part, note); a later
-    // note-off for a retriggered note finds the next one.
+    // note-off for a retriggered note finds the next one. With the pedal
+    // held, the voice keeps sounding but is flagged so releaseSustained()
+    // can let it go on pedal-up.
     for (auto& v : voices)
     {
         if (v.isActive() && v.part() == part && v.note() == note)
         {
-            v.noteOff();
+            if (sustainHeld)
+                v.markSustained();
+            else
+                v.noteOff();
             return;
         }
     }
+}
+
+void VoiceAllocator::releaseSustained (int part)
+{
+    for (auto& v : voices)
+        if (v.isActive() && v.part() == part && v.isSustained())
+            v.noteOff();
+}
+
+void VoiceAllocator::setPitchBend (int part, double bendSemitones,
+                                   const Patch& patch, bool velToTl)
+{
+    for (auto& v : voices)
+        if (! v.isIdle() && v.part() == part)
+            v.setPitchBend (bendSemitones, patch, velToTl);
 }
 
 void VoiceAllocator::allNotesOff()
@@ -93,11 +110,19 @@ void VoiceAllocator::allSoundOff()
         v.reset();
 }
 
-void VoiceAllocator::updateActiveVoices (const std::array<Patch, kNumParts>& partPatches)
+void VoiceAllocator::updateActiveVoices (const std::array<Patch, kNumParts>& partPatches,
+                                         bool velToTl)
 {
     for (auto& v : voices)
         if (! v.isIdle())
-            v.updateRegisters (partPatches[static_cast<std::size_t> (v.part())]);
+            v.updateRegisters (partPatches[static_cast<std::size_t> (v.part())], velToTl);
+}
+
+void VoiceAllocator::updateActiveVoicesForPart (int part, const Patch& patch, bool velToTl)
+{
+    for (auto& v : voices)
+        if (! v.isIdle() && v.part() == part)
+            v.updateRegisters (patch, velToTl);
 }
 
 void VoiceAllocator::render (float* outL, float* outR, int numSamples)

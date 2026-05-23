@@ -112,6 +112,7 @@ target_sources(GenVst PRIVATE
     Voice.cpp             Voice.h
     VoiceAllocator.cpp    VoiceAllocator.h
     PartManager.cpp       PartManager.h
+    MidiRouter.cpp        MidiRouter.h
     FmRegisterMap.cpp     FmRegisterMap.h
     PatchSystem.cpp       PatchSystem.h
     GenVstYmfmInterface.h)

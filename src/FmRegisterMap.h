@@ -38,6 +38,18 @@ namespace FmRegisterMap
     // + 1 key-on.
     inline constexpr int kNoteOnWriteCount = 35;
 
+    // Per-algorithm carrier mask: bit i set means OP(i+1) is a carrier. Used
+    // to scope velocity -> TL scaling to carriers only — modulator TL controls
+    // timbre, not output level, and must stay at the patch value.
+    inline constexpr std::array<uint8_t, 8> kCarrierMaskByAlg
+    {
+        0b1000, 0b1000, 0b1000, 0b1000,   // alg 0-3: only OP4 sounds
+        0b1010,                             // alg 4:    OP2 + OP4
+        0b1110,                             // alg 5:    OP2 + OP3 + OP4
+        0b1110,                             // alg 6:    OP2 + OP3 + OP4
+        0b1111                              // alg 7:    all four carriers
+    };
+
     // YM2612 frequency register fields for one note.
     struct FreqRegs
     {
@@ -45,9 +57,10 @@ namespace FmRegisterMap
         int fnum;  // 0-2047: F-number
     };
 
-    // Convert a MIDI note to (BLK, F-number). BLK is chosen so the F-number
-    // stays inside 0x000-0x7FF; notes above the chip's range clamp to the top.
-    FreqRegs midiNoteToFreq (int midiNote);
+    // Convert a MIDI note (with an optional fractional semitone offset for
+    // pitch bend) to (BLK, F-number). BLK is chosen so the F-number stays
+    // inside 0x000-0x7FF; notes above the chip's range clamp to the top.
+    FreqRegs midiNoteToFreq (double midiNote);
 
     // Convert a TFI detune value (0-6) to the YM2612 register field (0x30
     // bits 6:4). TFI: 0-3 = none/+detune, 4-6 = -detune. Hardware: 0-3 =
@@ -55,8 +68,27 @@ namespace FmRegisterMap
     // shift up by one to land on hardware 5-7.
     uint8_t detuneToRegister (uint8_t tfiDetune);
 
-    // Build the full ordered note-on register sequence for a patch at a note.
-    std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch, int midiNote);
+    // Apply the velocity -> carrier-TL formula. Modulator operators always
+    // pass through unchanged; for carriers (per kCarrierMaskByAlg), the TL is
+    // raised by (127 - velocity) / 2 — a half-range attenuation that's quiet
+    // but never wholly silent at v=1, audible at v=127 (no change). With
+    // velToTl == false the patch TL is returned untouched.
+    uint8_t scaleCarrierTl (uint8_t patchTl, int patchAlg, int opIndex,
+                            int velocity, bool velToTl) noexcept;
+
+    // Runtime per-voice modulations layered on top of the patch.
+    struct NoteParams
+    {
+        int    velocity       = 127;   // 0-127; only affects carrier TL when velToTl
+        bool   velToTl        = false; // velocity -> carrier TL scaling toggle
+        double bendSemitones  = 0.0;   // pitch-wheel offset, signed; 0 = no bend
+    };
+
+    // Build the full ordered note-on register sequence for a patch at a note,
+    // with optional runtime modulations (velocity scaling + pitch bend).
+    std::array<RegWrite, kNoteOnWriteCount> buildNoteOn (const Patch& patch,
+                                                         int midiNote,
+                                                         NoteParams params = {});
 
     // The single key-off write (channel 0, all operators off).
     RegWrite buildKeyOff();

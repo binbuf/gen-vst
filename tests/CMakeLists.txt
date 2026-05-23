@@ -15,10 +15,12 @@ add_executable(GenVstTests
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
     VoiceAllocatorTests.cpp
+    MidiRoutingTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
     "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"
+    "${CMAKE_SOURCE_DIR}/src/MidiRouter.cpp"
     "${CMAKE_SOURCE_DIR}/src/Voice.cpp"
     "${CMAKE_SOURCE_DIR}/src/VoiceAllocator.cpp")
 

@@ -38,7 +38,7 @@ TEST (VoiceAllocator, AllocatesDistinctFreeVoices)
     const Patch p = makePatch();
 
     for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
-        alloc.noteOn (0, 60 + i, 100, p);
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
 
     EXPECT_EQ (alloc.numActiveVoices(), VoiceAllocator::kNumVoices);
     EXPECT_EQ (alloc.numIdleVoices(), 0);
@@ -55,8 +55,8 @@ TEST (VoiceAllocator, SeventeenthNoteStealsAVoice)
     const Patch p = makePatch();
 
     for (int i = 0; i < 16; ++i)
-        alloc.noteOn (0, 60 + i, 100, p);
-    alloc.noteOn (0, 90, 100, p);   // 17th simultaneous note
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
+    alloc.noteOn (0, 90, 100, 0.0, false, p);   // 17th simultaneous note
 
     EXPECT_EQ (alloc.numActiveVoices(), 16);
     EXPECT_TRUE  (alloc.isNoteActive (0, 90));
@@ -71,10 +71,10 @@ TEST (VoiceAllocator, StealUsesGlobalLru)
 
     // 16 notes keyed on in order — note 60 is the oldest, note 75 the newest.
     for (int i = 0; i < 16; ++i)
-        alloc.noteOn (0, 60 + i, 100, p);
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
 
-    alloc.noteOn (0, 100, 100, p);   // steals the oldest -> note 60
-    alloc.noteOn (0, 101, 100, p);   // steals the next   -> note 61
+    alloc.noteOn (0, 100, 100, 0.0, false, p);   // steals the oldest -> note 60
+    alloc.noteOn (0, 101, 100, 0.0, false, p);   // steals the next   -> note 61
 
     EXPECT_FALSE (alloc.isNoteActive (0, 60));
     EXPECT_FALSE (alloc.isNoteActive (0, 61));
@@ -91,16 +91,16 @@ TEST (VoiceAllocator, StealPrefersReleasePhaseVoice)
     const Patch p = makePatch();
 
     for (int i = 0; i < 16; ++i)
-        alloc.noteOn (0, 60 + i, 100, p);
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
 
     // Release the most-recently-played note; note 60 stays the oldest Active.
-    alloc.noteOff (0, 75);
+    alloc.noteOff (0, 75, false);
     EXPECT_EQ (alloc.numActiveVoices(), 15);
     EXPECT_EQ (alloc.numReleasingVoices(), 1);
 
     // The next note-on must reuse the release-phase voice rather than steal an
     // older sustaining voice — release-phase voices are preferred.
-    alloc.noteOn (0, 90, 100, p);
+    alloc.noteOn (0, 90, 100, 0.0, false, p);
     EXPECT_EQ (alloc.numActiveVoices(), 16);
     EXPECT_EQ (alloc.numReleasingVoices(), 0);
     EXPECT_TRUE  (alloc.isNoteActive (0, 90));
@@ -116,10 +116,10 @@ TEST (VoiceAllocator, NoteOffReleasesTheVoice)
     alloc.prepare (44100.0, 512);
     const Patch p = makePatch();
 
-    alloc.noteOn (0, 64, 100, p);
+    alloc.noteOn (0, 64, 100, 0.0, false, p);
     EXPECT_EQ (alloc.numActiveVoices(), 1);
 
-    alloc.noteOff (0, 64);
+    alloc.noteOff (0, 64, false);
     EXPECT_EQ (alloc.numActiveVoices(), 0);
     EXPECT_EQ (alloc.numReleasingVoices(), 1);
     EXPECT_FALSE (alloc.isNoteActive (0, 64));
@@ -132,7 +132,7 @@ TEST (VoiceAllocator, AllNotesOffReleasesEverySoundingVoice)
     const Patch p = makePatch();
 
     for (int i = 0; i < 5; ++i)
-        alloc.noteOn (0, 60 + i, 100, p);
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
 
     alloc.allNotesOff();
     EXPECT_EQ (alloc.numActiveVoices(), 0);
@@ -146,7 +146,7 @@ TEST (VoiceAllocator, AllSoundOffFreesEveryVoice)
     const Patch p = makePatch();
 
     for (int i = 0; i < 5; ++i)
-        alloc.noteOn (0, 60 + i, 100, p);
+        alloc.noteOn (0, 60 + i, 100, 0.0, false, p);
 
     alloc.allSoundOff();
     EXPECT_EQ (alloc.numActiveVoices(), 0);
@@ -162,7 +162,7 @@ TEST (VoiceAllocator, NoteOnRecordsTheServingPart)
     alloc.prepare (44100.0, 512);
     const Patch p = makePatch();
 
-    alloc.noteOn (3, 64, 100, p);
+    alloc.noteOn (3, 64, 100, 0.0, false, p);
     EXPECT_TRUE  (alloc.isNoteActive (3, 64));
     EXPECT_FALSE (alloc.isNoteActive (0, 64));
 }
@@ -177,7 +177,7 @@ TEST (VoiceAllocator, ChannelRoutesToCorrectPart)
     // A note arriving on MIDI channel 2 must be served by part 1.
     const int part = pm.partForMidiChannel (2);
     ASSERT_EQ (part, 1);
-    alloc.noteOn (part, 67, 100, p);
+    alloc.noteOn (part, 67, 100, 0.0, false, p);
 
     EXPECT_TRUE  (alloc.isNoteActive (1, 67));
     EXPECT_FALSE (alloc.isNoteActive (0, 67));
@@ -189,14 +189,14 @@ TEST (VoiceAllocator, UpdateActiveVoicesAppliesParamEditsWithoutRetrigger)
 {
     VoiceAllocator alloc;
     alloc.prepare (44100.0, 512);
-    alloc.noteOn (0, 69, 100, makePatch());
+    alloc.noteOn (0, 69, 100, 0.0, false, makePatch());
 
     // A live edit on part 0: the dirty-diff must apply it without dropping or
     // retriggering the voice.
     std::array<Patch, VoiceAllocator::kNumParts> patches;
     patches.fill (makePatch());
     patches[0].tl[0] = 80;   // changed carrier level
-    alloc.updateActiveVoices (patches);
+    alloc.updateActiveVoices (patches, false);
 
     EXPECT_EQ (alloc.numActiveVoices(), 1);
     EXPECT_TRUE (alloc.isNoteActive (0, 69));
@@ -208,7 +208,7 @@ TEST (VoiceAllocator, RenderProducesFiniteAudibleOutput)
 {
     VoiceAllocator alloc;
     alloc.prepare (44100.0, 512);
-    alloc.noteOn (0, 69, 100, makePatch());
+    alloc.noteOn (0, 69, 100, 0.0, false, makePatch());
 
     std::array<float, 512> outL {};
     std::array<float, 512> outR {};
@@ -236,7 +236,7 @@ TEST (VoiceAllocator, RenderHandlesVaryingBlockSizes)
 {
     VoiceAllocator alloc;
     alloc.prepare (44100.0, 512);
-    alloc.noteOn (0, 69, 100, makePatch());
+    alloc.noteOn (0, 69, 100, 0.0, false, makePatch());
 
     std::array<float, 512> outL {};
     std::array<float, 512> outR {};
