@@ -231,6 +231,46 @@ GenVstAudioProcessorEditor::makePsgBendRelays()
 
 namespace
 {
+    // Task 23 — per-channel envelope slider relay names, by paramIdx. The
+    // order is shared between the relay factory, the attachment loop and the
+    // JS-side OperatorPanel binding map in sq-view.js.
+    constexpr std::array<const char*, GenVstAudioProcessorEditor::kNumPsgEnvSliderParams>
+        kPsgEnvSliderBases {
+            "psg_atk", "psg_dr1", "psg_sus", "psg_dr2", "psg_rr",
+            "psg_detune", "psg_freq", "psg_ksr", "psg_ssg"
+        };
+}
+
+std::array<std::array<std::unique_ptr<juce::WebSliderRelay>,
+                     SN76489Engine::kNumChannels>,
+          GenVstAudioProcessorEditor::kNumPsgEnvSliderParams>
+GenVstAudioProcessorEditor::makePsgEnvSliderRelays()
+{
+    std::array<std::array<std::unique_ptr<juce::WebSliderRelay>,
+                          SN76489Engine::kNumChannels>,
+               kNumPsgEnvSliderParams> result;
+    for (int p = 0; p < kNumPsgEnvSliderParams; ++p)
+        for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+            result[(std::size_t) p][(std::size_t) i] =
+                std::make_unique<juce::WebSliderRelay> (
+                    juce::String (kPsgEnvSliderBases[(std::size_t) p])
+                        + "_" + kPsgChannelIds[(std::size_t) i]);
+    return result;
+}
+
+std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels>
+GenVstAudioProcessorEditor::makePsgEnvVelRelays()
+{
+    std::array<std::unique_ptr<juce::WebToggleButtonRelay>,
+               SN76489Engine::kNumChannels> result;
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+        result[(std::size_t) i] = std::make_unique<juce::WebToggleButtonRelay> (
+            juce::String ("psg_vel_") + kPsgChannelIds[(std::size_t) i]);
+    return result;
+}
+
+namespace
+{
     // Task 22 — Per-rack-slot routing relay schema. The slot-suffix list +
     // param-base list together generate the 7 × 11 = 77 apvts param IDs the
     // rack widget binds to.
@@ -368,6 +408,14 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
     for (auto& r : psgVolRelays)  options = options.withOptionsFrom (*r);
     for (auto& r : psgPanRelays)  options = options.withOptionsFrom (*r);
     for (auto& r : psgBendRelays) options = options.withOptionsFrom (*r);
+
+    // Task 23 — per-channel envelope relays. 9 slider params × 4 channels
+    // for ATK/DR1/SUS/DR2/RR/DETUNE/FREQ/KSR/SSG, plus 4 toggle relays for
+    // VEL (one per channel).
+    for (auto& row : psgEnvSliderRelays)
+        for (auto& r : row)
+            options = options.withOptionsFrom (*r);
+    for (auto& r : psgEnvVelRelays) options = options.withOptionsFrom (*r);
 
     // Task 22 — Per-rack-slot routing relays (77 sliders covering every
     // (midi_ch, transpose_st, transpose_oct, note_lo, note_hi, detune_cents,
@@ -1142,6 +1190,11 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 resetParam ("psg_vol_"  + id);
                 resetParam ("psg_pan_"  + id);
                 resetParam ("psg_bend_" + id);
+
+                // Task 23 — per-channel envelope params.
+                for (const auto* base : kPsgEnvSliderBases)
+                    resetParam (juce::String (base) + "_" + id);
+                resetParam ("psg_vel_" + id);
             }
             resetParam ("psg_noise_type");
             resetParam ("psg_noise_rate");
@@ -1507,6 +1560,27 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
             *apvts.getParameter ("psg_pan_"  + suffix), *psgPanRelays[(std::size_t) i],  apvts.undoManager);
         psgBendAttachments[(std::size_t) i] = std::make_unique<juce::WebToggleButtonParameterAttachment> (
             *apvts.getParameter ("psg_bend_" + suffix), *psgBendRelays[(std::size_t) i], apvts.undoManager);
+
+        // Task 23 — envelope attachments. Walk the 9 slider-param bases in
+        // lockstep with the relay factory's order; the toggle (VEL) is its
+        // own field.
+        for (int p = 0; p < kNumPsgEnvSliderParams; ++p)
+        {
+            const auto paramId = juce::String (kPsgEnvSliderBases[(std::size_t) p])
+                                  + "_" + suffix;
+            if (auto* param = apvts.getParameter (paramId))
+                psgEnvSliderAttachments[(std::size_t) p][(std::size_t) i] =
+                    std::make_unique<juce::WebSliderParameterAttachment> (
+                        *param,
+                        *psgEnvSliderRelays[(std::size_t) p][(std::size_t) i],
+                        apvts.undoManager);
+        }
+        if (auto* velParam = apvts.getParameter ("psg_vel_" + suffix))
+            psgEnvVelAttachments[(std::size_t) i] =
+                std::make_unique<juce::WebToggleButtonParameterAttachment> (
+                    *velParam,
+                    *psgEnvVelRelays[(std::size_t) i],
+                    apvts.undoManager);
     }
 
     // Task 22 — Rack-routing attachments. Iterate the same suffix list +
@@ -1587,6 +1661,9 @@ GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
     for (auto& a : psgVolAttachments)  a.reset();
     for (auto& a : psgPanAttachments)  a.reset();
     for (auto& a : psgBendAttachments) a.reset();
+    for (auto& row : psgEnvSliderAttachments)
+        for (auto& a : row) a.reset();
+    for (auto& a : psgEnvVelAttachments) a.reset();
     for (auto& a : rackRoutingAttachments) a.reset();
 }
 

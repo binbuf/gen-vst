@@ -22,3 +22,7 @@ extra/
 third_party/furnace/
 
 /Screenshot*.png
+
+# Genny VST reference screenshots and local tooling (never committed)
+/reference/
+/tools

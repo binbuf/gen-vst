@@ -23,6 +23,180 @@ namespace
     }
 }
 
+// --- PsgEnvelope --------------------------------------------------------------
+// Software amplitude ADSR for one PSG channel. The SN76489 has no envelope
+// hardware; this struct synthesises one in software and the engine multiplies
+// its amplitude into the per-channel mix gain (Task 23). Stage durations come
+// from the operator-panel rate values 0..maxRate (0 = instant transition,
+// maxRate = ~2 seconds at 44.1 kHz).
+
+void SN76489Engine::PsgEnvelope::prepare (double sr) noexcept
+{
+    sampleRate = sr > 0.0 ? sr : 44100.0;
+    reset();
+}
+
+void SN76489Engine::PsgEnvelope::setSampleRate (double sr) noexcept
+{
+    sampleRate = sr > 0.0 ? sr : 44100.0;
+}
+
+void SN76489Engine::PsgEnvelope::reset() noexcept
+{
+    stage         = Stage::Idle;
+    amplitude     = 0.0f;
+    peakLevel     = 1.0f;
+    sustainAmp    = 1.0f;
+    stageDelta    = 0.0f;
+    stageSamples  = 0;
+    keyDown       = false;
+}
+
+void SN76489Engine::PsgEnvelope::setRates (int newAtk, int newDr1, int newSus,
+                                           int newDr2, int newRr) noexcept
+{
+    atk = std::clamp (newAtk, 0, 31);
+    dr1 = std::clamp (newDr1, 0, 31);
+    sus = std::clamp (newSus, 0, 15);
+    dr2 = std::clamp (newDr2, 0, 31);
+    rr  = std::clamp (newRr,  0, 15);
+
+    // Sustain level: SUS=0 -> peak (no decay), SUS=15 -> silence after decay.
+    sustainAmp = peakLevel * (1.0f - static_cast<float> (sus) / 15.0f);
+}
+
+void SN76489Engine::PsgEnvelope::setVelocitySensitivity (float vel01) noexcept
+{
+    velSensitivity = juce::jlimit (0.0f, 1.0f, vel01);
+}
+
+void SN76489Engine::PsgEnvelope::noteOn (int velocity) noexcept
+{
+    // Velocity scaling: vel == 0 -> always full peak; vel == 1 -> peak scales
+    // linearly with MIDI velocity. The chip's own attenuation register is
+    // also velocity-scaled (writeToneVolume), so the audible curve is the
+    // product of the two — the envelope just shapes the float multiplier.
+    const float v = juce::jlimit (0.0f, 1.0f,
+                                  static_cast<float> (std::clamp (velocity, 0, 127)) / 127.0f);
+    peakLevel  = (1.0f - velSensitivity) + velSensitivity * v;
+    sustainAmp = peakLevel * (1.0f - static_cast<float> (sus) / 15.0f);
+    keyDown    = true;
+    enterAttack();
+}
+
+void SN76489Engine::PsgEnvelope::noteOff() noexcept
+{
+    keyDown = false;
+    enterRelease();
+}
+
+void SN76489Engine::PsgEnvelope::advance (int n) noexcept
+{
+    while (n > 0 && stage != Stage::Idle)
+    {
+        if (stageSamples < 0)
+        {
+            // Sustain hold — amplitude doesn't change until noteOff() flips
+            // the stage. Consume the whole block here.
+            amplitude += stageDelta * static_cast<float> (n);
+            return;
+        }
+        const int step = std::min (n, stageSamples);
+        amplitude     += stageDelta * static_cast<float> (step);
+        stageSamples  -= step;
+        n             -= step;
+        if (stageSamples == 0)
+            advanceToNextStage();
+    }
+}
+
+int SN76489Engine::PsgEnvelope::stageSamplesFromRate (int rate, int maxRate) const noexcept
+{
+    // rate == 0 -> instant (0 samples); rate == maxRate -> ~2 seconds at the
+    // current host sample rate. Linear in between — sufficient for the
+    // operator-panel knob shape, and gives the unit tests a predictable
+    // "long ATK ramps over expected sample count" relationship.
+    if (rate <= 0 || maxRate <= 0) return 0;
+    const double maxSamples = sampleRate * 2.0;
+    return static_cast<int> (std::round (maxSamples * static_cast<double> (rate)
+                                                    / static_cast<double> (maxRate)));
+}
+
+void SN76489Engine::PsgEnvelope::enterAttack() noexcept
+{
+    stage         = Stage::Attack;
+    stageSamples  = stageSamplesFromRate (atk, 31);
+    if (stageSamples <= 0)
+    {
+        amplitude = peakLevel;
+        advanceToNextStage();
+        return;
+    }
+    stageDelta = (peakLevel - amplitude) / static_cast<float> (stageSamples);
+}
+
+void SN76489Engine::PsgEnvelope::enterDecay1() noexcept
+{
+    stage         = Stage::Decay1;
+    stageSamples  = stageSamplesFromRate (dr1, 31);
+    if (stageSamples <= 0)
+    {
+        amplitude = sustainAmp;
+        advanceToNextStage();
+        return;
+    }
+    stageDelta = (sustainAmp - amplitude) / static_cast<float> (stageSamples);
+}
+
+void SN76489Engine::PsgEnvelope::enterSustain() noexcept
+{
+    stage        = Stage::Sustain;
+    amplitude    = sustainAmp;
+    stageSamples = -1;          // hold until noteOff()
+    stageDelta   = 0.0f;
+}
+
+void SN76489Engine::PsgEnvelope::enterDecay2() noexcept
+{
+    stage         = Stage::Decay2;
+    stageSamples  = stageSamplesFromRate (dr2, 31);
+    if (stageSamples <= 0)
+    {
+        // DR2 == 0 in the user model means "hold at sustain" — sit in Sustain
+        // instead of decaying further. Note-off still flips us to Release.
+        enterSustain();
+        return;
+    }
+    stageDelta = (0.0f - amplitude) / static_cast<float> (stageSamples);
+}
+
+void SN76489Engine::PsgEnvelope::enterRelease() noexcept
+{
+    stage         = Stage::Release;
+    stageSamples  = stageSamplesFromRate (rr, 15);
+    if (stageSamples <= 0)
+    {
+        amplitude = 0.0f;
+        stage     = Stage::Idle;
+        stageDelta = 0.0f;
+        return;
+    }
+    stageDelta = (0.0f - amplitude) / static_cast<float> (stageSamples);
+}
+
+void SN76489Engine::PsgEnvelope::advanceToNextStage() noexcept
+{
+    switch (stage)
+    {
+        case Stage::Attack:  enterDecay1(); break;
+        case Stage::Decay1:  enterDecay2(); break;   // SR=0 path collapses to Sustain hold
+        case Stage::Sustain: /* held — only noteOff() leaves */ break;
+        case Stage::Decay2:  amplitude = 0.0f; stage = Stage::Idle; stageDelta = 0.0f; stageSamples = 0; break;
+        case Stage::Release: amplitude = 0.0f; stage = Stage::Idle; stageDelta = 0.0f; stageSamples = 0; break;
+        case Stage::Idle:    break;
+    }
+}
+
 SN76489Engine::SN76489Engine()
 {
     // Set up the 4-chip lockstep with per-chip mute mask: chip i unmutes only
@@ -32,12 +206,16 @@ SN76489Engine::SN76489Engine()
         chips[static_cast<std::size_t> (i)].setMuteMask (~(1u << i) & 0x0Fu);
 }
 
-void SN76489Engine::prepare (double hostSampleRate, int maxBlockSize)
+void SN76489Engine::prepare (double sr, int maxBlockSize)
 {
+    hostSampleRate = sr > 0.0 ? sr : 44100.0;
     for (auto& c : chips)
         c.prepare (hostSampleRate, maxBlockSize);
 
     chipScratch.assign (static_cast<std::size_t> (std::max (1, maxBlockSize)), 0.0f);
+
+    for (auto& state : ch)
+        state.envelope.prepare (hostSampleRate);
 
     reset();
 }
@@ -54,6 +232,7 @@ void SN76489Engine::reset()
         state.active        = false;
         state.bendSemitones = 0.0;
         state.timestamp     = 0;
+        state.envelope.reset();
     }
     nextTimestamp = 0;
 
@@ -101,7 +280,12 @@ void SN76489Engine::noteOnTone (int midiNote, int velocity)
 
     writeToneFreq   (target, static_cast<double> (midiNote)
                               + (state.bendEnabled ? state.bendSemitones : 0.0));
-    writeToneVolume (target, velocityToAttenuation (velocity));
+    // The chip is held at full output (atten 0); the software envelope (and
+    // its velocity-sensitivity scalar) does all the volume work. Without this
+    // the chip's own 4-bit velocity attenuation would double-count against
+    // the envelope's velocity-scaled peakLevel (Task 23).
+    writeToneVolume (target, 0x00);
+    state.envelope.noteOn (velocity);
 }
 
 void SN76489Engine::noteOnNoise (int midiNote, int velocity)
@@ -113,7 +297,10 @@ void SN76489Engine::noteOnNoise (int midiNote, int velocity)
     state.timestamp = nextTimestamp++;
 
     refreshNoiseControl();   // auto-mode may consume midiNote
-    writeNoiseVolume (velocityToAttenuation (velocity));
+    // Same software-envelope path as tones: chip held at full output, envelope
+    // does the velocity + ADSR shaping.
+    writeNoiseVolume (0x00);
+    state.envelope.noteOn (velocity);
 }
 
 void SN76489Engine::noteOffTone (int midiNote)
@@ -124,7 +311,12 @@ void SN76489Engine::noteOffTone (int midiNote)
         if (state.active && state.note == midiNote)
         {
             state.active = false;
-            writeToneVolume (i, 0x0F);
+            // Hand the volume off to the software envelope: keep the chip
+            // generating samples at the velocity-attenuation level so the
+            // release ramp has signal to multiply, and let the envelope's
+            // amplitude tail to zero. With RR == 0 the envelope advances to
+            // Idle on the first render block, matching the legacy step-off.
+            state.envelope.noteOff();
             return;
         }
     }
@@ -136,7 +328,7 @@ void SN76489Engine::noteOffNoise (int midiNote)
     if (state.active && state.note == midiNote)
     {
         state.active = false;
-        writeNoiseVolume (0x0F);
+        state.envelope.noteOff();
     }
 }
 
@@ -208,6 +400,19 @@ void SN76489Engine::setMixLevel (float mix01) noexcept
     mixLevel = juce::jlimit (0.0f, 1.0f, mix01);
 }
 
+void SN76489Engine::setEnvelopeRates (int psgChannel, int atk, int dr1, int sus,
+                                      int dr2, int rr) noexcept
+{
+    if (psgChannel < 0 || psgChannel >= kNumChannels) return;
+    ch[static_cast<std::size_t> (psgChannel)].envelope.setRates (atk, dr1, sus, dr2, rr);
+}
+
+void SN76489Engine::setEnvelopeVel (int psgChannel, float vel01) noexcept
+{
+    if (psgChannel < 0 || psgChannel >= kNumChannels) return;
+    ch[static_cast<std::size_t> (psgChannel)].envelope.setVelocitySensitivity (vel01);
+}
+
 // --- Per-block render ------------------------------------------------------
 
 void SN76489Engine::renderAdd (float* outL, float* outR, int numSamples)
@@ -222,13 +427,29 @@ void SN76489Engine::renderAdd (float* outL, float* outR, int numSamples)
     {
         chips[static_cast<std::size_t> (chIdx)].generate (chipScratch.data(), numSamples);
 
-        const auto& state  = ch[static_cast<std::size_t> (chIdx)];
-        const float gainL  = state.panLeft  * state.volumeGain * mixLevel;
-        const float gainR  = state.panRight * state.volumeGain * mixLevel;
+        auto& state = ch[static_cast<std::size_t> (chIdx)];
+
+        // Task 23: snapshot envelope amplitude at block start, advance the
+        // envelope across the block, snapshot again at block end, and apply
+        // a per-sample linear interpolation between the two — smooths the
+        // 4-bit-quantised chip output enough that slow attack ramps don't
+        // zipper. Cheap (one mul + one add per sample).
+        const float envStart = state.envelope.amplitude;
+        state.envelope.advance (numSamples);
+        const float envEnd   = state.envelope.amplitude;
+
+        const float gainL = state.panLeft  * state.volumeGain * mixLevel;
+        const float gainR = state.panRight * state.volumeGain * mixLevel;
+
+        const float invDen = numSamples > 1
+                                 ? 1.0f / static_cast<float> (numSamples - 1)
+                                 : 0.0f;
 
         for (int i = 0; i < numSamples; ++i)
         {
-            const float sample = chipScratch[static_cast<std::size_t> (i)];
+            const float t      = static_cast<float> (i) * invDen;
+            const float envAmp = envStart + (envEnd - envStart) * t;
+            const float sample = chipScratch[static_cast<std::size_t> (i)] * envAmp;
             outL[i] += sample * gainL;
             outR[i] += sample * gainR;
         }
@@ -257,6 +478,19 @@ bool SN76489Engine::isNoiseChannelActive() const noexcept
 int SN76489Engine::noiseChannelNote() const noexcept
 {
     return ch[kNoiseCh].note;
+}
+
+float SN76489Engine::channelAmplitude (int psgChannel) const noexcept
+{
+    if (psgChannel < 0 || psgChannel >= kNumChannels) return 0.0f;
+    return ch[static_cast<std::size_t> (psgChannel)].envelope.amplitude;
+}
+
+SN76489Engine::PsgEnvelope::Stage SN76489Engine::channelStage (int psgChannel) const noexcept
+{
+    if (psgChannel < 0 || psgChannel >= kNumChannels)
+        return PsgEnvelope::Stage::Idle;
+    return ch[static_cast<std::size_t> (psgChannel)].envelope.stage;
 }
 
 // --- Register protocol -----------------------------------------------------

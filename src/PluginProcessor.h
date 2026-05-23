@@ -310,6 +310,15 @@ private:
         std::array<std::atomic<float>*, SN76489Engine::kNumChannels> pan    { nullptr, nullptr, nullptr, nullptr };
         std::array<std::atomic<float>*, SN76489Engine::kNumChannels> bendOn { nullptr, nullptr, nullptr, nullptr };
 
+        // Task 23 — per-channel software-envelope params, pushed to
+        // SN76489Engine::setEnvelopeRates / setEnvelopeVel each block.
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> atk { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> dr1 { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> sus { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> dr2 { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> rr  { nullptr, nullptr, nullptr, nullptr };
+        std::array<std::atomic<float>*, SN76489Engine::kNumChannels> vel { nullptr, nullptr, nullptr, nullptr };
+
         std::atomic<float>* dacEnable = nullptr;
         std::atomic<float>* dacRate   = nullptr;
         std::atomic<float>* dacMode   = nullptr;

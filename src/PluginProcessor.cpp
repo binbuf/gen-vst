@@ -262,6 +262,41 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
             i < SN76489Engine::kNumToneChs));   // tone channels default on
     }
 
+    // Per-channel PSG envelope params (Task 23) — software ADSR shared by all
+    // four channels (3 tone + 1 noise). Ranges + IDs map onto the existing FM
+    // operator-panel widget so the UI can reuse it unchanged (Task 23 scope).
+    // Audible effect today: ATK/DR1/SUS/DR2/RR + VEL drive the software
+    // envelope; DETUNE/FREQ/KSR/SSG are visual stubs (cosmetic for now —
+    // wiring them in is a follow-up task).
+    for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
+    {
+        const auto suffix = kPsgChannelLabels[i].toLowerCase();
+        const auto displayPrefix = juce::String ("PSG ") + kPsgChannelLabels[i];
+
+        auto addInt = [&] (const char* idStem, const char* labelStem, int lo, int hi, int def)
+        {
+            layout.add (std::make_unique<juce::AudioParameterInt> (
+                juce::ParameterID { juce::String (idStem) + "_" + suffix, 1 },
+                displayPrefix + " " + labelStem, lo, hi, def));
+        };
+
+        addInt ("psg_atk",    "ATK",    0, 31, 0);
+        addInt ("psg_dr1",    "DR1",    0, 31, 0);
+        addInt ("psg_sus",    "SUS",    0, 15, 0);
+        addInt ("psg_dr2",    "DR2",    0, 31, 0);
+        addInt ("psg_rr",     "RR",     0, 15, 0);
+        addInt ("psg_detune", "DETUNE", 0, 6,  3);   // FM-widget compatible (-3..+3 idea)
+        addInt ("psg_freq",   "FREQ",   0, 15, 1);   // FM-widget compatible (multiplier)
+        addInt ("psg_ksr",    "KSR",    0, 3,  0);   // ENV SCALE on the widget
+        addInt ("psg_ssg",    "SSG",    0, 15, 0);
+        // VEL is the operator-panel's amon slot — a 0/1 toggle controlling
+        // velocity sensitivity (1 = velocity scales peak; 0 = peak ignores
+        // velocity).
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { juce::String ("psg_vel_") + suffix, 1 },
+            displayPrefix + " VEL", true));
+    }
+
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "psg_noise_type", 1 },
         "PSG Noise Type",
@@ -484,12 +519,21 @@ GenVstAudioProcessor::GenVstAudioProcessor()
         { "ch1", "ch2", "ch3", "noise" };
     for (int i = 0; i < SN76489Engine::kNumChannels; ++i)
     {
+        const juce::String suffix = juce::String ("_") + kPsgIds[(std::size_t) i];
         psgDacParams.volume[(std::size_t) i] =
-            apvts.getRawParameterValue (juce::String ("psg_vol_") + kPsgIds[(std::size_t) i]);
+            apvts.getRawParameterValue (juce::String ("psg_vol") + suffix);
         psgDacParams.pan[(std::size_t) i] =
-            apvts.getRawParameterValue (juce::String ("psg_pan_") + kPsgIds[(std::size_t) i]);
+            apvts.getRawParameterValue (juce::String ("psg_pan") + suffix);
         psgDacParams.bendOn[(std::size_t) i] =
-            apvts.getRawParameterValue (juce::String ("psg_bend_") + kPsgIds[(std::size_t) i]);
+            apvts.getRawParameterValue (juce::String ("psg_bend") + suffix);
+
+        // Task 23 — per-channel envelope params, cached once.
+        psgDacParams.atk[(std::size_t) i] = apvts.getRawParameterValue (juce::String ("psg_atk") + suffix);
+        psgDacParams.dr1[(std::size_t) i] = apvts.getRawParameterValue (juce::String ("psg_dr1") + suffix);
+        psgDacParams.sus[(std::size_t) i] = apvts.getRawParameterValue (juce::String ("psg_sus") + suffix);
+        psgDacParams.dr2[(std::size_t) i] = apvts.getRawParameterValue (juce::String ("psg_dr2") + suffix);
+        psgDacParams.rr [(std::size_t) i] = apvts.getRawParameterValue (juce::String ("psg_rr")  + suffix);
+        psgDacParams.vel[(std::size_t) i] = apvts.getRawParameterValue (juce::String ("psg_vel") + suffix);
     }
 
     psgDacParams.dacEnable = apvts.getRawParameterValue ("dac_enable");
@@ -658,6 +702,21 @@ void GenVstAudioProcessor::pushPsgDacParameters()
         psgEngine.setChannelVolume (i, psgDacParams.volume[(std::size_t) i]->load());
         psgEngine.setChannelPan    (i, psgDacParams.pan[(std::size_t) i]->load());
         psgEngine.setChannelBendEnabled (i, psgDacParams.bendOn[(std::size_t) i]->load() > 0.5f);
+
+        // Task 23 — push the per-channel envelope ints/scalar into the
+        // engine's PsgEnvelope each block. No-op when the apvts pointer is
+        // null (defensive — they're built in the ctor and live for the
+        // plugin's lifetime).
+        if (psgDacParams.atk[(std::size_t) i] != nullptr)
+            psgEngine.setEnvelopeRates (i,
+                juce::roundToInt (psgDacParams.atk[(std::size_t) i]->load()),
+                juce::roundToInt (psgDacParams.dr1[(std::size_t) i]->load()),
+                juce::roundToInt (psgDacParams.sus[(std::size_t) i]->load()),
+                juce::roundToInt (psgDacParams.dr2[(std::size_t) i]->load()),
+                juce::roundToInt (psgDacParams.rr [(std::size_t) i]->load()));
+        if (psgDacParams.vel[(std::size_t) i] != nullptr)
+            psgEngine.setEnvelopeVel (i,
+                psgDacParams.vel[(std::size_t) i]->load() > 0.5f ? 1.0f : 0.0f);
     }
 
     // DAC: enable / level on every block; rate triggers a PCM regeneration

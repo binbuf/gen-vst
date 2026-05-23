@@ -21,6 +21,7 @@ add_executable(GenVstTests
     VoiceAllocatorTests.cpp
     MidiRoutingTests.cpp
     PsgDacTests.cpp
+    PsgEnvelopeTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"

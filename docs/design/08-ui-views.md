@@ -208,21 +208,39 @@ from a broken telemetry pipe.
 
 ## 2. Main window — SQ (PSG) section
 
-Shown in the bottom region when the `SQ` pill is selected. The SN76489 PSG has
-three tone channels and one noise channel ([`03-psg-synthesis.md`](03-psg-synthesis.md)),
-so the region mirrors the FM section's four-panel rhythm: a thin section-header
-band plus **four channel panels**.
+Shown in the bottom region when the `SQ` pill is selected (or any SQ row is
+picked from the Task 22 rack). The SN76489 PSG has three tone channels and one
+noise channel ([`03-psg-synthesis.md`](03-psg-synthesis.md)). The region
+mirrors the FM section's four-panel rhythm: a thin section-header band plus
+**four envelope panels** (3 tone + 1 noise), each visually identical to an FM
+operator panel.
+
+The SN76489 has **no envelope hardware**; this view drives a per-channel
+**software amplitude ADSR** computed in `SN76489Engine::PsgEnvelope` and
+multiplied into the chip's mix gain. Stage names (`ATK / DR1 / SUS / DR2 /
+RR`) mirror the FM operator vocabulary so the `operator-panel` widget renders
+unchanged — only the bindings differ.
 
 ```
 ┌─ SQUARE · SN76489 PSG ───────────────────  PSG MIX ▭▭▭▭▭·· 0  [LAYER] ┐
-│ ┌ TONE 1 ──────┐ ┌ TONE 2 ──────┐ ┌ TONE 3 ──────┐ ┌ NOISE ───────┐ │
-│ │ ◆  MIDI [11] │ │ ◆  MIDI [12] │ │ ◆  MIDI [13] │ │ ◆  MIDI [14] │ │
-│ │  (VOL) (PAN) │ │  (VOL) (PAN) │ │  (VOL) (PAN) │ │  (VOL) (PAN) │ │
-│ │  BEND [on ]  │ │  BEND [on ]  │ │  BEND [on ]  │ │ TYPE [WHITE] │ │
-│ │  note:  A4   │ │  note:  ──   │ │  note:  ──   │ │ RATE [ MID ] │ │
-│ │              │ │              │ │              │ │ AUTO [off]   │ │
-│ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
+│ ┌ TONE 1 ──────────┐ ┌ TONE 2 ──────────┐ ┌ TONE 3 ──────────┐ ┌ NOISE ───────────┐ │
+│ │ [1] ◆            │ │ [2] ◆            │ │ [3] ◆            │ │ [N] ◆            │ │
+│ │ ╔══════════════╗ │ │ ╔══════════════╗ │ │ ╔══════════════╗ │ │ ╔══════════════╗ │ │
+│ │ ║   envelope   ║ │ │ ║   envelope   ║ │ │ ║   envelope   ║ │ │ ║   envelope   ║ │ │
+│ │ ║   ╲___       ║ │ │ ║   ╲___       ║ │ │ ║   ╲___       ║ │ │ ║   ╲___       ║ │ │
+│ │ ╚══════════════╝ │ │ ╚══════════════╝ │ │ ╚══════════════╝ │ │ ╚══════════════╝ │ │
+│ │  ATK DR1 SUS     │ │  ATK DR1 SUS     │ │  ATK DR1 SUS     │ │  ATK DR1 SUS     │ │
+│ │  DR2 RR          │ │  DR2 RR          │ │  DR2 RR          │ │  DR2 RR          │ │
+│ │  DETUNE  ▭───    │ │  DETUNE  ▭───    │ │  DETUNE  ▭───    │ │  DETUNE  ▭───    │ │
+│ │  FREQ    ▭───    │ │  FREQ    ▭───    │ │  FREQ    ▭───    │ │  FREQ    ▭───    │ │
+│ │  ENV SC. ▭───    │ │  ENV SC. ▭───    │ │  ENV SC. ▭───    │ │  ENV SC. ▭───    │ │
+│ │  LFO ● SSG 00    │ │  LFO ● SSG 00    │ │  LFO ● SSG 00    │ │  LFO ● SSG 00    │ │
+│ │                  │ │                  │ │                  │ │ ─────────────── │ │
+│ │                  │ │                  │ │                  │ │ SN76489  SHFT •  │ │
+│ │                  │ │                  │ │                  │ │ PERIODIC ◆       │ │
+│ │                  │ │                  │ │                  │ │ TYPE RATE AUTO   │ │
+│ └──────────────────┘ └──────────────────┘ └──────────────────┘ └──────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Section-header band**
@@ -232,25 +250,51 @@ band plus **four channel panels**.
 - `LAYER` — "PSG Layer Mode" toggle (Option B in `03-psg-synthesis.md`): layer
   PSG on every FM note-on. Off by default.
 
-**Tone panel (×3 — channels 0/1/2)**
+**Per-channel envelope panel (×4 — 3 tone + 1 noise)**
 
-- Activity LED + `TONE n` label.
-- `MIDI` — step-field, the channel's MIDI assignment (defaults 11/12/13).
-- `VOL` — volume knob (maps to 4-bit attenuation).
-- `PAN` — soft-pan slider (per-channel L/R gain; PSG has no hardware pan).
-- `BEND` — pitch-bend enable toggle (PSG bend is opt-in, `07-feature-spec.md`).
-- `note` — read-only current-note readout.
+The `operator-panel` widget renders each panel:
 
-**Noise panel (channel 3)**
+- **Badge + status dot** — `1 / 2 / 3 / N` numeric badge, red activity LED.
+- **Envelope graph** — a wide green-LCD inset, the same `adsr-graph` widget
+  the FM row uses. Computes the curve analytically in JS from the five rate
+  knobs.
+- **Knob row** — `ATK / DR1 / SUS / DR2 / RR` (the software-ADSR parameters).
+  `SUS` is a sustain LEVEL (0 = peak / no decay, 15 = silent after decay);
+  `DR2 = 0` collapses the second decay into "hold at sustain"; `RR = 0` gives
+  an instant note-off. These are the only knobs that audibly shape the
+  envelope today.
+- **Slider rows** — `DETUNE / FREQ / ENV SCALE` and the `LFO / SSG` pair.
+  Bound to per-channel apvts params (`psg_detune_*`, `psg_freq_*`, `psg_ksr_*`,
+  `psg_vel_*` on the AMON slot, `psg_ssg_*`). Only `psg_vel_*` is audible
+  today — it toggles velocity sensitivity for the envelope's peak level;
+  the rest are visual stubs reserved for follow-up tasks.
 
-- Activity LED + `NOISE` label; `MIDI` step-field (default 14); `VOL`; `PAN`.
-- `TYPE` — periodic / white toggle.
-- `RATE` — shift-rate selector: `HIGH` / `MID` / `LOW` / `CH2` (the four shift
-  rates, `CH2` = locked to tone-channel-2 frequency).
+**Noise extras footer (channel 3 only)**
+
+A small SN76489-branding strip with an alternate display of the two noise
+controls, plus the canonical `TYPE / RATE / AUTO` row beneath:
+
+- `SN76489` — printed branding label.
+- `SHFT` — knob bound to `psg_noise_rate` (cycles the 4 shift rates).
+- `PERIODIC` — toggle bound to `psg_noise_type`; lights when periodic (mode 0).
+- `TYPE` — pill row, periodic / white.
+- `RATE` — pill row, `LOW / MID / HIGH / CH2` (the four shift rates, `CH2` =
+  locked to tone-channel-2 frequency).
 - `AUTO` — toggle for the optional MIDI-note → shift-rate auto-mapping
   (`03-psg-synthesis.md`); off by default.
 
-`TYPE` and `RATE` are direct, automatable parameters (`03-psg-synthesis.md`).
+`SHFT` / `PERIODIC` and `TYPE` / `RATE` bind to the same apvts params — both
+display surfaces stay in sync via the JUCE relay.
+
+**Retired controls (moved to the rack — Task 22 / view 1)**
+
+- `MIDI` step-field per panel → the rack's per-row `MIDI` cell.
+- `PAN` slider → the rack's `BAL` slider.
+- `BEND` toggle → the rack's per-row routing strip.
+- `VOL` knob → replaced by the envelope's peak level (`SUS` knob + `psg_vel`).
+- `note` readout → not currently surfaced; if needed back later it would go in
+  the panel head, but the rack's existing per-row context obviates it.
+
 All SQ controls are `apvts` parameters bound through the standard relays.
 
 ---

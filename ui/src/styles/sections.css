@@ -60,7 +60,12 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
 }
 
 /* ============================================================================
- * SQ (PSG) section
+ * SQ (PSG) section — Task 23 envelope layout
+ *
+ * Four envelope panels (3 tone + 1 noise) share the FM `.op-panel` chassis
+ * (the OperatorPanel widget self-styles when mounted), so most of the inner
+ * layout comes from chassis.css. The selectors here own the outer wrapper +
+ * the noise-only extras strip (SHFT / PERIODIC / SN76489 + TYPE/RATE/AUTO).
  * ========================================================================== */
 
 .sq-section {
@@ -76,53 +81,61 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
   padding: 4px;
 }
 
-.sq-panel {
+.sq-op-wrap {
   background: var(--panel);
   display: flex;
   flex-direction: column;
   padding: 4px;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
-.sq-panel-head {
+.sq-op-label {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  padding: 2px 0;
 }
 
-.sq-panel-body {
+.sq-op-host {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1 1 auto;
+  padding: 2px;
+  gap: 2px;
 }
 
-.sq-row {
+.sq-noise-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 3px 2px 1px;
+  margin-top: 2px;
+  border-top: 1px solid var(--bevel-dark);
+}
+
+.sq-noise-strip {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
-.sq-midi-row {
-  justify-content: space-between;
+.sq-noise-brand {
+  color: var(--lcd-pixel);
+  font-size: 8px;
+  letter-spacing: 0.04em;
 }
 
-.sq-knob-row {
+.sq-noise-knob-cell,
+.sq-noise-toggle-cell {
   display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-
-.sq-knob-cell {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 3px;
 }
 
-.sq-pan-cell {
+.sq-noise-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
@@ -138,14 +151,6 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
   flex-direction: row;
   align-items: center;
   gap: 4px;
-}
-
-.sq-note-row {
-  margin-top: auto;
-}
-
-.sq-note-value {
-  color: var(--led-on);
 }
 
 /* ============================================================================

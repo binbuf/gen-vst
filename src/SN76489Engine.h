@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #include <juce_core/juce_core.h>
 
@@ -16,12 +17,76 @@
 // output channel — each with a mute mask isolating its own channel. Every
 // register write is broadcast to all four chips so their internal state stays
 // in lockstep; only the mute-mask-filtered output mix differs.
+//
+// SOFTWARE AMPLITUDE ADSR (Task 23): the SN76489 has no envelope hardware, so
+// the engine synthesises one per channel (ATK→DR1→SUS→DR2→RR) and multiplies
+// the resulting amplitude into the mix gain before the chip output. Stage
+// names mirror the FM operator panel so the JS UI can reuse the same widget,
+// but the math runs entirely in software here.
 class SN76489Engine
 {
 public:
     static constexpr int kNumChannels = 4;   // 0..2 = tone, 3 = noise
     static constexpr int kNumToneChs  = 3;
     static constexpr int kNoiseCh     = 3;
+
+    // PsgEnvelope — per-channel software ADSR (Task 23).
+    //
+    // ATK / DR1 / SUS / DR2 / RR mirror the FM operator-panel knob names but
+    // the semantics are software-defined here: ATK is an ATTACK TIME (0 =
+    // instant, higher = longer ramp), DR1 / DR2 are decay times in the same
+    // sense, SUS is a sustain LEVEL (0 = peak / no decay, 15 = silent), and
+    // RR is a release time. Amplitudes are 0..1 floats applied as a mix
+    // multiplier; the chip's own 4-bit attenuation register still encodes
+    // velocity (so the floating-point envelope rides on top of velocity).
+    struct PsgEnvelope
+    {
+        enum class Stage : std::uint8_t { Idle, Attack, Decay1, Sustain, Decay2, Release };
+
+        // Rates / level mirrored from apvts each block.
+        int   atk = 0, dr1 = 0, sus = 0, dr2 = 0, rr = 0;
+
+        // Velocity sensitivity 0..1: 0 = ignore velocity (always full peak),
+        // 1 = peak scales linearly with MIDI velocity / 127.
+        float velSensitivity = 1.0f;
+
+        // Live state, advanced per render block.
+        Stage stage         = Stage::Idle;
+        float amplitude     = 0.0f;
+        float peakLevel     = 1.0f;     // velocity-scaled target for Attack
+        float sustainAmp    = 1.0f;     // peak * (1 - sus/15)
+        float stageDelta    = 0.0f;     // amp change per sample in current stage
+        int   stageSamples  = 0;        // samples remaining in current stage; -1 = hold
+        bool  keyDown       = false;
+
+        void prepare (double sr) noexcept;
+        void setSampleRate (double sr) noexcept;
+        void setRates (int atk, int dr1, int sus, int dr2, int rr) noexcept;
+        void setVelocitySensitivity (float vel01) noexcept;
+        void noteOn (int velocity) noexcept;       // velocity 0..127
+        void noteOff() noexcept;
+        void reset() noexcept;
+
+        // Advance the envelope by `n` samples; updates amplitude + stage.
+        void advance (int n) noexcept;
+
+    private:
+        double sampleRate = 44100.0;
+
+        // Map a 0..maxRate "time" value to a sample count. rate == 0 → 0
+        // (instant); higher → longer ramp. Calibrated so rate == maxRate is
+        // roughly 2 seconds at 44.1 kHz; intermediate values interpolate
+        // linearly. Exposed as a private helper so test fixtures hitting
+        // setRates() see consistent timings.
+        int stageSamplesFromRate (int rate, int maxRate) const noexcept;
+
+        void enterAttack() noexcept;
+        void enterDecay1() noexcept;
+        void enterSustain() noexcept;
+        void enterDecay2() noexcept;
+        void enterRelease() noexcept;
+        void advanceToNextStage() noexcept;
+    };
 
     SN76489Engine();
 
@@ -67,6 +132,12 @@ public:
     void setNoiseAutoMode      (bool on) noexcept;
     void setMixLevel           (float mix01) noexcept;
 
+    // Per-channel software-envelope params (Task 23). Push from apvts at the
+    // top of each render block; the engine forwards into the per-channel
+    // PsgEnvelope state.
+    void setEnvelopeRates  (int psgChannel, int atk, int dr1, int sus, int dr2, int rr) noexcept;
+    void setEnvelopeVel    (int psgChannel, float vel01) noexcept;
+
     // --- Per-block render ----------------------------------------------------
 
     // Add the PSG output (host-rate, stereo) to the given buffers. PSG
@@ -80,6 +151,12 @@ public:
     int  toneChannelNote     (int psgChannel) const noexcept;
     bool isNoiseChannelActive() const noexcept;
     int  noiseChannelNote()     const noexcept;
+
+    // Envelope introspection for PsgEnvelopeTests — exposes the per-channel
+    // PsgEnvelope so the tests can assert amplitude / stage after rendering
+    // sub-blocks without owning a PsgEnvelope themselves.
+    float            channelAmplitude (int psgChannel) const noexcept;
+    PsgEnvelope::Stage channelStage   (int psgChannel) const noexcept;
 
     // Re-derive the noise control byte and write it to the chips. Public for
     // test access — the engine calls this internally on any noise param/note
@@ -114,6 +191,9 @@ private:
         float          volumeGain    = 1.0f;
         float          panLeft       = 1.0f;       // pan + mix combined L gain
         float          panRight      = 1.0f;       // pan + mix combined R gain
+
+        // Software ADSR — multiplied into the per-block mix gain. Task 23.
+        PsgEnvelope    envelope;
     };
 
     std::array<ChannelState, kNumChannels> ch;
@@ -127,4 +207,6 @@ private:
 
     float mixLevel       = 0.8f;
     std::uint64_t nextTimestamp = 0;
+
+    double hostSampleRate = 44100.0;
 };

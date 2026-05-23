@@ -533,20 +533,23 @@ function mountPolyphonyGroup(col) {
   const glideBinding  = bindCombo("mono_glide");
   const spreadBinding = bindSlider("unison_spread");
 
-  // Mode pill row: POLY / MONO / UNISON. Uses the same pill widget as the
-  // FM/SQ/D section pills so the visual idiom stays consistent.
+  // Mode pill row: P / M / U for POLY / MONO / UNISON. Single-letter labels
+  // keep the row narrow enough to share the 124px center-controls column with
+  // the rack's per-instrument routing strip; the row label above the pills
+  // ("POLY") plus the tooltip carry the full word for readers.
   const modeCanvas = col.querySelector("#poly-mode-pills");
   if (modeCanvas) {
     new SectionTabs(modeCanvas, modeBinding, {
-      style: "pill", fontSize: 8, labels: ["POLY", "MONO", "UNISON"],
+      style: "pill", fontSize: 8, labels: ["P", "M", "U"],
     });
   }
 
-  // Mono glide pill row — visible only in MONO mode.
+  // Mono glide pill row — visible only in MONO mode. R / L for RETRIG / LEGATO,
+  // same rationale as the mode pills.
   const glideCanvas = col.querySelector("#mono-glide-pills");
   if (glideCanvas) {
     new SectionTabs(glideCanvas, glideBinding, {
-      style: "pill", fontSize: 8, labels: ["RETRIG", "LEGATO"],
+      style: "pill", fontSize: 8, labels: ["R", "L"],
     });
   }
 

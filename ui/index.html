@@ -98,25 +98,25 @@
                   </div>
                   <span>RNG</span>
                   <div class="rng-cell">
-                    <canvas id="rack-range-slider" width="78" height="14" data-tip="NOTE RANGE (LO ... HI)"></canvas>
-                    <canvas id="rack-range-readout" class="led" width="48" height="14" data-tip="NOTE RANGE LO-HI"></canvas>
+                    <canvas id="rack-range-slider" width="56" height="14" data-tip="NOTE RANGE (LO ... HI)"></canvas>
+                    <canvas id="rack-range-readout" class="led" width="32" height="14" data-tip="NOTE RANGE LO-HI"></canvas>
                   </div>
                   <span>DET</span>
                   <div class="rack-det-cell">
-                    <canvas id="rack-detune-slider" width="78" height="14" data-tip="DETUNE IN CENTS"></canvas>
+                    <canvas id="rack-detune-slider" width="56" height="14" data-tip="DETUNE IN CENTS"></canvas>
                     <canvas id="rack-detune-readout" class="led" width="28" height="14"></canvas>
                   </div>
-                  <span>BAL</span><canvas id="rack-balance-slider" width="120" height="14" data-tip="L/R BALANCE"></canvas>
+                  <span>BAL</span><canvas id="rack-balance-slider" width="92" height="14" data-tip="L/R BALANCE"></canvas>
                 </div>
 
                 <!-- View 10 — per-part polyphony. The mode selector is always
                      visible; GLIDE shows only in MONO, SPREAD only in UNISON. -->
                 <div class="poly-group">
-                  <span class="poly-label-mode">POLY</span><canvas id="poly-mode-pills" width="120" height="14" data-tip="POLYPHONY MODE (PER PART)"></canvas>
-                  <span class="poly-label-glide">GLIDE</span><canvas id="mono-glide-pills" width="120" height="14" data-tip="MONO MODE: RETRIGGER OR LEGATO"></canvas>
-                  <span class="poly-label-spread">SPREAD</span>
+                  <span class="poly-label-mode">POLY</span><canvas id="poly-mode-pills" width="60" height="14" data-tip="POLYPHONY MODE: POLY / MONO / UNISON"></canvas>
+                  <span class="poly-label-glide">GLD</span><canvas id="mono-glide-pills" width="60" height="14" data-tip="MONO MODE: RETRIGGER OR LEGATO"></canvas>
+                  <span class="poly-label-spread">SPR</span>
                   <div class="spread-row">
-                    <canvas id="unison-spread-slider" width="90" height="14" data-tip="UNISON DETUNE SPREAD IN CENTS"></canvas>
+                    <canvas id="unison-spread-slider" width="56" height="14" data-tip="UNISON DETUNE SPREAD IN CENTS"></canvas>
                     <canvas id="unison-spread-readout" class="led" width="28" height="14"></canvas>
                   </div>
                 </div>

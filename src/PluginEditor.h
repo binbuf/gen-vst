@@ -38,6 +38,12 @@ public:
     static constexpr int kNumOpParams   = 11;   // per-operator FM params
     static constexpr int kNumPartParams = 7;    // per-part FM params
 
+    // Task 23 — per-PSG-channel envelope params. Nine int sliders (ATK,
+    // DR1, SUS, DR2, RR, DETUNE, FREQ, KSR, SSG) + one toggle (VEL). Index
+    // order matches kPsgEnvSliderBases below, and the JS-side OperatorPanel
+    // binding map.
+    static constexpr int kNumPsgEnvSliderParams = 9;
+
     // Task 22 — Per-rack-slot routing relay counts. The pool covers every slot
     // the rack UI can address: FM parts 1..6 (the widget exposes 1..5; part 6
     // stays automatable via DAW), the four PSG channels (3 tones + noise), and
@@ -122,6 +128,17 @@ private:
     static std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> makePsgPanRelays();
     static std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> makePsgBendRelays();
 
+    // Task 23 — per-channel envelope param relays. The 9 slider relays carry
+    // the integer-valued ATK/DR1/SUS/DR2/RR/DETUNE/FREQ/KSR/SSG params; the
+    // toggle relay carries VEL (a Bool that enables velocity sensitivity).
+    static std::array<std::array<std::unique_ptr<juce::WebSliderRelay>,
+                                 SN76489Engine::kNumChannels>,
+                      kNumPsgEnvSliderParams>
+        makePsgEnvSliderRelays();
+    static std::array<std::unique_ptr<juce::WebToggleButtonRelay>,
+                      SN76489Engine::kNumChannels>
+        makePsgEnvVelRelays();
+
     // Task 22 — Per-rack-slot routing relays. One slider relay per (param,
     // slot-suffix) pair. The 11 slot suffixes are: _part1..6, _psg_ch1, _psg_ch2,
     // _psg_ch3, _psg_noise, _dac. Index layout matches rackRoutingSuffixes()
@@ -187,6 +204,17 @@ private:
     std::array<std::unique_ptr<juce::WebSliderRelay>,       SN76489Engine::kNumChannels> psgPanRelays  { makePsgPanRelays()  };
     std::array<std::unique_ptr<juce::WebToggleButtonRelay>, SN76489Engine::kNumChannels> psgBendRelays { makePsgBendRelays() };
 
+    // Task 23 — per-channel envelope relays. Indexed [paramIdx][chIdx];
+    // paramIdx order is fixed by kPsgEnvSliderBases in the .cpp.
+    std::array<std::array<std::unique_ptr<juce::WebSliderRelay>,
+                          SN76489Engine::kNumChannels>,
+               kNumPsgEnvSliderParams>
+        psgEnvSliderRelays { makePsgEnvSliderRelays() };
+
+    std::array<std::unique_ptr<juce::WebToggleButtonRelay>,
+               SN76489Engine::kNumChannels>
+        psgEnvVelRelays { makePsgEnvVelRelays() };
+
     // Task 22 — Per-rack-slot routing relays. One slider relay per (param,
     // slot-suffix) pair, bound permanently to its apvts parameter. JS-side the
     // rack-routing strip binds via `bindSlider("midi_ch_part1")` etc., and the
@@ -238,6 +266,17 @@ private:
     std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgVolAttachments;
     std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,        SN76489Engine::kNumChannels> psgPanAttachments;
     std::array<std::unique_ptr<juce::WebToggleButtonParameterAttachment>,  SN76489Engine::kNumChannels> psgBendAttachments;
+
+    // Task 23 — per-channel envelope attachments. Matched 1:1 with the
+    // psgEnv*Relays arrays above; built once in the constructor body.
+    std::array<std::array<std::unique_ptr<juce::WebSliderParameterAttachment>,
+                          SN76489Engine::kNumChannels>,
+               kNumPsgEnvSliderParams>
+        psgEnvSliderAttachments;
+
+    std::array<std::unique_ptr<juce::WebToggleButtonParameterAttachment>,
+               SN76489Engine::kNumChannels>
+        psgEnvVelAttachments;
 
     // Task 22 — Per-rack-slot routing attachments. Matched 1:1 with
     // rackRoutingRelays. Built once in the constructor, never rebuilt — the
