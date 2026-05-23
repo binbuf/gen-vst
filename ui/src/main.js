@@ -1,15 +1,19 @@
 /*
  * Gen VST UI entry point.
  *
- * Loads the design-system CSS, binds the one working control (the master-gain
- * knob) through a JUCE WebSliderRelay, and fires the `uiReady` event the editor
- * listens for once the page is mounted (05-ui-ux.md "Editor host").
+ * The main page (index.html) is still the Task 03 placeholder shell: the
+ * static chassis layout + the one working master-gain control. The full
+ * widget library (Task 10) is mounted via the gallery dev page
+ * (gallery.html) — index.html uses the same library for its one knob so the
+ * gallery and the real UI exercise the same code paths.
+ *
+ * Task 11 will replace the placeholder rows with real widget-backed views.
  */
 
 import "./styles/design-system.css";
 import "./styles/chassis.css";
-import * as Juce from "./juce/index.js";
-import { Knob } from "./knob.js";
+import { bindSlider } from "./binding.js";
+import { Knob } from "./widgets/knob.js";
 
 function mount() {
   const canvas = document.getElementById("master-knob");
@@ -17,16 +21,14 @@ function mount() {
 
   // The relay name equals the apvts parameter ID (05-ui-ux.md "Parameter
   // binding" — naming contract). master_gain comes from Task 02.
-  const masterGain = Juce.getSliderState("master_gain");
+  const binding = bindSlider("master_gain");
 
-  new Knob(canvas, masterGain, {
-    // master_gain's apvts default is 0.8 (Task 02). Task 10's widget library
-    // will source the reset value from the relay's properties instead.
-    resetValue: 0.8,
-    onChange: (v) => {
-      readout.textContent = v.toFixed(2);
-    },
+  new Knob(canvas, binding, { defaultNormalised: 0.8 });
+
+  binding.onChange(() => {
+    readout.textContent = binding.getScaled().toFixed(2);
   });
+  readout.textContent = binding.getScaled().toFixed(2);
 
   // Signal the editor that the UI has mounted. JUCE injects window.__JUCE__
   // before any resource loads; check_native_interop.js provides a no-op

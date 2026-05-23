@@ -1,0 +1,93 @@
+/*
+ * Widget gallery styles — keep the layout boring so the widgets themselves
+ * are the visual content. Same palette and pixel-art rules as the real UI;
+ * the gallery is a different page in the Vite multi-page build (gallery.html).
+ */
+
+body.gallery {
+  width: auto;
+  height: auto;
+  min-width: 960px;
+  min-height: 560px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.gallery-header {
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  padding: 8px 0 16px 0;
+  border-bottom: 1px solid var(--bevel-light);
+}
+
+.gallery-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--label);
+}
+
+.scale-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.scale-picker button {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  background: var(--panel);
+  color: var(--label);
+  border: 1px solid var(--bevel-light);
+  border-radius: 0;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.scale-picker button:hover {
+  background: var(--knob-ring);
+}
+
+#gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.gallery-section {
+  background: var(--panel);
+  border: 2px solid;
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  border-right-color: var(--bevel-dark);
+  border-bottom-color: var(--bevel-dark);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 128px;
+}
+
+.gallery-slot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.gallery-slot canvas {
+  cursor: pointer;
+  image-rendering: pixelated;
+}
+
+.gallery-status {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--led-on);
+  background: var(--led-base);
+  padding: 4px 6px;
+  align-self: flex-start;
+}

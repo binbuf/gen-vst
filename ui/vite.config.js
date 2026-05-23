@@ -21,6 +21,15 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2020",
     assetsInlineLimit: 0, // keep fonts as real files — never inline as data URIs
+    rollupOptions: {
+      // Multi-page setup: index.html is the production UI, gallery.html is a
+      // dev-only widget catalog (Task 10). Both build into dist/ — the
+      // gallery is reachable in dev with `npm run dev` open /gallery.html.
+      input: {
+        main:    resolve(here, "index.html"),
+        gallery: resolve(here, "gallery.html"),
+      },
+    },
   },
 
   server: {

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=960, height=560, initial-scale=1" />
+    <title>Gen VST — Widget Gallery</title>
+  </head>
+  <body class="gallery">
+    <!-- Widget gallery (Task 10) — every reusable widget bound to a scratch
+         apvts parameter so the full two-way binding path is exercised in
+         isolation. The layout is intentionally bare so it's obvious when a
+         widget doesn't repaint or misses a binding. -->
+    <header class="gallery-header">
+      <div class="wordmark">GEN VST</div>
+      <div class="gallery-title">Widget Gallery</div>
+      <div class="scale-picker">
+        <span class="label">SCALE</span>
+        <button type="button" data-scale="1">1x</button>
+        <button type="button" data-scale="2">2x</button>
+        <button type="button" data-scale="3">3x</button>
+      </div>
+    </header>
+
+    <main id="gallery-grid"></main>
+
+    <script type="module" src="/src/gallery.js"></script>
+  </body>
+</html>

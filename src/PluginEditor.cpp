@@ -122,6 +122,17 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             .withBackgroundColour (juce::Colours::black))
         .withNativeIntegrationEnabled()
         .withOptionsFrom (masterGainRelay)
+       #if GENVST_DEV_SERVER
+        // Widget gallery relays (Task 10) — dev-server builds only.
+        .withOptionsFrom (galleryKnobRelay)
+        .withOptionsFrom (gallerySliderRelay)
+        .withOptionsFrom (galleryReadoutRelay)
+        .withOptionsFrom (galleryStepRelay)
+        .withOptionsFrom (galleryToggleRelay)
+        .withOptionsFrom (gallerySectionRelay)
+        .withOptionsFrom (galleryTabsRelay)
+        .withOptionsFrom (galleryListRelay)
+       #endif
         .withEventListener ("uiReady", [] (juce::var)
         {
             juce::Logger::writeToLog ("Gen VST: uiReady received from WebView");
@@ -275,14 +286,49 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& pr
       masterGainAttachment (*proc.getValueTreeState().getParameter ("master_gain"),
                             masterGainRelay,
                             proc.getValueTreeState().undoManager)
+     #if GENVST_DEV_SERVER
+      , galleryKnobAttachment    (*proc.getValueTreeState().getParameter ("gallery_knob"),
+                                  galleryKnobRelay,
+                                  proc.getValueTreeState().undoManager)
+      , gallerySliderAttachment  (*proc.getValueTreeState().getParameter ("gallery_slider"),
+                                  gallerySliderRelay,
+                                  proc.getValueTreeState().undoManager)
+      , galleryReadoutAttachment (*proc.getValueTreeState().getParameter ("gallery_readout"),
+                                  galleryReadoutRelay,
+                                  proc.getValueTreeState().undoManager)
+      , galleryStepAttachment    (*proc.getValueTreeState().getParameter ("gallery_step"),
+                                  galleryStepRelay,
+                                  proc.getValueTreeState().undoManager)
+      , galleryToggleAttachment  (*proc.getValueTreeState().getParameter ("gallery_toggle"),
+                                  galleryToggleRelay,
+                                  proc.getValueTreeState().undoManager)
+      , gallerySectionAttachment (*proc.getValueTreeState().getParameter ("gallery_section"),
+                                  gallerySectionRelay,
+                                  proc.getValueTreeState().undoManager)
+      , galleryTabsAttachment    (*proc.getValueTreeState().getParameter ("gallery_tabs"),
+                                  galleryTabsRelay,
+                                  proc.getValueTreeState().undoManager)
+      , galleryListAttachment    (*proc.getValueTreeState().getParameter ("gallery_list"),
+                                  galleryListRelay,
+                                  proc.getValueTreeState().undoManager)
+     #endif
 {
     setOpaque (true);
     addAndMakeVisible (webView);
 
    #if GENVST_DEV_SERVER
     // Hot-reload workflow: load the Vite dev server (npm run dev in ui/)
-    // instead of the embedded bundle. Vite is pinned to port 5173.
-    webView.goToURL ("http://localhost:5173/");
+    // instead of the embedded bundle. Vite is pinned to port 5173. The page
+    // to load can be overridden via the GENVST_DEV_PAGE env variable so the
+    // widget gallery (Task 10) can be opened inside the plugin window — e.g.
+    // `set GENVST_DEV_PAGE=gallery.html` to launch the gallery against the
+    // live apvts relays. Defaults to the main UI (`index.html`).
+    const auto devPage = juce::SystemStats::getEnvironmentVariable (
+                             "GENVST_DEV_PAGE", "");
+    const auto devUrl  = devPage.isEmpty()
+                             ? juce::String ("http://localhost:5173/")
+                             : juce::String ("http://localhost:5173/") + devPage;
+    webView.goToURL (devUrl);
    #else
     webView.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
    #endif

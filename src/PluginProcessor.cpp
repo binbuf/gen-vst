@@ -276,6 +276,40 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
                 d.lo, d.hi, d.lo));
     }
 
+   #if GENVST_DEV_SERVER
+    // Scratch parameters for the widget gallery (ui/src/gallery.*). Every
+    // core widget mounts against one of these so the gallery exercises the
+    // full two-way binding path (apvts <-> WebSliderRelay/etc.) without
+    // disturbing real synth parameters. Only present in dev-server builds,
+    // never in shipped binaries — Task 10 deliverable.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "gallery_knob", 1 },     "Gallery Knob",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "gallery_slider", 1 },   "Gallery Slider",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "gallery_readout", 1 },  "Gallery Readout",
+        -99, 99, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "gallery_step", 1 },     "Gallery Step Field",
+        1, 16, 1));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "gallery_toggle", 1 },   "Gallery Toggle", false));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "gallery_section", 1 },  "Gallery Section",
+        juce::StringArray { "FM", "SQ", "D" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "gallery_tabs", 1 },     "Gallery Tabs",
+        juce::StringArray { "Presets", "Import" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "gallery_list", 1 },     "Gallery List",
+        juce::StringArray { "Sine Lead",   "Gadget Bass",  "Perc Kit",
+                            "Brass Stab",  "Shinobi Bass", "Organ",
+                            "Saw Wave",    "Piano",        "Bell",
+                            "Pad" }, 0));
+   #endif
+
     return layout;
 }
 
