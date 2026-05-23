@@ -154,7 +154,12 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
 }
 
 /* ============================================================================
- * D (DAC) section
+ * D (DAC) section — Task 26 Genny restyle.
+ *
+ * The body is a vertical stack: a large multi-sample-style note grid on top,
+ * a compact playback strip (HZ knob / LEV slider / LOAD WAV+CLEAR+filename)
+ * along the bottom. The grid is read-only — clicks toast a "Task 31" stub
+ * message; the strip drives the existing single-sample DAC engine.
  * ========================================================================== */
 
 .d-section {
@@ -164,42 +169,67 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
 
 .d-body {
   flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 6px;
-  padding: 4px;
-}
-
-.d-panel {
-  background: var(--panel);
   display: flex;
   flex-direction: column;
+  gap: 6px;
   padding: 4px;
-  gap: 4px;
+  min-height: 0;
+}
+
+/* "DAC" branding label in the section-header band — chunky red LED-style
+ * print so it reads as the bezel branding on Genny's DAC panel. */
+.d-brand {
+  background: var(--led-base);
+  color: var(--led-on);
+  font-size: 16px;
+  letter-spacing: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--led-on);
+}
+
+/* Note grid — fills the available body height above the playback strip. The
+ * canvas size is set in JS; the wrapper just stretches and centers it. */
+.d-note-grid {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: var(--lcd-base);
+  min-height: 0;
+}
+
+.d-note-grid-canvas {
+  cursor: pointer;
+}
+
+/* Bottom playback strip — three cells side-by-side, separated by visual gaps
+ * so each control group reads as its own bezel section. */
+.d-playback-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  background: var(--panel);
+}
+
+.d-strip-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.d-panel-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.d-hz-cell .knob,
+.d-hz-cell canvas.knob {
+  cursor: ns-resize;
 }
 
-.d-panel-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* The HZ + LEV cells take their natural width; the WAV cell takes the rest
+ * so the filename has room to ellipsis on long names. */
+.d-wav-cell {
   flex: 1 1 auto;
-}
-
-.d-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.d-level-row {
-  margin-top: auto;
+  min-width: 0;
 }
 
 .d-button {
@@ -215,8 +245,9 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
   cursor: default;
 }
 
-.sample-body {
-  gap: 4px;
+.d-strip-button {
+  padding: 2px 6px;
+  font-size: 8px;
 }
 
 .sample-name {
@@ -227,10 +258,6 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
   white-space: nowrap;
 }
 
-.sample-meta {
-  color: var(--lcd-pixel);
-}
-
-.waveform-display {
-  background: var(--lcd-base);
+.d-strip-name {
+  min-width: 0;
 }

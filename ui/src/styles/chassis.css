@@ -327,7 +327,7 @@
   color: var(--led-on);
 }
 .channel-reset:hover {
-  background: #2a0808;        /* dim led-base, hover hint */
+  background: var(--led-base);
   color: var(--label);
 }
 
@@ -489,12 +489,14 @@
   align-items: center;
   justify-content: center;
   /* Hard-edge raised bevel: light top/left, dark bottom/right — matches the
-   * pixel-art bevel idiom used by knobs and the channels row. */
+   * pixel-art bevel idiom used by knobs and the channels row. The light edge
+   * is a brighter tint of --badge (no palette slot); the dark edge reuses
+   * --knob-ring, which already names that same dark-blue shadow. */
   border: 1px solid;
   border-top-color: #6a98e8;
   border-left-color: #6a98e8;
-  border-right-color: #1e3a6e;
-  border-bottom-color: #1e3a6e;
+  border-right-color: var(--knob-ring);
+  border-bottom-color: var(--knob-ring);
 }
 
 .status-dot {

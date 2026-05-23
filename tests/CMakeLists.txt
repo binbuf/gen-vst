@@ -23,6 +23,7 @@ add_executable(GenVstTests
     PsgDacTests.cpp
     PsgEnvelopeTests.cpp
     BankIOTests.cpp
+    AlgoMappingTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"

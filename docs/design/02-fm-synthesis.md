@@ -276,7 +276,7 @@ ALG selects the operator modulation topology. **M** = modulator (feeds another o
 | 0   | S1→S2→S3→S4→out | S4 only | Maximum modulation depth, single voice |
 | 1   | (S1+S2)→S3→S4→out | S4 only | S1 and S2 in parallel modulating S3 |
 | 2   | (S1+(S2→S3))→S4→out | S4 only | S2 modulates S3; result + S1 modulate S4 |
-| 3   | S1→(S2+S3)→S4→out | S4 only | S1 modulates S2 and S3 in parallel |
+| 3   | (S1→S2)+S3→S4→out | S4 only | S1 modulates S2; S2 and S3 both modulate S4 |
 | 4   | (S1→S2)+(S3→S4)→out | S2, S4 | Two independent FM pairs |
 | 5   | S1→(S2+S3+S4)→out | S2, S3, S4 | S1 modulates three carriers |
 | 6   | (S1→S2)+S3+S4→out | S2, S3, S4 | One FM pair + two pure sine carriers |

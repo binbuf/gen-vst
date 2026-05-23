@@ -118,6 +118,8 @@ real host. There is no long stretch of unverifiable work.
 | 28 | [Glide time per-instrument routing (DEL)](28-glide-time-routing-param.md) | DEL slider in routing strip; linear pitch-slide for FM + PSG tone in Mono/Legato mode | 15, 22 |
 | 29 | [VGM logging (Log VGM button)](29-vgm-logging.md) | Capture every YM2612 + SN76489 register write to a `.vgm` file | 07, 24 |
 | 30 | [Scala tuning import (Import Tuning button)](30-scala-tuning.md) | `.scl` parser → per-MIDI-note frequency lookup for FM + PSG | 06, 24 |
+| 31 | [Multi-sample DAC (note-mapped sample kit)](31-dac-multisample.md) | Per-cell WAV load for the 4×5 note grid; one sample per cell | 07, 26 |
+| 32 | [Cosmetic cleanup (Genny-polish leftovers)](32-cosmetic-cleanup.md) | Palette-var moves for specular/bevel hex; algo-diagram line tweak | 26 |
 
 ## Task file structure
 

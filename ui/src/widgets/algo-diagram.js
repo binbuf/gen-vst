@@ -35,7 +35,8 @@ const OP_LABELS = ["S1", "S2", "S3", "S4"];
 //
 // The layouts try to read left-to-right as series chains and stacked for
 // parallel sums. They are derived from the FM-Algorithms table in
-// docs/design/02-fm-synthesis.md.
+// docs/design/02-fm-synthesis.md, cross-checked against plutiedev's
+// YM2612 algorithm table.
 const LAYOUTS = [
   // alg 0: S1->S2->S3->S4 (series chain)
   [[0, 1], [1, 1], [2, 1], [3, 1]],
@@ -43,8 +44,8 @@ const LAYOUTS = [
   [[0, 0], [0, 2], [1, 1], [2, 1]],
   // alg 2: S1 + (S2->S3) -> S4
   [[1, 0], [0, 2], [1, 2], [2, 1]],
-  // alg 3: S1 -> (S2+S3) -> S4
-  [[0, 1], [1, 0], [1, 2], [2, 1]],
+  // alg 3: S1->S2->S4 + S3->S4 (S1 chains through S2 into S4; S3 also mods S4)
+  [[0, 0], [1, 0], [0, 2], [2, 1]],
   // alg 4: (S1->S2) + (S3->S4) -> out
   [[0, 0], [1, 0], [0, 2], [1, 2]],
   // alg 5: S1 -> (S2, S3, S4) -> out (three carriers)
@@ -66,8 +67,9 @@ const EDGES = [
   [[0, 2], [1, 2], [2, 3], [3, -1]],
   // alg 2: 1->4, 2->3, 3->4, 4->out
   [[0, 3], [1, 2], [2, 3], [3, -1]],
-  // alg 3: 1->2, 1->3, 2->4, 3->4, 4->out
-  [[0, 1], [0, 2], [1, 3], [2, 3], [3, -1]],
+  // alg 3: 1->2, 2->4, 3->4, 4->out — canonical YM2612 ALG 3 per plutiedev
+  //   (S1 modulates S2 only — no direct S1->S3 edge; S2 and S3 both modulate S4).
+  [[0, 1], [1, 3], [2, 3], [3, -1]],
   // alg 4: 1->2, 3->4, 2->out, 4->out
   [[0, 1], [2, 3], [1, -1], [3, -1]],
   // alg 5: 1->2, 1->3, 1->4, 2->out, 3->out, 4->out

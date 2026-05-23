@@ -192,7 +192,7 @@ body[data-modal-open="true"] #chassis {
 }
 
 .routing-row-conflict {
-  background: #2a0808;
+  background: var(--led-base);
   color: var(--led-on);
 }
 
