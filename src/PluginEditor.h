@@ -340,6 +340,9 @@ private:
     std::unique_ptr<juce::FileChooser> stateSaveChooser;
     std::unique_ptr<juce::FileChooser> stateLoadChooser;
 
+    // Task 30 — Scala tuning import chooser (*.scl). Same lifetime contract.
+    std::unique_ptr<juce::FileChooser> sclChooser;
+
     // Task 21 — VGM bank-import runner. Reads `filePath`, runs the heavy
     // parse on a juce::Thread::launch-spawned background thread, writes each
     // extracted patch to the user-imported root, refreshes the IMPORT-tab

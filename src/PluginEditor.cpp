@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "BankIO.h"
+#include "Tuning.h"
 #include "VgmExtract.h"
 
 #if ! GENVST_DEV_SERVER
@@ -1072,13 +1073,50 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             completion (juce::var (obj));
         });
 
-    // Import Tuning (Task 30) — stubbed for MVP per the task spec's
-    // "If implementation runs long" branch. Follow-up task is stamped at
-    // docs/tasks/30-scala-tuning.md.
+    // Import Tuning (Task 30) — open a *.scl file picker, parse, swap table,
+    // emit a toast with the scale description.
     options = options.withNativeFunction ("importTuningDialog",
         [this] (const juce::Array<juce::var>&, Completion completion)
         {
-            emitNotify ("info", "Scala tuning import coming soon — see Task 30.");
+            sclChooser = std::make_unique<juce::FileChooser> (
+                "Import Scala Tuning", juce::File{}, "*.scl");
+
+            const auto flags = juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles;
+
+            sclChooser->launchAsync (flags,
+                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                {
+                    const juce::File file = fc.getResult();
+                    if (file == juce::File{})
+                    { completion (makeStatusVar ({})); return; }   // cancelled
+
+                    juce::String parseError;
+                    auto table = parseScl (file.getFullPathName(), parseError);
+
+                    if (table == nullptr)
+                    {
+                        emitNotify ("error", "Tuning import failed: " + parseError);
+                        completion (makeStatusVar (parseError.toStdString()));
+                        return;
+                    }
+
+                    Tuning::instance().setTable (table, file.getFullPathName());
+                    emitNotify ("info", "Tuning loaded: " + table->description);
+
+                    auto* obj = new juce::DynamicObject();
+                    obj->setProperty ("ok",          true);
+                    obj->setProperty ("description", table->description);
+                    completion (juce::var (obj));
+                });
+        });
+
+    // Reset tuning to 12-TET (used by the Settings modal "Reset to 12-TET" item).
+    options = options.withNativeFunction ("resetTuningToDefault",
+        [this] (const juce::Array<juce::var>&, Completion completion)
+        {
+            Tuning::instance().resetToDefault();
+            emitNotify ("info", "Tuning reset to 12-TET.");
             completion (makeStatusVar ({}));
         });
 

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Tuning.h"
+
 namespace
 {
     // YM2612 native sample rate for the NTSC clock (7670454 / 144). The
@@ -18,7 +20,7 @@ namespace FmRegisterMap
 
 FreqRegs midiNoteToFreq (double midiNote)
 {
-    const double noteHz = 440.0 * std::pow (2.0, (midiNote - 69.0) / 12.0);
+    const double noteHz = Tuning::instance().lookupHz (midiNote);
 
     // fnum(blk) = noteHz * 2^(21-blk) / nativeRate. Start at block 4 and raise
     // the block — halving the F-number each step — until it fits 0x000-0x7FF.

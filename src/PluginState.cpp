@@ -8,6 +8,7 @@
 #include "PartManager.h"
 #include "PatchBrowser.h"
 #include "PluginProcessor.h"
+#include "Tuning.h"
 
 namespace fs = std::filesystem;
 
@@ -325,6 +326,15 @@ std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
         el->setAttribute ("index", slot.index);
     }
 
+    // Task 30 — Persist the active Scala tuning path so a project reload
+    // re-parses the same tuning. Absent = 12-TET default.
+    const auto sclPath = Tuning::instance().activeSclPath();
+    if (sclPath.isNotEmpty())
+    {
+        auto* tuningEl = root->createNewChildElement ("tuning");
+        tuningEl->setAttribute ("sclPath", sclPath);
+    }
+
     return root;
 }
 
@@ -420,6 +430,35 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
     {
         proc.setUiSelectedPart (uiEl->getIntAttribute ("selectedPart", 0));
         proc.setUiPresetTab    (uiEl->getIntAttribute ("presetTab",    0));
+    }
+
+    // Task 30 — Restore Scala tuning. Missing <tuning> element (legacy or
+    // 12-TET projects) resets to default so a subsequent load of a non-12-TET
+    // project does not bleed through from the previous project.
+    if (auto* tuningEl = wrapper->getChildByName ("tuning"))
+    {
+        const auto sclPath = tuningEl->getStringAttribute ("sclPath");
+        if (sclPath.isNotEmpty())
+        {
+            juce::String parseError;
+            auto table = parseScl (sclPath, parseError);
+            if (table != nullptr)
+                Tuning::instance().setTable (table, sclPath);
+            else
+            {
+                proc.addPendingNotification ("warning",
+                    "Could not restore tuning from " + sclPath + ": " + parseError);
+                Tuning::instance().resetToDefault();
+            }
+        }
+        else
+        {
+            Tuning::instance().resetToDefault();
+        }
+    }
+    else
+    {
+        Tuning::instance().resetToDefault();
     }
 
     auto customRoots = collectCustomRoots (*wrapper);

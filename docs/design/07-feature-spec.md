@@ -83,6 +83,13 @@ The MIDI-channel → destination binding table is user-configurable and persiste
 - [ ] WAV sample loader for DAC playback
 - [ ] Phase-accurate DAC write timing
 
+### Microtuning
+- [x] Scala `.scl` import via **Import Tuning** button (Task 30) — 12-degree scales,
+  MIDI 69 = 440 Hz root, FM + PSG share one table, path persisted in DAW project.
+- [ ] `.kbm` keyboard mapping (non-standard octave size / reference note) — post-MVP.
+- [ ] Per-channel independent tuning tables — post-MVP.
+- [ ] MTS (MIDI Tuning Standard) Sysex — post-MVP.
+
 ### State
 - [ ] Full DAW state save/restore (`getStateInformation`/`setStateInformation`)
 - [ ] Per-part patch + MIDI-channel assignments persisted in DAW project

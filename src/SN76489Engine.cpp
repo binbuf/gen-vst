@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Tuning.h"
 #include "VgmLogger.h"
 
 namespace
@@ -17,7 +18,7 @@ namespace
     // garbage on hardware and is treated as silence by clamping up.
     int midiNoteToDivider (double midiNote) noexcept
     {
-        const double freq = 440.0 * std::pow (2.0, (midiNote - 69.0) / 12.0);
+        const double freq = Tuning::instance().lookupHz (midiNote);
         if (freq <= 0.0) return kMaxDivider;
         const double n = kNtscClock / (32.0 * freq);
         const int    rounded = static_cast<int> (std::lround (n));

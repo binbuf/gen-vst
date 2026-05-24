@@ -25,6 +25,7 @@ add_executable(GenVstTests
     PsgEnvelopeTests.cpp
     BankIOTests.cpp
     AlgoMappingTests.cpp
+    TuningTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
@@ -38,7 +39,8 @@ add_executable(GenVstTests
     "${CMAKE_SOURCE_DIR}/src/VoiceAllocator.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Wrapper.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Engine.cpp"
-    "${CMAKE_SOURCE_DIR}/src/DACPlayer.cpp")
+    "${CMAKE_SOURCE_DIR}/src/DACPlayer.cpp"
+    "${CMAKE_SOURCE_DIR}/src/Tuning.cpp")
 
 # The ymfm OPN2 core — VoiceAllocatorTests drives real ymfm::ym2612 instances
 # through Voice. ymfm_opn.cpp also defines OPNA/OPNB, whose constructors pull in
@@ -72,7 +74,8 @@ target_include_directories(GenVstTests PRIVATE
 # tests/fixtures/patches/ to exercise the full file-read path.
 target_compile_definitions(GenVstTests PRIVATE
     GENVST_FACTORY_PATCHES_DIR="${CMAKE_SOURCE_DIR}/extern/patches"
-    GENVST_FIXTURES_PATCHES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/patches")
+    GENVST_FIXTURES_PATCHES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/patches"
+    GENVST_FIXTURES_TUNINGS_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/tunings")
 
 target_link_libraries(GenVstTests PRIVATE
     GTest::gtest_main
