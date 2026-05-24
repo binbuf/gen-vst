@@ -1,39 +1,47 @@
-# Task 08 — Header, status bar, Settings & About modals
+# Task 08 — Header, Settings & About modals
 
 > **Milestone:** Header + Settings — mode selector, patch-name LCD,
-> output-character toggles, VOL knob, NOTE ON LED, settings gear in the
-> header; status bar with output level meters; Settings + About modals
-> open from the gear icon and reach the Hardware Strict / Unison Detune
-> / Aftertouch / UI Scale / Velocity→TL / Tooltips / Reset All controls.
+> output-character toggles, VOL knob, NOTE ON LED + visible text label,
+> stacked L/R output meters, settings gear in the header; Settings +
+> About modals open from the gear icon and reach the Hardware Strict /
+> Unison Detune / Aftertouch / UI Scale / Velocity→TL / Tooltips /
+> Reset All controls.
 > **Depends on:** Tasks 05, 06, 07.
 > **Design references:** `docs/design/08-ui-views.md` views 1 (header),
-> 5 (status bar), 7 (Settings), 8 (About) — primary;
-> `docs/design/07-feature-spec.md` (HARDWARE STRICT, AFTERTOUCH,
-> VELOCITY→TL behaviour), `docs/design/09-visual-spec.md` (palette /
-> typography for the wordmark and the LCD), ADR-0024 (Filter + Ladder
-> toggles), ADR-0017 (UI scale).
+> 6 (Settings), 7 (About) — primary; `docs/design/07-feature-spec.md`
+> (HARDWARE STRICT, AFTERTOUCH, VELOCITY→TL behaviour),
+> `docs/design/09-visual-spec.md` (palette / typography for the
+> wordmark, the LCD, the `note-on` cluster, the `level-meter-mini`
+> variant), ADR-0024 (Filter + Ladder toggles), ADR-0017 (UI scale),
+> ADR-0023 (region heights — header is now ~88 px, no bottom status
+> bar).
 
 ## Objective
 
-Build the persistent **header** and **status bar** surfaces and the
-two global modals (**Settings**, **About**). Wire every control to its
-apvts param. Implement the **HARDWARE STRICT** enforcement semantics
-that touch FM voice allocation and the global filter / ladder toggles.
+Build the persistent **header** (the only persistent region — the v2
+first-pass bottom status bar was removed during the post-mockup review;
+its L/R meters moved into the header, its version string moved into the
+About modal) and the two global modals (**Settings**, **About**). Wire
+every control to its apvts param. Implement the **HARDWARE STRICT**
+enforcement semantics that touch FM voice allocation and the global
+filter / ladder toggles.
 
 After this task, every part of the chassis other than the preset
 browser modal (Task 09) is alive: the user can flip between modes from
 the header, see the active patch name in the LCD, toggle the two
-output-character switches, ride the master volume, see live output
-level meters in the status bar, open Settings to flip Hardware Strict
-or set the aftertouch routing, and read About to verify the GPL
-attributions.
+output-character switches, ride the master volume, watch live L/R
+output levels in the header meter cell, open Settings to flip Hardware
+Strict or set the aftertouch routing, and read About to verify the GPL
+attributions and the version string.
 
 ## Context & key constraints
 
-- **Header layout** (`08-ui-views.md` view 1):
-  - `◉` NOTE ON LED at the far left (per RYM2612 reference).
+- **Header layout** (`08-ui-views.md` view 1, ~88 px tall):
+  - **`note-on` cluster** at the far left — a 16 px `.note-on-led`
+    paired with a stacked, visible `NOTE ON` text caption. Mirrors the
+    RYM2612 reference. Bound to the `noteOn` telemetry boolean.
   - `GEN VST` wordmark (IBM Plex Mono Bold 22 px, `--brand-mark`
-    color). Clicking opens the About modal (view 8).
+    color). Clicking opens the About modal (view 7).
   - 3-segment mode selector pill (`FM` / `SQ` / `D`) bound to
     `mode_select`. Switching segments **silently loads a sensible
     default preset** for the new mode (ADR-0021 — the default-preset
@@ -55,13 +63,17 @@ attributions.
   - Ladder Effect toggle — single on/off LED rocker bound to
     `ladder_effect`. Greyed out in SQ mode (`mode_select == SQ`).
     Disabled & forced-on when HARDWARE STRICT is on.
+  - **Stacked L/R output meters** — `level-meter` widgets in the
+    `level-meter-mini` variant (two thin horizontal rows, L on top, R
+    below; ~24 px tall together). Subscribed to `peakL` / `peakR`
+    telemetry. Replaces the v2 first-pass bottom status bar.
   - VOL knob bound to `master_volume` (small `knob`).
-  - ⚙ gear icon opens Settings (view 7).
-- **Status bar layout** (`08-ui-views.md` view 5):
-  - Output L / R level meters (subscribed to `peakL` / `peakR`).
-  - Version string (read-only, sourced from the build's
-    `PROJECT_VERSION` / a JS constant exported by `main.js`).
-- **Settings modal** (view 7) — opens from the gear icon, dismissed by
+  - ⚙ gear icon opens Settings (view 6).
+- **No bottom status bar.** The v2 first-pass status bar (view 5 in an
+  earlier `08-ui-views.md` draft) was deleted during the post-mockup
+  review. The version string lives in the About modal only; the L/R
+  meters live in the header cluster above.
+- **Settings modal** (view 6) — opens from the gear icon, dismissed by
   Close / `[X]` / Esc:
   - `HARDWARE STRICT (FM)` — bound to `hardware_strict`. **On** =
     clamp `poly_voices` to 6 (the FM panel's POLY stepper UI clamps
@@ -89,15 +101,15 @@ attributions.
     **LFO depth (PMS)**. Bound to `aftertouch_target`.
   - `TOOLTIPS` — bound to `tooltips_enabled`. The widget library reads
     this to show/hide hover tooltips (`installTooltips()` from Task 04).
-  - `ABOUT / CREDITS…` — opens the About modal (view 8).
+  - `ABOUT / CREDITS…` — opens the About modal (view 7).
   - `RESET ALL TO DEFAULTS` — destructive red button. On click, opens
     a confirmation modal ("This will reset every parameter and clear
     the active patch path. Continue?"). On confirm, every apvts
     parameter snaps to its `juce::AudioParameter`'s configured
     default; the active patch path clears.
-- **About modal** (`08-ui-views.md` view 8):
+- **About modal** (`08-ui-views.md` view 7):
   - `GEN VST v0.2.0` heading + tagline.
-  - The license attributions table from view 8 verbatim — kept in
+  - The license attributions table from view 7 verbatim — kept in
     sync with `04-patch-system.md` *Legal Notes*.
   - Source repository link (link target taken from a `--define`
     passed by CMake, or a fixed placeholder until the repo URL is
@@ -117,17 +129,18 @@ attributions.
 ## Scope
 
 - New `ui/src/header.js` building the header HTML; mounts and binds
-  every header control.
-- New `ui/src/status-bar.js` building the status bar HTML; mounts the
-  two level meters.
+  every header control (including the stacked `level-meter-mini`
+  output meters and the `note-on` cluster).
 - New `ui/src/modals/settings.js` building the Settings modal.
-- New `ui/src/modals/about.js` building the About modal.
+- New `ui/src/modals/about.js` building the About modal (carries the
+  version string — the only persistent surface for it now that the
+  bottom status bar is gone).
 - New `ui/src/modals/modal-host.js` (or extension to the toast-host
   pattern) providing the dim-overlay layer + Esc handler shared by all
   modals.
-- `main.js` mounts the header + status bar (alongside the
-  mode-dispatched panel from Tasks 05–07) and opens Settings on gear
-  click.
+- `main.js` mounts the header (alongside the mode-dispatched panel
+  from Tasks 05–07) and opens Settings on gear click. No status-bar
+  module — header carries the meters.
 - C++:
   - `PluginProcessor::pushPolyphonyParameters` (or wherever the voice
     allocator's pool size is updated each block) clamps `poly_voices`
@@ -164,16 +177,15 @@ attributions.
 
 ## Implementation steps
 
-1. **Header layout** in `ui/src/header.js`. Mount NOTE ON LED
-   (subscribed to `noteOn`), wordmark (click → About), 3-segment mode
-   pill (bind to `mode_select`; `bindCombo`), patch-name LCD with
-   placeholder text "—" and the ◀ / 📂 / ▶ buttons. Mount the Output
-   Filter physical switch and the Ladder Effect rocker; both subscribe
-   to `hardware_strict` and disable when it's on.
-2. **Status bar** in `ui/src/status-bar.js`. Two level meters bound to
-   `peakL` / `peakR` from `meterData`. A version string from a
-   `version` JS constant (or imported from `package.json`).
-3. **Modal host** in `ui/src/modals/modal-host.js`. Exposes
+1. **Header layout** in `ui/src/header.js`. Mount the `note-on` cluster
+   (16 px LED + `NOTE ON` text caption, subscribed to `noteOn`),
+   wordmark (click → About), 3-segment mode pill (bind to `mode_select`;
+   `bindCombo`), patch-name LCD with placeholder text "—" and the
+   ◀ / 📂 / ▶ buttons. Mount the Output Filter physical switch and the
+   Ladder Effect rocker; both subscribe to `hardware_strict` and
+   disable when it's on. Mount the stacked L/R `level-meter-mini` cell
+   bound to `peakL` / `peakR` from the `meterData` event.
+2. **Modal host** in `ui/src/modals/modal-host.js`. Exposes
    `openModal(node)` and `closeModal()`. Manages a dim overlay, Esc
    handler, click-outside-the-panel suppression of main-UI clicks.
 4. **Settings modal** in `ui/src/modals/settings.js`. Mount each
@@ -184,12 +196,12 @@ attributions.
    - RESET ALL: open a confirmation modal; on confirm, call the
      `resetAllToDefaults` native function.
 5. **About modal** in `ui/src/modals/about.js`. Static content built
-   from the view 8 template; the attribution table is hard-coded
-   matching the view-8 list.
-6. **`main.js`** mounts `header`, `status-bar`, and (on
-   `mode_select` change) the appropriate panel into `#mode-panel`.
-   The gear icon's click handler opens Settings; the wordmark opens
-   About.
+   from the view 7 template; the attribution table is hard-coded
+   matching the view-7 list.
+5. **`main.js`** mounts `header` and (on `mode_select` change) the
+   appropriate panel into `#mode-panel`. The gear icon's click handler
+   opens Settings; the wordmark opens About. No status-bar mount —
+   the L/R meters live inside the header now.
 7. **C++** — `resetAllToDefaults` native function. `pushPolyphonyParameters`
    honours `hardware_strict`. Voice / VoiceAllocator's FLOAT_MUL /
    AUTO_RETRIG allocation honours the "first-voice only" rule.
@@ -203,10 +215,11 @@ attributions.
 
 ## Deliverables
 
-- New `ui/src/header.js`, `ui/src/status-bar.js`.
+- New `ui/src/header.js` (carries the persistent header *and* the L/R
+  output-meter cell; there is no separate status-bar module).
 - New `ui/src/modals/{modal-host,settings,about}.js`.
-- Updated `ui/src/main.js` (mounts header + status-bar; gear / wordmark
-  click handlers).
+- Updated `ui/src/main.js` (mounts header; gear / wordmark click
+  handlers).
 - Updated `src/PluginProcessor.{h,cpp}` (`resetAllToDefaults` native
   fn, HARDWARE STRICT clamp + force, FLOAT_MUL/AUTO_RETRIG first-voice
   fallback).
@@ -225,10 +238,11 @@ attributions.
    - Ladder Effect rocker audibly switches the ladder on / off in
      FM and D modes; greyed out / inert in SQ.
    - VOL knob scales the output amplitude.
-3. **Status bar** — the L / R meters track the audible output across
-   modes.
-4. **NOTE ON LED** — lights when any voice is sounding (FM/SQ) or
-   when input signal exceeds the threshold (D).
+3. **Header output meters** — the stacked L / R `level-meter-mini`
+   cell tracks the audible output across modes.
+4. **NOTE ON cluster** — the 16 px LED lights when any voice is
+   sounding (FM/SQ) or when input signal exceeds the threshold (D);
+   the `NOTE ON` text caption beneath it is visible at all times.
 5. **Settings** — gear icon opens Settings.
    - HARDWARE STRICT on → FM panel POLY stepper clamps to 6 (the
      stepper's max becomes 6; existing >6 values clamp back); Filter
@@ -248,7 +262,7 @@ attributions.
    - RESET ALL → confirmation modal → confirm → every apvts param
      snaps to its default; the active patch path clears.
 6. **About** — wordmark click opens; attribution table is exactly the
-   view-8 list.
+   view-7 list.
 7. **Modal behaviour** — only one modal at a time (opening About from
    Settings replaces Settings); Esc dismisses; clicks outside the
    modal panel are absorbed (main UI does not receive them); the
@@ -258,11 +272,15 @@ attributions.
 
 ## Done when
 
-- [ ] Header and status bar render at the top / bottom of the chassis
-      across every mode.
-- [ ] Every control on view 1 + view 5 + view 7 + view 8 is mounted
-      and bound; behaviour matches the *Behaviour* / *Controls* notes
-      in those views.
+- [ ] Header renders at the top of the chassis across every mode and
+      carries the stacked L/R output meter cell + `note-on` cluster.
+- [ ] No bottom status bar appears anywhere — the v2 first-pass
+      status-bar surface is gone; the chassis bottom edge is the mode
+      panel's bottom edge.
+- [ ] Every control on view 1 + view 6 + view 7 is mounted and bound;
+      behaviour matches the *Behaviour* / *Controls* notes in those
+      views.
+- [ ] The version string appears only in the About modal (view 7).
 - [ ] HARDWARE STRICT clamps poly_voices to 6, falls back FLOAT_MUL /
       AUTO_RETRIG to single voice, forces filter + ladder on.
 - [ ] UI scale flips between 1× / 2× / 3× cleanly; no clipped

@@ -84,8 +84,8 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] **FREQ CTRL MODE** — three-state selector (`INT_MUL` / `FLOAT_MUL` / `AUTO_RETRIG`); RYM2612 manual page 11. `FLOAT_MUL` and `AUTO_RETRIG` use Channel 3 Special / CSM internally — see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *FREQ Control Mode*.
 - [ ] **FIXED per-operator** toggle — when active in `FLOAT_MUL` / `AUTO_RETRIG`, the operator runs at an absolute Hz value (`freq_fixed_hz[op]`) instead of `note × mul_float[op]`. Greyed out in `INT_MUL`.
 - [ ] **RETRIG RATE** (TimerA value, 0–1023) — visible/editable only when `freq_ctrl_mode == AUTO_RETRIG`; writes YM2612 registers `0x24` / `0x25`.
-- [ ] **MW → PMS** global depth knob (`mw_to_pms`) — scales modwheel's effect on PMS vibrato depth; default 1.0. RYM2612 manual page 10.
-- [ ] **MW → TL per-operator** depth knob (`mw[op]`, 4 params) — per-op modwheel → operator-amplitude depth; default 0. RYM2612 manual page 10.
+- [ ] **MW → PMS** global depth knob (`mw_to_pms`) — scales modwheel's effect on PMS vibrato depth; default 1.0. RYM2612 manual page 10. (Modwheel is the **only** instrument-level MW route in v2; the earlier per-operator `mw[op]` TL-modulation column was removed during the post-mockup review to match the RYM2612 reference, which keeps MW as a global meter only.)
+- [ ] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel.
 - [ ] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*.
 - [ ] **HARDWARE STRICT** authenticity toggle — Settings-level opt-in
   modelled on the RYM2612 manual's *For the Purists* page. When on:

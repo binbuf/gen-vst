@@ -38,10 +38,19 @@ artwork requires it.
 
 - `EditorMinWidth = EditorMaxWidth = 1200`; `EditorMinHeight = EditorMaxHeight = 560`.
 - The Vite-built web bundle assumes a 1200×560 viewport.
+- The 560 px vertical budget splits into **two** persistent regions
+  (not three): header ≈ 88 px and mode panel ≈ 470 px (with the 8 px
+  outer chassis margins absorbing the rest). The v2 first-pass
+  reserved a third 16 px status bar at the bottom, but the post-mockup
+  review removed it — its L/R output meters moved into the header
+  cluster, the version string moved into the About modal, and the
+  freed pixels grow the mode panel. See `08-ui-views.md` view 1 for the
+  header layout and `What v2 removed from v1's catalog` for the
+  rationale.
 - The v1 layout in archived `v1-08-ui-views.md` and `v1-genny-ui.md` does
   not port one-to-one — the new view catalog (`08-ui-views.md`, v2) lays out
   each mode against the 1200×560 canvas from scratch.
-- The WebView fallback panel (the v1 view 9, native non-WebView surface
+- The WebView fallback panel (the v2 view 9, native non-WebView surface
   shown when WebView2 fails to initialise) resizes to 1200×560 as well.
 - A future "resizable window" feature would lift this ADR; not in v2 scope.
 

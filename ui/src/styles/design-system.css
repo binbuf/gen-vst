@@ -546,6 +546,19 @@ canvas {
   height: 14px;
 }
 
+/* Header-bar mini meter — thin, stacked horizontal rows used in the
+ * persistent header (replaces the v2 status bar). Segments are short
+ * and dense so two rows (L on top, R below) fit in ~24px height. */
+.level-meter.level-meter-mini {
+  padding: 2px;
+  gap: 1px;
+}
+.level-meter.level-meter-mini .seg {
+  width: 3px;
+  height: 5px;
+  border-radius: 0;
+}
+
 /* ============================================================== */
 /* CSS recipes — operator badge                                   */
 /* ============================================================== */
@@ -576,19 +589,82 @@ canvas {
 }
 
 /* ============================================================== */
-/* CSS recipes — NOTE ON LED (small round indicator)              */
+/* CSS recipes — algorithm grid (8 visible buttons, 2×4)          */
 /* ============================================================== */
+/* The FM panel exposes all 8 YM2612 algorithm topologies as a row of
+ * compact numbered buttons. The selected one carries .is-active. A
+ * separate larger .algo-diagram tile (in mockup-fm.css) shows the
+ * selected algorithm's topology at ~2× the size of the picker buttons. */
+
+.algo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 3px;
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+.algo-grid .algo-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  font: 500 10px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0;
+  color: var(--btn-text);
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    1px 1px 2px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.10);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+}
+.algo-grid .algo-btn:active,
+.algo-grid .algo-btn.is-active {
+  transform: scale(0.94);
+  background: var(--btn-active-bg);
+  box-shadow:
+    inset 2px 2px 3px rgba(0, 0, 0, 0.45),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.10),
+    0 0 6px rgba(33, 150, 243, 0.45);
+}
+
+/* ============================================================== */
+/* CSS recipes — NOTE ON LED (with adjacent text label)            */
+/* ============================================================== */
+/* The LED itself is a small round indicator; the wrapper .note-on
+ * pairs it with a visible "NOTE ON" text label so the indicator
+ * reads as a labelled control, matching the RYM2612 reference. */
+
+.note-on {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.note-on .note-on-text {
+  font: 500 7px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.85;
+}
 
 .note-on-led {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, #ff8a8a, #b71c1c 70%, #5a0c0c 100%);
   border: 1px solid #050608;
   box-shadow:
     inset 1px 1px 1px rgba(255, 255, 255, 0.35),
     inset -1px -1px 1px rgba(0, 0, 0, 0.5),
-    0 0 6px rgba(255, 82, 82, 0.55);
+    0 0 8px rgba(255, 82, 82, 0.65);
 }
 .note-on-led.is-off {
   background: radial-gradient(circle at 30% 30%, #4a2828, #1a0808 80%);

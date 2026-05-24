@@ -44,8 +44,9 @@ effect through a properly laid-out PCM2612-style panel.
   should reflect the **input** bus's peaks, not the output. Add an
   `inputPeakL` / `inputPeakR` field to `Telemetry` and update
   `processBlock`'s D-mode path to write them; the event push surfaces
-  both. The two output-side meter peaks live in the header status bar
-  (Task 08).
+  both. The two output-side meter peaks live in the **header**'s
+  stacked L/R meter cell (Task 08; the v2 first-pass bottom status bar
+  is gone).
 - **DAC PRESCALER knob** is the `decimator-knob` variant (96 px,
   matte-black, no top sheen) from Task 04.
 - **DRY/WET knob** is the regular `knob` widget at default size.

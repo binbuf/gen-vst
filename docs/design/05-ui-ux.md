@@ -88,26 +88,31 @@ These rules supersede the v1 "1× pixel grid / no `border-radius` / hard
 ### Layout
 
 Fixed window, **1200 × 560 px** ([ADR-0023](adr/0023-fixed-window-1200x560.md)).
-Three top-level regions:
+Two top-level regions:
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Header (~64 px)                                                           │
-│  [◉][logo] [mode FM SQ D] [patch-LCD ◀ ▶ 📂] [Filter] [Ladder] [VOL] [⚙] │
-├───────────────────────────────────────────────────────────────────────────┤
-│  Mode panel — main editing area (~480 px)                                  │
-│  Contents depend on active mode (FM / SQ / D); see 08-ui-views.md         │
-├───────────────────────────────────────────────────────────────────────────┤
-│  Status bar (~16 px) — output level meters, version                        │
-└───────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│  Header (~88 px)                                                                   │
+│  [● NOTE ON][logo] [mode FM SQ D] [patch-LCD ◀ ▶ 📂] [Filter] [Ladder]            │
+│                                                          [L ▮▮▮▮ / R ▮▮▮▮] [VOL] [⚙]│
+├───────────────────────────────────────────────────────────────────────────────────┤
+│  Mode panel — main editing area (~470 px)                                          │
+│  Contents depend on active mode (FM / SQ / D); see 08-ui-views.md                  │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-`◉` is the NOTE ON LED (moved to the header in v2 to mirror the RYM2612
-reference); `VOL` is the master-output knob bound to `master_volume`.
+`●` is the NOTE ON LED + visible text label (moved to the header in v2 to
+mirror the RYM2612 reference, sized to be readable); `L ▮▮▮▮ / R ▮▮▮▮` is
+the stacked output level-meter cell (replaces the v1-style bottom status
+bar — removed during the post-mockup review); `VOL` is the master-output
+knob bound to `master_volume`.
 
 The mode panel is the only region that swaps when the user changes mode;
-the header (and the mode selector inside it) and the status bar persist.
-Full per-mode layouts are in [`08-ui-views.md`](08-ui-views.md).
+the header persists. The v2-first-pass status bar that briefly carried
+the L/R meters and a `v0.2.0` version string is gone — version moved to
+the About modal (`08-ui-views.md` view 7), L/R meters moved into the
+header cluster above. Full per-mode layouts are in
+[`08-ui-views.md`](08-ui-views.md).
 
 ---
 
@@ -164,7 +169,7 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 | `algorithm-mini` | The 8 YM2612 algorithm topologies, drawn small; selected one highlighted | Canvas |
 | `envelope-curve` | Per-operator (FM) or per-channel (SQ) ADSR shape; computed live from envelope params | Canvas |
 | `note-on-led` | Single header LED that lights on key-on (FM/SQ) or input-audio-present (D) | CSS animation on apvts-bound state |
-| `level-meter` | Stereo LED-style level bars (status bar + D mode) | Canvas |
+| `level-meter` | Stereo LED-style level bars (stacked `level-meter-mini` cell in the header for output; full-fat variant on the D-mode panel for input) | Canvas |
 | `decimator-knob` | Large central knob in D mode (PCM2612-style); identical mechanics to `knob` with larger body | CSS body + Canvas indicator arc |
 | `patch-name-lcd` | Larger LCD readout in the header showing the active patch | Canvas; uses LCD-style font |
 | `op-badge` | Blue-filled square showing the operator number `1..4`; click to make that operator the active target of the `envelope-curve` widget; carries an outer glow when active | CSS only |

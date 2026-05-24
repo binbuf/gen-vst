@@ -3,7 +3,8 @@
 > **Milestone:** FM mode plays — MIDI notes drive the full RYM2612-style
 > FM panel UI; INT_MUL / FLOAT_MUL / AUTO_RETRIG all work; LEGATO and
 > RETRIG note-mode work; UI level vs HW attenuation is inverted at the
-> apvts→register layer; per-op MW / VEL TL modulation is audible.
+> apvts→register layer; per-op VEL → TL modulation is audible; the
+> FM DAC prescaler colours the voice rendering.
 > **Depends on:** Task 04.
 > **Design references:** `docs/design/08-ui-views.md` view 2 (primary —
 > the complete FM panel layout + control table),
@@ -22,16 +23,29 @@ top of the existing FM voice pool:
 - **FREQ CTRL MODE** — implement the three register-write paths
   (INT_MUL on the existing channel-0 model; FLOAT_MUL on Channel 3
   Special; AUTO_RETRIG on Channel 3 CSM + TimerA).
-- **Per-op MW / VEL → TL** modulation depth (`mw[op]`, `vel[op]`) and
-  the global **MW → PMS** depth (`mw_to_pms`) — all routed through the
-  CC / pitch-bend / aftertouch dispatch.
+- **Per-op VEL → TL** modulation depth (`vel[op]`) and the global
+  **MW → PMS** depth (`mw_to_pms`) — routed through the CC /
+  pitch-bend / aftertouch dispatch. (The earlier per-op `mw[op]` route
+  was removed during the post-mockup review — modwheel is a global-only
+  input now; per-op modulation goes via velocity.)
+- **FM DAC PRESCALER** knob (`fm_dac_prescaler`, 0.0–1.0) wired
+  through the FM voice-render path (see `02-fm-synthesis.md`
+  § *DAC Prescaler (FM mode)*). Shares the `DspDecimator` code path
+  with the D-mode `prescaler` param.
 - **Note-mode LEGATO / RETRIG** — LEGATO skips the key-off/key-on pair
   and only updates the frequency registers on a re-keyed voice.
 - **UI level vs HW attenuation** — `tl[op]` / `sl[op]` apvts values are
   *level* (max = loudest); the apvts→register layer inverts to
-  attenuation before any `chip.write` call.
-- **POLY stepper** (1–16), **RANGE stepper** (±1–±12), **PB / MW level
-  meters** (telemetry of incoming CC values).
+  attenuation before any `chip.write` call. **`TL` is now the leftmost
+  knob in each operator row** (a regular `.knob` with a slightly larger
+  / darker body, matching the RYM2612 reference); not a right-margin
+  vertical slider.
+- **POLY stepper** (1–16), **RANGE stepper** (±1–±12), **global PB /
+  MW horizontal level meters** in the LFO/global block (telemetry of
+  incoming CC values; one meter per row, full-width, not per-op).
+- **8-button algorithm picker (`algo-grid`)** + larger algorithm-mini
+  topology diagram — all 8 algorithms visible all the time; the
+  selected one is `.is-active`; the topology tile redraws to match.
 
 After this task: loading a TFI factory patch and playing notes through
 the host plays through the v2 FM panel; every knob, switch, badge, and
@@ -44,12 +58,17 @@ LCD on the panel is bound and audible.
   patch.
 - **Layout** (`08-ui-views.md` view 2): the top of the panel carries the
   LFO / RATE / PMS / AMS + MW→PMS knobs, the POLY/RANGE steppers, the
-  LEGATO/RETRIG toggle, the PB/MW meters, the envelope-curve widget,
-  the FREQ CTRL MODE pill, the RETRIG RATE LCD (visible only when
-  AUTO_RETRIG is selected), and the OP1 FB knob. The body is the
-  4-row operator grid (the table in view 2 lists every column). The
-  right margin holds the TL vertical sliders, VEL knobs, and MW knobs
-  per operator; the bottom-right tile is the algorithm-mini picker.
+  LEGATO/RETRIG toggle, the **global** PB / MW horizontal level meters,
+  the envelope-curve widget (with `AR`/`DR`/`SL`/`SR`/`RR` segment
+  labels + `KEY ON` / `KEY OFF` markers), the FREQ CTRL MODE pill, the
+  RETRIG RATE LCD (visible only when AUTO_RETRIG is selected), the OP1
+  FB knob, and the **DAC PRESCALER** knob (FM YM2612 prescaler).
+  The body is the 4-row operator grid; **`TL` is the leftmost column**
+  (knob, anchor), then `[N]` AM AR DR SL SR RR RS SSG-EG MUL FREQ FIX
+  DT. The right margin carries one column only — per-op `VEL` knobs.
+  The top-right area carries the **8-button `algo-grid` picker**
+  (visible all the time) plus a separate larger `algorithm-mini`
+  topology diagram tile next to it.
 - **FREQ CTRL MODE register paths** (`02-fm-synthesis.md`
   *FREQ Control Mode*):
 
@@ -81,14 +100,15 @@ LCD on the panel is bound and audible.
   skipped — the voice writes operator/channel/frequency registers
   fresh but does **not** issue the key-off/key-on pair, so the
   envelope keeps running.
-- **Per-op MW / VEL → TL** (`02-fm-synthesis.md` *RYM2612 manual page
-  10*): on key-on, the effective TL written to the register is
-  `tl_register = clamp(127 - tl_level + (127 × mw_depth × mwCC/127) +
-  (127 × vel_depth × (127-velocity)/127), 0, 127)`. The exact formula
-  is the design's per-operator depth knob driving how much the
-  modwheel and velocity attenuate the operator's level. Recompute on
-  CC 1 / aftertouch changes for sustained voices (the voice rewrites
-  the TL register for each affected operator).
+- **Per-op VEL → TL** (`02-fm-synthesis.md` *RYM2612 manual page 10*):
+  on key-on, the effective TL written to the register is
+  `tl_register = clamp(127 - tl_level + (127 × vel_depth ×
+  (127-velocity)/127), 0, 127)`. The `vel_depth` here is the per-op
+  `vel[op]` apvts param. There is **no per-op MW route** — the earlier
+  draft's `mw[op]` term was removed during the post-mockup review to
+  match the RYM2612 reference. Recompute on velocity changes during
+  voice retrigger; no need to rewrite on CC 1 changes (modwheel
+  doesn't affect per-op TL anymore).
 - **Global MW → PMS** — modwheel CC scaled by `mw_to_pms` writes to the
   `PMS` field in `0xB4` per channel. The base PMS apvts param is the
   patch's value; MW adds on top, clamped to 7.
@@ -97,15 +117,27 @@ LCD on the panel is bound and audible.
   (Task 08), this clamps to 6 — but that lives in Task 08; this task
   just binds the param.
 - **RANGE stepper** binds `pitch_bend_range` (1..12).
-- **PB / MW level meters** are read-only — the editor's telemetry timer
-  pushes raw CC values; the meters render against `0..1`.
+- **Global PB / MW level meters** are read-only — the editor's
+  telemetry timer pushes raw CC values; the meters render against
+  `0..1`. MW is *only* a global meter in v2; there is no per-operator
+  MW knob anywhere on the FM panel.
+- **DAC PRESCALER** binds `fm_dac_prescaler` (0.0..1.0). Wired into the
+  FM render pipeline between the FM voice sum and the ladder /
+  output-filter stages (see `02-fm-synthesis.md` § *DAC Prescaler (FM
+  mode)*). Shares the `DspDecimator` implementation with D mode's
+  `prescaler`, but each mode stores its own param value.
+- **8-button algorithm picker** binds `algorithm` (0..7) through
+  `algo-grid` from Task 04. The picker is `algo-grid`; the larger
+  algorithm-mini topology tile next to it is read-only and updates
+  via `setAlgorithm(idx)` whenever the param changes.
 
 ## Scope
 
 - C++:
   - `Voice` and / or `VoiceAllocator` gain a per-voice
     `freq_ctrl_mode` snapshot + per-voice `mul_float[4]`, `fixed[4]`,
-    `freq_fixed_hz[4]`, `mw[4]`, `vel[4]`, `mw_to_pms` snapshots.
+    `freq_fixed_hz[4]`, `vel[4]`, `mw_to_pms`, and `fm_dac_prescaler`
+    snapshots. (No per-op `mw[4]` — modwheel is global-only in v2.)
   - New `FmRegisterMap` helpers for: writing channel-3 special mode
     + per-op F-numbers; writing CSM mode + TimerA; resolving an
     operator's pitch (in Hz, then to F-number+BLK) under each mode.
@@ -114,8 +146,13 @@ LCD on the panel is bound and audible.
   - `Voice::keyOnLegato(...)` (or a flag on `noteOn`) implements the
     LEGATO skip.
   - `Voice::updateModulation(midi cc, velocity)` recomputes TL
-    register writes for any operator whose `mw[op]` or `vel[op]` is
-    non-zero. Called from the CC dispatch + key-on path.
+    register writes for any operator whose `vel[op]` is non-zero
+    (velocity → TL depth). Called from the CC dispatch + key-on path.
+    Modwheel still influences the LFO PMS depth via the global
+    `mw_to_pms` route but is no longer per-op.
+  - `DspDecimator` is invoked on the FM voice-sum bus when
+    `fm_dac_prescaler > 0`, mirroring its D-mode call site. Same
+    implementation, separate param value.
   - The CC table in `PluginProcessor::handleControlChange` is brought
     forward to the v2 list in `07-feature-spec.md` *MIDI CC Map* —
     notably CC 88 / 89 / 90 wired now.
@@ -149,7 +186,8 @@ LCD on the panel is bound and audible.
   single-voice fallback, force filter/ladder on) — Task 08.
 - UNISON DETUNE param drive — Task 08 (the param exists from Task 02;
   this task does **not** add unison spread to the voice allocator).
-- Header / status bar / Settings — Task 08.
+- Header / Settings — Task 08. (No separate status bar — the v2
+  first-pass status bar was removed during the post-mockup review.)
 - Output Filter / Ladder Effect UI binding — Task 08 (the apvts params
   already drive the DSP from Task 03).
 - Tagged preset browser — Task 09.
@@ -196,15 +234,16 @@ LCD on the panel is bound and audible.
      skip key-on). Otherwise full sequence.
    - Stealing always takes the full sequence regardless of `note_mode`
      (per the *Voice handling* table in `02-fm-synthesis.md`).
-5. **Per-op MW / VEL → TL**:
+5. **Per-op VEL → TL**:
    - Voice records the velocity at key-on.
    - `Voice::recomputeTL(int op)` computes the effective register TL
      per the formula in the *Context* section, writes the `0x40+op`
      register on the voice's channel.
    - On key-on, after writing operator params, call `recomputeTL` for
-     every op whose `mw[op] != 0 || vel[op] != 0`.
-   - CC dispatch: on CC 1 change, the active voices each call
-     `recomputeTL` for every operator with `mw[op] != 0`.
+     every op whose `vel[op] != 0`.
+   - CC dispatch: on CC 1 change (modwheel), the active voices each
+     recompute the PMS depth (via `mw_to_pms`) only; per-op TL no
+     longer depends on MW.
 6. **MW → PMS dispatch**:
    - On CC 1 change, the active engine recomputes the effective PMS
      per voice as `pms_register = clamp(pms_param + 7 × mw_to_pms ×

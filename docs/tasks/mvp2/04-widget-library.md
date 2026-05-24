@@ -6,7 +6,7 @@
 > **Design references:** `docs/design/05-ui-ux.md` (primary —
 > *Component Inventory*, *Parameter binding*),
 > `docs/design/09-visual-spec.md` (palette tokens, CSS recipes per
-> widget), `docs/design/08-ui-views.md` view 10 (fallback panel — the
+> widget), `docs/design/08-ui-views.md` view 9 (fallback panel — the
 > placeholder editor is replaced by the WebView in this task), ADR-0001,
 > ADR-0022, ADR-0015.
 
@@ -32,7 +32,7 @@ selects it; the placeholder editor from Task 02 is gone.
   was wrong**; cite the visual-spec recipe and fix the widget.
 - **Widgets list** (`05-ui-ux.md` *Component Inventory*): `knob`,
   `button`, `stepper`, `lcd-readout`, `toggle-switch`, `slider`,
-  `algorithm-mini`, `envelope-curve`, `note-on-led`, `level-meter`,
+  `algo-grid`, `algorithm-mini`, `envelope-curve`, `note-on-led`, `level-meter`,
   `decimator-knob` (a variant of `knob`), `patch-name-lcd` (a variant
   of `lcd-readout`), `op-badge`, `notification-toast`.
 - **Rendering split** (`05-ui-ux.md` *Asset Strategy*):
@@ -63,15 +63,26 @@ selects it; the placeholder editor from Task 02 is gone.
   7 o'clock.
 - **Stepper interaction**: ▲/▼ click increments; click-and-hold
   repeats (after ~300 ms, ~10 Hz); scroll-wheel = ±1.
-- **Algorithm-mini is the picker** (`08-ui-views.md` view 2): clicking
-  the tile opens an 8-tile popover; clicking an algorithm dismisses
-  it; clicking outside dismisses without changing the selection.
+- **Algorithm picker is an `algo-grid`** (`08-ui-views.md` view 2,
+  `09-visual-spec.md` *Algorithm picker — `algo-grid`*): 8 visible
+  numbered buttons in a 2 × 4 CSS grid; the selected one carries
+  `.is-active`; click selects, no popover. A separate larger
+  `algorithm-mini` (canvas, ~112 px) renders the selected algorithm's
+  topology read-only. Bound to apvts param `algorithm` (0..7).
 - **Op-badge active state** is local to the FM panel (Task 05) — it
   selects which operator the envelope-curve widget tracks. The widget
   exposes a `.setActive(bool)` method but does not bind to apvts.
-- **NOTE ON LED** binds to a telemetry boolean (not an apvts param):
-  reads the same `noteOn` value the C++ telemetry exposes through the
-  `meterData` event (Task 03 already pushes it).
+- **Envelope-curve widget** draws the ADSR polyline plus segment labels
+  (`AR`, `DR`, `SL`, `SR`, `RR`) at each segment's midpoint, plus
+  dashed vertical `KEY ON` / `KEY OFF` markers. Recipe in
+  `09-visual-spec.md` *Envelope curve (canvas)*. The label positions
+  recompute whenever any of the five envelope-knob values change.
+- **NOTE ON LED + text label** (`note-on` cluster, `09-visual-spec.md`
+  *NOTE ON LED*): pairs a 16 px round `.note-on-led` with a stacked
+  `NOTE ON` text caption inside a `.note-on` wrapper. The LED binds to
+  a telemetry boolean (not an apvts param): reads the same `noteOn`
+  value the C++ telemetry exposes through the `meterData` event (Task
+  03 already pushes it). The text caption is static.
 - **Level meters** subscribe to the `meterData` event (`05-ui-ux.md`
   *C++ → JS telemetry push*) — `peakL`, `peakR`. ~30 Hz redraw is fine.
 - **WebView host** is re-established now (the fallback editor from Task
@@ -85,7 +96,7 @@ selects it; the placeholder editor from Task 02 is gone.
     `http://localhost:5173` vs the embedded bundle (`06-build-system.md`).
   - Resource provider returns correct MIME types for every served
     asset, including `.woff2` (WebKit rejects wrong MIME).
-- **Fallback panel** (`08-ui-views.md` view 10) — the editor falls back
+- **Fallback panel** (`08-ui-views.md` view 9) — the editor falls back
   to the placeholder from Task 02 if the WebView fails to initialise.
   Retry button calls `tryInitWebView()` again.
 - **Gallery page** survives in dev builds and the production bundle
@@ -179,15 +190,26 @@ selects it; the placeholder editor from Task 02 is gone.
      clear`) accepted via opts.
    - **`slider.js`** — CSS-only horizontal slider; drag handler same
      as knob but horizontal.
-   - **`algorithm-mini.js`** — Canvas: 8 hard-coded operator-routing
-     diagrams. Renders the currently-selected one. Clicking opens a
-     popover of all 8 mini-tiles; clicking a tile sets the algorithm
-     param and dismisses the popover.
-   - **`envelope-curve.js`** — Canvas: takes 5 ADSR-like envelope
-     param values + computes the curve per `09-visual-spec.md`.
-     `setEnvelope(ar, dr, sl, sr, rr)` recomputes and redraws.
-   - **`note-on-led.js`** — CSS-only LED; lights when the bound
-     telemetry boolean is true.
+   - **`algo-grid.js`** — DOM/CSS-only: an 8-button picker (2 × 4 grid)
+     bound to apvts param `algorithm` (0..7). The selected button
+     carries `.is-active`. Recipe in `09-visual-spec.md` *Algorithm
+     picker — `algo-grid`*. No popover; all 8 buttons visible all the
+     time.
+   - **`algorithm-mini.js`** — Canvas, **read-only**: 8 hard-coded
+     operator-routing diagrams (~112 px tile size). Renders the
+     currently-selected algorithm's topology. No click handler — the
+     picker is `algo-grid.js` above. `setAlgorithm(idx)` updates the
+     drawing.
+   - **`envelope-curve.js`** — Canvas: takes 5 ADSR-like envelope param
+     values + computes the curve + draws the segment labels (`AR`,
+     `DR`, `SL`, `SR`, `RR`) at each segment midpoint and the dashed
+     vertical `KEY ON` / `KEY OFF` markers per `09-visual-spec.md`
+     *Envelope curve (canvas)*. `setEnvelope(ar, dr, sl, sr, rr)`
+     recomputes and redraws.
+   - **`note-on-led.js`** — DOM/CSS-only `.note-on` cluster: a 16 px
+     round `.note-on-led` paired with a stacked `NOTE ON` text caption.
+     The LED lights when the bound telemetry boolean is true; the text
+     caption is static. Recipe in `09-visual-spec.md` *NOTE ON LED*.
    - **`level-meter.js`** — Canvas: row of LED segments per the
      recipe. `setLevel(0..1)` updates; subscribes to the `meterData`
      event for live data, or accepts an explicit data feed for the
@@ -267,13 +289,20 @@ selects it; the placeholder editor from Task 02 is gone.
    - [ ] LCD-readout / patch-name-lcd: glowing text on deep navy bg;
          text changes when the bound value changes.
    - [ ] Toggle-switch lit state has the outer glow.
-   - [ ] Algorithm-mini: clicking the tile opens the 8-tile popover;
-         clicking inside selects and dismisses; clicking outside
-         dismisses without changing.
+   - [ ] Algo-grid: 8 visible buttons (2 × 4); clicking a button sets
+         `algorithm` and turns that button `is-active`; the
+         algorithm-mini tile next to it redraws to show the selected
+         topology.
+   - [ ] Algorithm-mini: changes the drawn topology in response to
+         `setAlgorithm(idx)`. No click handler, no popover.
    - [ ] Envelope-curve: changing any of the 5 envelope sliders
-         redraws the curve.
-   - [ ] Note-on-led lights when the gallery's scratch boolean is true
-         (the gallery includes a manual toggle wired to the LED).
+         redraws the curve; segment labels (`AR`/`DR`/`SL`/`SR`/`RR`)
+         and dashed `KEY ON` / `KEY OFF` markers stay in the right
+         positions as the envelope shape changes.
+   - [ ] Note-on cluster: the 16 px LED lights when the gallery's
+         scratch boolean is true (the gallery includes a manual toggle
+         wired to the LED); the `NOTE ON` text caption is always
+         visible beneath it.
    - [ ] Level-meter responds to a slider-driven `level` value in the
          gallery; segment colour shifts to `--led-on-warm` on the last
          2 segments at peak.

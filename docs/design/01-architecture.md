@@ -34,7 +34,7 @@ master clock) is out of scope.
 GenVstAudioProcessor
 ├── juce::AudioProcessorValueTreeState (apvts)
 │   ├── mode_select  (FM | SQ | D)
-│   ├── FM params  (single patch — ~50 params)
+│   ├── FM params  (single patch — ~50 params + fm_dac_prescaler)
 │   ├── SQ params  (per-channel envelope + tuning)
 │   ├── D params   (prescaler, mono, dry_wet)
 │   └── globals    (output_filter, ladder_effect, master_volume)
@@ -172,10 +172,15 @@ The v2 `apvts` holds:
   (TL/MUL/DT/AR/DR/SR/RR/SL/KS/SSG-EG/AMON), per-channel (ALG/FB/AMS/PMS),
   global LFO; plus the v2 RYM2612-modelled additions
   (`freq_ctrl_mode`, `retrig_rate`, per-op `mul_float` / `fixed` /
-  `freq_fixed_hz`, per-op `mw` / `vel` TL-modulation depth, global
-  `mw_to_pms`). See [`04-patch-system.md`](04-patch-system.md) §
-  *FM Patch Data Model* for the full field list. **No `_part<n>`
-  suffix** — v1's multi-part naming is retired.
+  `freq_fixed_hz`, per-op `vel` TL-modulation depth, global `mw_to_pms`,
+  and the FM DAC prescaler `fm_dac_prescaler` — see
+  [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*).
+  The earlier per-op `mw[op]` TL-modulation column was removed during
+  the post-mockup review (modwheel is now a global-only input via
+  `mw_to_pms`, matching the RYM2612 reference). See
+  [`04-patch-system.md`](04-patch-system.md) § *FM Patch Data Model* for
+  the full field list. **No `_part<n>` suffix** — v1's multi-part naming
+  is retired.
 - **SQ params** — per-channel envelope (ATK/DR1/SUS/DR2/RR), tuning, volume,
   pan; noise type/rate.
 - **D params** — `prescaler` (0.0–1.0), `mono` (bool), `dry_wet` (0.0–1.0).

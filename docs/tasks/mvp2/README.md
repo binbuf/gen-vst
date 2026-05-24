@@ -74,7 +74,7 @@ stretch of unverifiable work.
 | 05 | [FM panel (+ FREQ CTRL MODE register paths)](05-fm-panel.md) | FM mode plays | 04 |
 | 06 | [SQ panel](06-sq-panel.md) | SQ mode plays | 04 |
 | 07 | [D panel](07-d-panel.md) | D mode plays | 04 |
-| 08 | [Header, status bar, Settings & About modals](08-header-and-modals.md) | Header + Settings | 05, 06, 07 |
+| 08 | [Header, Settings & About modals](08-header-and-modals.md) | Header + Settings | 05, 06, 07 |
 | 09 | [Tagged preset browser & .psg / .gdac formats](09-preset-browser.md) | Tagged preset browser | 08 |
 | 10 | [State persistence & v2 parity audit](10-state-and-qa.md) | Release-ready | 09 |
 

@@ -35,8 +35,10 @@ Task 04 when the real widget library lands.
   invent new ones. Every hex code lives as a CSS custom property; no
   hand-typed hex inside a component.
 - **Window is fixed 1200×560** (ADR-0023). Author each mockup page at that
-  exact viewport. Inner regions: header (~64 px), mode panel (~480 px),
-  status bar (~16 px).
+  exact viewport. Inner regions: header (~88 px) and mode panel
+  (~470 px) — no bottom status bar (the v2 first-pass status surface
+  was removed during the post-mockup review; L/R meters live in the
+  header cluster instead).
 - **Top-left light source** (ADR-0022 principle 1). Every shadow, bevel,
   and gradient honors this. No per-widget variation in light direction.
 - **Antialiasing on** (principle 6). Browser default everywhere.
@@ -54,28 +56,42 @@ Task 04 when the real widget library lands.
 
 ## Scope
 
-Five mockup HTML pages, each independent (no shared header partial — keep
-the mockup honest by repeating markup):
+Four mockup HTML pages, each independent (no shared header partial —
+keep the mockup honest by repeating markup):
 
-1. **`mockup-chassis.html`** — base chassis frame: 1200×560 window, header
-   skeleton, empty mode panel, status bar. Establishes the chassis +
-   inset + outer-bezel recipes for every other page.
+1. **`mockup-chassis.html`** — base chassis frame: 1200×560 window,
+   ~88 px header skeleton (NOTE ON LED + visible `NOTE ON` text label,
+   wordmark, mode pill, patch LCD nav, OUTPUT FILTER 2-way switch,
+   LADDER toggle, stacked L/R `level-meter-mini` cell, VOL knob, gear),
+   empty mode panel filling the rest of the canvas. No bottom status
+   bar — the L/R meters live in the header cluster; the version string
+   lives in the About modal. Establishes the chassis + inset +
+   outer-bezel + level-meter-mini + note-on recipes for every other page.
 2. **`mockup-fm.html`** — full FM mode panel per `08-ui-views.md` view 2,
    inside the chassis from page 1. Header populated with the FM-specific
-   patch name. Operator grid (4 rows × 13 columns), LFO/MW block,
-   envelope-curve placeholder, FREQ CTRL MODE pill, RETRIG RATE LCD,
-   OP1 FB knob, algorithm-mini tile.
+   patch name. Operator grid (4 rows × 14 columns: `TL` knob as
+   leftmost-column anchor, then `[N]` AM AR DR SL SR RR RS SSG-EG MUL
+   FREQ FIX DT, then a single per-op `VEL` knob in the right-margin
+   block). LFO/MW/global block (LFO/RATE/PMS/AMS/MW→PMS knobs + POLY/
+   RANGE steppers + LEGATO/RETRIG switch + **global** PB and MW
+   horizontal `level-meter`s). Envelope-curve LCD with segment labels
+   (`AR / DR / SL / SR / RR`) and `KEY ON` / `KEY OFF` dashed-line
+   markers. FREQ CTRL MODE pill, RETRIG RATE LCD, OP1 FB knob, **DAC
+   PRESCALER knob (new — FM mode YM2612 prescaler control)** stacked in
+   the misc column. **8-button algorithm picker (`algo-grid`, 2 × 4
+   visible buttons)** plus a separately-sized **~112 px topology
+   diagram tile** showing the selected algorithm. No bottom status bar.
 3. **`mockup-sq.html`** — full SQ mode panel per view 3. Three tone-channel
    strips + one noise strip. Envelope thumbnails are static SVG-free
    canvas-placeholder rectangles with a hand-drawn `<path>`-free curve in
    the LCD (just a flat dim background and a centered "ADSR" word is
-   acceptable — the real curve is Task 04).
+   acceptable — the real curve is Task 04). Same header as the chassis
+   page; no bottom status bar.
 4. **`mockup-d.html`** — full D mode panel per view 4. Centered large
    decimator knob, stereo level meters band (drawn as a row of `<div>`
    blocks, not live), MONO toggle, DRY/WET knob, optional centered
-   `RETRO DECIMATOR` wordmark in the empty band above the knob.
-5. **`mockup-status.html`** *(optional — fold into chassis if simpler)* —
-   status bar isolated for level-meter and version-string styling.
+   `RETRO DECIMATOR` wordmark in the empty band above the knob. Same
+   header as the chassis page; no bottom status bar.
 
 Plus the persistent design-system file:
 
@@ -173,13 +189,33 @@ Plus the Vite multi-page entries in `ui/vite.config.js`.
    - [ ] Knob bodies use the dark-navy gradient, indicator is a thin
          white line at the resting 7 o'clock position.
    - [ ] Toggle "on" state lights with an outer glow.
+   - [ ] **No bottom status bar.** L/R output meters live in the header
+         as a stacked `level-meter-mini` cell; the chassis bottom edge
+         is the mode-panel bottom edge.
+   - [ ] **NOTE ON LED + visible `NOTE ON` text label** at the far left
+         of the header. LED is at least 16 px round.
+   - [ ] **Per-operator TL knob is the leftmost column** of the operator
+         grid, before the `[N]` op-badge. Slightly larger / darker than
+         the rest of the row's knobs.
+   - [ ] **No per-operator `MW` column.** MW shows up only as a *global*
+         horizontal `level-meter` in the LFO/global block.
+   - [ ] **8-button algorithm picker** (visible all the time, 2 × 4
+         grid). No popover. A separate ~112 px topology diagram tile
+         sits next to it.
+   - [ ] **DAC PRESCALER knob is present on the FM panel** (in the misc
+         column, below OP1 FB). It is in addition to the D-mode
+         prescaler, not a duplicate.
+   - [ ] **Envelope curve carries `AR`/`DR`/`SL`/`SR`/`RR` segment
+         labels** and dashed `KEY ON` / `KEY OFF` vertical markers in
+         the LCD.
 
 ## Done when
 
 - [ ] `design-system.css` exists with the full v2 palette + typography +
-      widget recipes from `09-visual-spec.md`.
+      widget recipes from `09-visual-spec.md` (including `algo-grid`,
+      `level-meter-mini`, and the labelled `.note-on` LED cluster).
 - [ ] IBM Plex Mono loads correctly via `@font-face`.
-- [ ] Five mockup pages render at 1200×560 with no JS errors.
+- [ ] Four mockup pages render at 1200×560 with no JS errors.
 - [ ] Each mockup matches its reference family-of-look (subjective sign-off
       against the visual checklist above).
 - [ ] Vite dev server + Vite production build both work; mockup pages are

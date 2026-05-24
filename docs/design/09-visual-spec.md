@@ -354,9 +354,16 @@ for (let i = 0; i < SEGMENTS; i++) {
 
 ### Envelope curve (canvas)
 
+The widget draws the ADSR polyline plus **segment labels** (`AR`, `DR`,
+`SL`, `SR`, `RR`) at the midpoint of each segment and two dashed
+vertical markers labelled `KEY ON` / `KEY OFF` at the columns where the
+note-on and note-off transitions sit on the time axis. Labels and
+markers share the polyline's `--lcd-text-on` colour and phosphor bloom,
+matching the RYM2612 reference panel.
+
 ```js
 // Compute ADSR shape from the 5 envelope param values.
-// Draw a 1.5 px antialiased polyline on the LCD background.
+// 1. Draw a 1.5 px antialiased polyline on the LCD background.
 ctx.fillStyle = getCssVar('--lcd-bg');
 ctx.fillRect(0, 0, w, h);
 
@@ -367,8 +374,36 @@ ctx.shadowColor = getCssVar('--lcd-text-glow');
 ctx.shadowBlur = 4;
 
 ctx.beginPath();
-// ...compute (x, y) points across the curve...
+// ...compute (x, y) points across the AR, DR, SL, SR, RR segments...
 ctx.stroke();
+
+// 2. Segment labels — place each label at the midpoint of its segment,
+//    clamped 4 px from the LCD edges. Labels use the same bloom recipe
+//    as the patch-name LCD (two-pass text, shadowBlur ≈ 4 px).
+ctx.font = `500 7px 'IBM Plex Mono', monospace`;
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+for (const seg of ['AR', 'DR', 'SL', 'SR', 'RR']) {
+  const { x, y } = segmentLabelPosition(seg);
+  ctx.shadowBlur = 4;
+  ctx.fillText(seg, x, y);   // bloom pass
+  ctx.shadowBlur = 0;
+  ctx.fillText(seg, x, y);   // sharp pass
+}
+
+// 3. KEY ON / KEY OFF dashed vertical markers + caption.
+ctx.setLineDash([2, 2]);
+ctx.lineWidth = 0.6;
+for (const mark of [keyOnX, keyOffX]) {
+  ctx.beginPath();
+  ctx.moveTo(mark, 4);
+  ctx.lineTo(mark, h - 12);
+  ctx.stroke();
+}
+ctx.setLineDash([]);
+ctx.font = `500 6px 'IBM Plex Mono', monospace`;
+ctx.fillText('KEY ON',  keyOnX,  h - 4);
+ctx.fillText('KEY OFF', keyOffX, h - 4);
 ```
 
 ### Operator badge
@@ -409,12 +444,120 @@ form.
 The blue-filled square matches the RYM2612 reference where the op
 badges read as prominent indicators rather than ambient labels.
 
-### Algorithm mini diagram (canvas)
+### Algorithm picker — `algo-grid` (CSS)
 
-8 hard-coded operator-routing diagrams. The selected one is drawn in
-`--lcd-text-on` on `--lcd-bg`; the unselected mini-thumbnails (if any)
-in `--lcd-text-off`. Operator boxes are square; connection lines are
-1 px antialiased.
+The FM panel exposes all 8 YM2612 algorithm topologies as visible
+numbered buttons in a 2-column × 4-row grid. The selected algorithm
+button carries `.is-active` (blue fill + outer glow), so the picker
+reads at a glance without a popover.
+
+```css
+.algo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 3px;
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+.algo-grid .algo-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  font: 500 10px/1 'IBM Plex Mono', monospace;
+  color: var(--btn-text);
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    1px 1px 2px rgba(0,0,0,0.4),
+    inset 1px 1px 0 rgba(255,255,255,0.10);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.algo-grid .algo-btn.is-active {
+  background: var(--btn-active-bg);
+  box-shadow:
+    inset 2px 2px 3px rgba(0,0,0,0.45),
+    inset -1px -1px 0 rgba(255,255,255,0.10),
+    0 0 6px rgba(33,150,243,0.45);
+}
+```
+
+### Algorithm topology diagram (canvas)
+
+A separate, *larger* LCD tile next to the `algo-grid` draws the topology
+of the **currently selected** algorithm — operator boxes + arrows, sized
+**roughly 2×** the picker buttons (target ≈ 112×112 px on the FM panel).
+The widget is read-only; selection happens via the `algo-grid` above.
+Lines are drawn in `--lcd-text-on` on `--lcd-bg`, 1.4 px antialiased
+strokes with the standard LCD phosphor bloom. The 8 hard-coded routings
+are stored as a small JS table mapping `algorithm_index → {boxes, lines}`.
+
+### NOTE ON LED — paired with text label
+
+```css
+.note-on {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.note-on .note-on-text {
+  font: 500 7px/1 'IBM Plex Mono', monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.85;
+}
+.note-on-led {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff8a8a, #b71c1c 70%, #5a0c0c 100%);
+  border: 1px solid #050608;
+  box-shadow:
+    inset 1px 1px 1px rgba(255,255,255,0.35),
+    inset -1px -1px 1px rgba(0,0,0,0.5),
+    0 0 8px rgba(255,82,82,0.65);
+}
+.note-on-led.is-off {
+  background: radial-gradient(circle at 30% 30%, #4a2828, #1a0808 80%);
+  box-shadow:
+    inset 1px 1px 1px rgba(255,255,255,0.05),
+    inset -1px -1px 1px rgba(0,0,0,0.5);
+}
+```
+
+The LED + `NOTE ON` text label sit together at the far-left of the
+header. The 16 px LED is large enough to read across the panel; the
+text label avoids the "what does the red dot mean?" ambiguity of an
+unlabelled indicator. Mirrors the RYM2612 reference.
+
+### Level meter — `level-meter-mini` modifier (header)
+
+The persistent header carries stacked L/R output meters using a thinner
+variant of the canonical `.level-meter`. Segments are 3 × 5 px (vs.
+4 × 8 px on the full-fat meter), gap is 1 px, padding 2 px — two rows
+fit in ~24 px of header height.
+
+```css
+.level-meter.level-meter-mini {
+  padding: 2px;
+  gap: 1px;
+}
+.level-meter.level-meter-mini .seg {
+  width: 3px;
+  height: 5px;
+  border-radius: 0;
+}
+```
+
+The full-fat `.level-meter` recipe (above) stays in use on the D-mode
+panel where the meters are the loudest visual element.
 
 ---
 

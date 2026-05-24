@@ -65,10 +65,14 @@ struct Patch {
     float    freq_fixed_hz[4]; // 20.0–20000.0 Hz: per-op absolute frequency when fixed[op]=1; default 440.0
 
     // Per-op modulation depth (RYM2612 manual page 10)
-    float    mw[4];          // 0.0–1.0: per-op modwheel → TL depth; default 0.0
+    // The earlier per-op `mw[4]` field was removed during the
+    // post-mockup review — modwheel is global-only in v2; per-op
+    // modulation goes via velocity only.
     float    vel[4];         // 0.0–1.0: per-op velocity → TL depth; default 0.0
-    // Global modulation depth
-    float    mw_to_pms;      // 0.0–1.0: modwheel → PMS depth; default 1.0
+    // Global modulation + hardware emulation depth
+    float    mw_to_pms;        // 0.0–1.0: modwheel → PMS depth; default 1.0
+    float    fm_dac_prescaler; // 0.0–1.0: YM2612 DAC prescaler depth; default 0.0
+                               //   (see 02-fm-synthesis.md § DAC Prescaler (FM mode))
 
     std::string name;     // display name (from filename or DMP internal)
 };
@@ -85,9 +89,9 @@ defaults that preserve legacy-faithful playback:
 | `mul_float[op]` | `(float)mul[op]` (mirrors integer mul) |
 | `fixed[op]` | `0` (off) |
 | `freq_fixed_hz[op]` | `440.0` |
-| `mw[op]` | `0.0` (no modwheel→TL effect) |
 | `vel[op]` | `0.0` (no velocity→TL effect; ADR-0023 / Settings toggle controls a global enable) |
 | `mw_to_pms` | `1.0` (modwheel scales PMS at full depth) |
+| `fm_dac_prescaler` | `0.0` (no DAC prescaling; clean rendering) |
 
 These defaults make a legacy patch sound identical to the v1 behaviour
 once loaded.

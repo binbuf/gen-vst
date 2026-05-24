@@ -1,25 +1,28 @@
 /*
  * Throwaway CSS for mockup-fm.html.
- * Layout for the FM mode panel — top row (LFO / envelope / freq-ctrl /
- * retrig / OP1 FB) above the dense 4×13 operator grid + TL/VEL/MW
- * right-margin block + algorithm tile.
+ *
+ * FM mode panel — top row (LFO/global | envelope | freq-ctrl | retrig |
+ * OP1 FB | DAC prescaler | algorithm picker+diagram) above the dense 4×
+ * 13 operator grid (TL knob on left, then [N] AM AR DR SL SR RR RS SSG
+ * MUL FREQ FIX DT) + per-op VEL right margin.
  *
  * Deleted in Task 04.
  */
 
 .fm-panel {
   display: grid;
-  grid-template-rows: 138px 1fr;
+  grid-template-rows: 168px 1fr;
   gap: 8px;
   padding: 18px 12px 10px;
 }
 
-/* ---- Top row: LFO/MW | envelope | freq-ctrl | retrig | OP1 FB ---- */
+/* ---- Top row ----------------------------------------------------- */
+/* Six columns: LFO/global | envelope | freq-ctrl | retrig+OP1FB+presc | algo picker | algo diagram */
 
 .fm-top {
   display: grid;
-  grid-template-columns: 270px 1fr 170px 110px 70px;
-  gap: 8px;
+  grid-template-columns: 260px 1fr 130px 90px 92px 142px;
+  gap: 6px;
 }
 
 .fm-top .block {
@@ -44,7 +47,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 18px 8px 8px;
 }
 .fm-env-lcd {
   width: 100%;
@@ -87,42 +90,138 @@
   padding: 5px 8px;
 }
 
-/* retrig rate */
-.fm-retrig {
+/* RETRIG / OP1 FB / DAC PRESCALER stacked column */
+.fm-misc {
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 4px;
+  padding-top: 14px;
+}
+.fm-misc .misc-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 3px;
+  position: relative;
   padding-top: 12px;
 }
+.fm-misc .misc-cell .misc-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 500 7px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.78;
+}
+.fm-misc .lcd-readout {
+  min-width: 52px;
+  padding: 2px 6px;
+}
+.fm-misc .lcd-readout .t-knob-readout {
+  font-size: 10px;
+}
 
-/* OP1 FB */
-.fm-opfb {
+/* Algorithm picker block — 8 buttons + larger diagram in fm-mid right column.
+ * The picker lives in fm-top so it sits next to the misc column. */
+.fm-algo-picker {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding-top: 12px;
+  gap: 4px;
+  padding: 14px 4px 4px;
+  position: relative;
+}
+.fm-algo-picker .picker-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 500 7px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.78;
+}
+
+/* Algorithm diagram tile — ~2× the prior 56px size. */
+.fm-algo-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 14px 4px 4px;
+  position: relative;
+}
+.fm-algo-diagram .diagram-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 500 7px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.78;
+}
+.fm-algo-diagram .algo-diagram {
+  width: 112px;
+  height: 112px;
+  background: var(--lcd-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;
+  box-shadow:
+    inset 2px 2px 6px rgba(0, 0, 0, 0.7),
+    0 0 0 1px var(--lcd-bg-edge);
+  position: relative;
+}
+.fm-algo-diagram .algo-diagram::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, 0.45) 0%, transparent 15%, transparent 85%,
+    rgba(78, 160, 255, 0.04) 100%);
+  pointer-events: none;
+  border-radius: 2px;
+}
+.fm-algo-diagram .algo-diagram svg {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+}
+.fm-algo-diagram .algo-label {
+  font: 500 11px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.16em;
+  color: var(--label-text);
 }
 
 /* ---- Operator grid + side blocks ---- */
 
 .fm-mid {
   display: grid;
-  grid-template-columns: 1fr 132px 64px;
-  gap: 8px;
+  grid-template-columns: 1fr 56px;
+  gap: 6px;
 }
 
+/* 14 columns: TL [N] AM AR DR SL SR RR RS SSG MUL FREQ FIX DT */
 .fm-opgrid {
   display: grid;
-  grid-template-columns: 28px repeat(12, 1fr);
+  grid-template-columns: 32px 28px repeat(12, 1fr);
   grid-auto-rows: 1fr;
   align-items: center;
   justify-items: center;
   row-gap: 6px;
-  column-gap: 4px;
+  column-gap: 3px;
   padding: 22px 8px 6px;
   position: relative;
 }
@@ -147,6 +246,16 @@
   width: 24px;
   height: 24px;
 }
+.fm-opgrid .knob.tl-knob {
+  /* The leftmost-column TL knob — slightly larger, darker body so it
+   * reads as the row's "anchor" control, matching the RYM2612 reference
+   * where TL is the visually loudest knob in each operator row. */
+  width: 28px;
+  height: 28px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), transparent 55%),
+    linear-gradient(135deg, #2a3040, var(--knob-body-dark));
+}
 .fm-opgrid .knob::after {
   width: 1px;
   height: 36%;
@@ -169,68 +278,23 @@
   cursor: pointer;
 }
 
-/* TL / VEL / MW right margin block */
-.fm-tlblock {
+/* VEL right margin block — single per-op column (MW removed; TL moved
+ * to the leftmost operator-grid column). */
+.fm-velblock {
   display: grid;
-  grid-template-columns: 36px 1fr 1fr;
+  grid-template-columns: 1fr;
   grid-auto-rows: 1fr;
   align-items: center;
   justify-items: center;
   row-gap: 6px;
   column-gap: 4px;
-  padding: 22px 6px 6px;
+  padding: 22px 4px 6px;
 }
-.fm-tlblock .col-head {
+.fm-velblock .col-head {
   font: 500 8px/1 "IBM Plex Mono", monospace;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--label-text-dim);
-}
-.fm-tlblock .tl-slider {
-  width: 16px;
-  height: 50px;
-  background: var(--led-meter-bg);
-  border: 1px solid var(--inset-edge-dark);
-  border-radius: 2px;
-  position: relative;
-  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.6);
-}
-.fm-tlblock .tl-thumb {
-  position: absolute;
-  left: 1px;
-  right: 1px;
-  height: 6px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--knob-body-light), var(--knob-body-dark));
-  border: 1px solid var(--knob-rim);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-/* Algorithm tile */
-.fm-algo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  padding: 22px 4px 4px;
-}
-.fm-algo .lcd {
-  padding: 6px;
-}
-.fm-algo .algo-diagram {
-  width: 56px;
-  height: 56px;
-  position: relative;
-}
-.fm-algo .algo-diagram svg {
-  width: 100%;
-  height: 100%;
-}
-.fm-algo .algo-label {
-  font: 500 11px/1 "IBM Plex Mono", monospace;
-  letter-spacing: 0.16em;
-  color: var(--label-text);
 }
 
 /* Global controls under LFO block */
@@ -275,10 +339,31 @@
   padding: 2px 4px;
   cursor: pointer;
 }
-.fm-globals .pb-mw-row {
-  grid-column: 1 / -1;
-  display: flex;
+
+/* Global PB / MW meters — prominent horizontal level bars under the
+ * POLY/RANGE/LEGATO row. The reference panel shows these as full-width
+ * meters with the PB/MW label at left. */
+.fm-pbmw {
+  display: grid;
+  grid-template-columns: 24px 1fr;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 3px 6px;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+.fm-pbmw .pbmw-label {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  color: var(--label-text);
+  text-align: left;
+  opacity: 0.85;
+}
+.fm-pbmw .level-meter {
+  display: flex;
+  width: 100%;
+}
+.fm-pbmw .level-meter .seg {
+  flex: 1;
+  height: 6px;
+  width: auto;
 }

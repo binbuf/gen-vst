@@ -80,8 +80,10 @@ SQ panel control.
 
 ## Out of scope
 
-- Header + status bar — Task 08 (`NOTE ON` LED + mode selector +
-  patch-name LCD all live in the header, not on this panel).
+- Header — Task 08 (`NOTE ON` LED + label + mode selector +
+  patch-name LCD + stacked L/R output meters all live in the header,
+  not on this panel). The v2 first-pass status bar is gone — there is
+  no separate bottom strip for this panel to coordinate with.
 - `.psg` preset format + the tagged preset browser — Task 09.
 - Auto noise-from-MIDI option UI — the apvts param exists but no view
   surface; revisit post-MVP if users ask for it.

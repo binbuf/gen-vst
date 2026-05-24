@@ -12,14 +12,16 @@
     <div class="frame chassis">
       <!-- ============================== HEADER ============================== -->
       <header class="hdr inset">
-        <div class="hdr-brand">
+        <div class="note-on">
           <span class="note-on-led" title="NOTE ON"></span>
-          <span class="hdr-wordmark t-wordmark">
-            <span class="wm-gen">GEN</span>
-            <span class="wm-sep">·</span>
-            <span class="wm-vst">VST</span>
-          </span>
+          <span class="note-on-text">Note On</span>
         </div>
+
+        <span class="hdr-wordmark t-wordmark">
+          <span class="wm-gen">GEN</span>
+          <span class="wm-sep">·</span>
+          <span class="wm-vst">VST</span>
+        </span>
 
         <div class="hdr-mode-pill btn-pill">
           <button type="button" class="btn">FM</button>
@@ -36,8 +38,6 @@
           <button type="button" class="icon-btn" aria-label="Browse presets">📂</button>
         </div>
 
-        <div></div>
-
         <div class="hdr-filter-block">
           <span class="filter-label">
             <span class="filter-title">Output</span>
@@ -53,6 +53,38 @@
           <span class="t-label t-label-dim">LADDER</span>
           <span class="toggle" title="Ladder effect disabled in SQ mode"
                 style="opacity: 0.35;"></span>
+        </div>
+
+        <div class="hdr-meters">
+          <div class="hdr-meter-row">
+            <span class="ch-label">L</span>
+            <div class="level-meter level-meter-mini">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+          <div class="hdr-meter-row">
+            <span class="ch-label">R</span>
+            <div class="level-meter level-meter-mini">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
         </div>
 
         <div class="hdr-vol">
@@ -216,42 +248,6 @@
           </div>
         </div>
       </section>
-
-      <!-- ============================== STATUS BAR ========================== -->
-      <footer class="status">
-        <div class="status-meters">
-          <div class="ch">
-            <span class="ch-label">L</span>
-            <div class="level-meter">
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg"></span><span class="seg"></span>
-              <span class="seg"></span><span class="seg"></span>
-              <span class="seg"></span><span class="seg"></span>
-              <span class="seg"></span><span class="seg"></span>
-              <span class="seg is-warm"></span><span class="seg is-warm"></span>
-            </div>
-          </div>
-          <div class="ch">
-            <span class="ch-label">R</span>
-            <div class="level-meter">
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span><span class="seg is-on"></span>
-              <span class="seg is-on"></span>
-              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
-              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
-              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
-              <span class="seg is-warm"></span><span class="seg is-warm"></span>
-            </div>
-          </div>
-        </div>
-        <span class="status-version">v0.2.0</span>
-      </footer>
     </div>
   </body>
 </html>

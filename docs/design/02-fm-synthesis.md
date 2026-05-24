@@ -456,6 +456,47 @@ The LFO is triangular waveform only (hardware fixed). PMS controls vibrato depth
 
 ---
 
+## DAC Prescaler (FM mode)
+
+The YM2612's nine-bit DAC is fed by an internal **clock prescaler** that
+gates how often the DAC reads a new sample value from the FM voice
+summation bus. On real hardware this prescaler is part of the chip's
+sample-rate stage and is one of the dominant contributors to the
+YM2612's characteristic aliasing, quantization noise, and high-frequency
+crosstalk — the same artefacts the Inphonik RYM2612 surfaces as a
+user-controllable `DAC PRESCALER` knob on its FM panel.
+
+Gen VST v2 exposes the same control on the FM mode panel
+([`08-ui-views.md`](08-ui-views.md) view 2, **Misc** block) so the user
+can sweep between a clean rendering and the heavier hardware character
+without leaving FM mode.
+
+**apvts parameter.** `fm_dac_prescaler` (0.0..1.0; 0 = no decimation,
+default; 1 = maximum decimation). Stored independently of the D-mode
+`prescaler` parameter so the two modes don't share state — switching
+modes never blows the user's tuning. The DSP code path is shared with
+D mode's `DspDecimator` (one implementation, two callers).
+
+**Where it applies.** Inside the FM render pipeline, between the FM
+voice sum and the ladder / output-filter stages:
+
+```
+voices --sum--> [ fm_dac_prescaler ] --> [ LadderEffect ] --> [ OutputFilter ] --> mix bus
+```
+
+Apply the prescaler **before** the ladder effect — both because the
+hardware ordering matches (the ladder DAC is downstream of the prescaled
+sample stream) and because the ladder's piecewise nonlinearity reads
+better against the decimated signal. SQ mode is **not** affected; the
+SN76489 PSG has its own output pin and never passes through the YM2612
+DAC stage on real hardware (see the *Ladder Effect DSP* section below
+for the same scoping rationale).
+
+**Bypass when `fm_dac_prescaler == 0`** — the DSP stage early-returns;
+no sample-rate reduction, no extra branches.
+
+---
+
 ## Ladder Effect DSP
 
 The YM2612's analog output stage has a documented stepwise nonlinearity
