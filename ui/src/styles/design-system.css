@@ -49,11 +49,14 @@
   --knob-body: #4a78c8;      /* mid-blue knob body */
   --knob-ring: #1e3a6e;      /* darker blue ring */
   --knob-dot: #d8f0ff;       /* white/cyan indicator dot */
+  --knob-spec: #ffffff;      /* 2x2 specular highlight on the knob body */
+  --knob-bevel-light: #7aa0e0; /* lit bevel tint on the knob body */
 
   /* Gold "GEN VST" logotype */
   --logo: #f5c842;           /* gold */
   --logo-shadow: #c89020;    /* gold shadow */
   --logo-underline: #d83030; /* red underline stroke */
+  --logo-dark: #2a2208;      /* darkened gold for warn-level toast background */
 
   /* Text & selection */
   --label: #e0e0e0;          /* off-white bitmap label text */
@@ -61,6 +64,8 @@
 
   /* Operator badge (shares the knob blue) */
   --badge: #4a78c8;
+  --badge-bevel-light: #6a98e8; /* lit bevel tint on the badge */
+  --badge-text: #ffffff;        /* white numeral on the badge face */
 
   /* 8px base grid */
   --grid: 8px;

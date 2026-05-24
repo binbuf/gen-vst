@@ -483,7 +483,7 @@
   height: 16px;
   flex: 0 0 auto;
   background: var(--badge);
-  color: #ffffff;
+  color: var(--badge-text);
   font-family: "Press Start 2P", monospace;
   font-size: 8px;
   display: flex;
@@ -491,11 +491,11 @@
   justify-content: center;
   /* Hard-edge raised bevel: light top/left, dark bottom/right — matches the
    * pixel-art bevel idiom used by knobs and the channels row. The light edge
-   * is a brighter tint of --badge (no palette slot); the dark edge reuses
+   * is --badge-bevel-light, a brighter tint of --badge; the dark edge reuses
    * --knob-ring, which already names that same dark-blue shadow. */
   border: 1px solid;
-  border-top-color: #6a98e8;
-  border-left-color: #6a98e8;
+  border-top-color: var(--badge-bevel-light);
+  border-left-color: var(--badge-bevel-light);
   border-right-color: var(--knob-ring);
   border-bottom-color: var(--knob-ring);
 }

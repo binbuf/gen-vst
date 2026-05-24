@@ -89,7 +89,7 @@ export class NotificationToastHost {
       el.style.color      = pal["led-on"]   || "#ff2020";
       el.style.borderColor = pal["led-on"]  || "#ff2020";
     } else if (level === "warn") {
-      el.style.background = "#2a2208";
+      el.style.background = pal["logo-dark"] || "#2a2208";
       el.style.color      = pal["logo"]     || "#f5c842";
       el.style.borderColor = pal["logo"]    || "#f5c842";
     } else {

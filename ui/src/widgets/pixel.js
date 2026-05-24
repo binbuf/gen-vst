@@ -13,9 +13,9 @@ const PALETTE_VARS = [
   "chassis", "panel", "bevel-light", "bevel-dark",
   "lcd-base", "lcd-base-hi", "lcd-pixel", "lcd-pixel-hi",
   "led-base", "led-dim", "led-on",
-  "knob-body", "knob-ring", "knob-dot",
-  "logo", "logo-shadow", "logo-underline",
-  "label", "select", "badge",
+  "knob-body", "knob-ring", "knob-dot", "knob-spec", "knob-bevel-light",
+  "logo", "logo-shadow", "logo-underline", "logo-dark",
+  "label", "select", "badge", "badge-bevel-light", "badge-text",
 ];
 
 let paletteCache = null;

@@ -107,7 +107,7 @@ export class Knob {
     const specAngle = (220 * Math.PI) / 180;  // upper-left of the knob
     const sx = snap(cx + Math.cos(specAngle) * specR * 0.62);
     const sy = snap(cy + Math.sin(specAngle) * specR * 0.62);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = pal["knob-spec"];
     ctx.fillRect(sx, sy, 2, 2);
 
     // Indicator: a chunky line of dot-colour rendered as a 2px-thick stripe
@@ -161,7 +161,7 @@ export class Knob {
     // circles (radius r-1 and r-2) so the highlight is exactly 2 px wide
     // even when the underlying disc is integer-stepped. The lit colour is
     // a lighter-blue tint so it doesn't blend back into the chassis bevel.
-    const lit = "#7aa0e0";       // lighter knob-body — only used as a bevel hint
+    const lit = pal["knob-bevel-light"];
     const dim = pal["knob-ring"]; // already-dark blue, reads as shadow
     for (let ring = 0; ring < 2; ++ring) {
       const rr = r - ring;
