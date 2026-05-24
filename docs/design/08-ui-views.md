@@ -354,25 +354,41 @@ the `GLOBAL IN` block).
 
 Active when `mode_select = SQ`. Clean subtractive-style layout for 3
 tone channels + 1 noise channel. Each channel is a vertical strip with
-its own envelope + tuning + level.
+its own envelope + tuning + level. A small `GLOBAL IN` block on the
+left edge carries the read-only pitch-bend wheel visualizer.
 
 ```
-┌─ SQ MODE ─────────────────────────────────────────────────────────────────────┐
-│  ┌ TONE 1 ────────┐  ┌ TONE 2 ────────┐  ┌ TONE 3 ────────┐  ┌ NOISE ────┐  │
-│  │ ╱╲___          │  │ ╱╲___          │  │ ╱╲___          │  │ ╱╲___      │  │
-│  │ (envelope)     │  │ (envelope)     │  │ (envelope)     │  │ (envelope) │  │
-│  │ ATK DR1 SUS    │  │ ATK DR1 SUS    │  │ ATK DR1 SUS    │  │ ATK DR1    │  │
-│  │  ○   ○   ○     │  │  ○   ○   ○     │  │  ○   ○   ○     │  │  ○   ○     │  │
-│  │ DR2  RR        │  │ DR2  RR        │  │ DR2  RR        │  │ SUS DR2 RR │  │
-│  │  ○   ○         │  │  ○   ○         │  │  ○   ○         │  │  ○   ○   ○ │  │
-│  │ DETUNE  ○      │  │ DETUNE  ○      │  │ DETUNE  ○      │  │            │  │
-│  │ VOL     ○      │  │ VOL     ○      │  │ VOL     ○      │  │ VOL     ○  │  │
-│  │ PAN     ▭▭▭    │  │ PAN     ▭▭▭    │  │ PAN     ▭▭▭    │  │ PAN     ▭▭ │  │
-│  └────────────────┘  └────────────────┘  └────────────────┘  │ TYPE [W/P] │  │
-│                                                              │ RATE [LMH2]│  │
-│                                                              └────────────┘  │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─ SQ MODE ────────────────────────────────────────────────────────────────────────┐
+│  ┌ IN ─┐  ┌ TONE 1 ────────┐  ┌ TONE 2 ────────┐  ┌ TONE 3 ────────┐  ┌ NOISE ─┐│
+│  │     │  │ ╱╲___          │  │ ╱╲___          │  │ ╱╲___          │  │ ╱╲___  ││
+│  │ ▌▌  │  │ (envelope)     │  │ (envelope)     │  │ (envelope)     │  │(envel) ││
+│  │ ─   │  │ ATK DR1 SUS    │  │ ATK DR1 SUS    │  │ ATK DR1 SUS    │  │ ATK DR1││
+│  │ ▐▐  │  │  ○   ○   ○     │  │  ○   ○   ○     │  │  ○   ○   ○     │  │  ○   ○ ││
+│  │ PB  │  │ DR2  RR        │  │ DR2  RR        │  │ DR2  RR        │  │SUS DR2 ││
+│  │     │  │  ○   ○         │  │  ○   ○         │  │  ○   ○         │  │ ○   ○  ││
+│  │     │  │ DETUNE  ○      │  │ DETUNE  ○      │  │ DETUNE  ○      │  │ RR  ○  ││
+│  │     │  │ VOL     ○      │  │ VOL     ○      │  │ VOL     ○      │  │ VOL ○  ││
+│  │     │  │ PAN     ▭▭▭    │  │ PAN     ▭▭▭    │  │ PAN     ▭▭▭    │  │ PAN ▭▭ ││
+│  └─────┘  └────────────────┘  └────────────────┘  └────────────────┘  │TYPE W/P││
+│                                                                       │RATE LMH││
+│                                                                       └────────┘│
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**`GLOBAL IN` block (left edge)**
+
+- `PB` — a single `midi-wheel-pb` widget (read-only, center-detent;
+  thin centerline drawn at the zero position). Visualises the host's
+  incoming MIDI pitch-bend value — purely informational, the user does
+  not drag it. The depth (semitones) is governed by the **global**
+  `pitch_bend_range` apvts param shared with FM mode (set from the
+  FM panel's `RANGE` stepper); SQ does not duplicate the stepper.
+- **No `MW` wheel on the SQ panel.** v2 SQ has no software LFO /
+  vibrato / tremolo destination wired to MW, so a mod-wheel
+  visualizer here would be misleading chrome (the user moves the
+  wheel, the indicator responds, nothing audibly happens). The wheel
+  earns its place once a future feature routes MW to something —
+  software vibrato depth on tone channels is the obvious candidate.
 
 **Per-tone-channel strip (×3)**
 
@@ -392,7 +408,9 @@ Same envelope + VOL + PAN, plus noise-specific controls:
 
 All controls are `apvts`-bound. Allocation across the 3 tone channels
 (round-robin LRU) and noise (last-note priority) is handled by the
-engine ([`03-psg-synthesis.md`](03-psg-synthesis.md)).
+engine ([`03-psg-synthesis.md`](03-psg-synthesis.md)). Pitch bend is
+applied to every active tone channel by `SN76489Engine::pitchBend()`
+(v1 Task 23 mechanism, retained).
 
 The v1 `PSG MIX`, `LAYER` toggle, and SHFT / PERIODIC / TYPE / RATE /
 AUTO band are removed — `psg_mix` is gone (no FM-to-mix in v2);

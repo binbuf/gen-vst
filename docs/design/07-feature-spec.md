@@ -111,17 +111,25 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 
 ### SQ Features
 - [ ] Per-channel envelope (Task 23 software ADSR)
-- [ ] PSG pitch bend
+- [ ] PSG pitch bend (`SN76489Engine::pitchBend()`; depth shared with FM
+      via the global `pitch_bend_range` apvts param). The SQ panel
+      surfaces a read-only `PB` wheel visualizer in its `GLOBAL IN`
+      block — see `08-ui-views.md` view 3.
 - [ ] PSG velocity → attenuation mapping
 - [ ] Per-PSG-channel soft panning (L/R gain)
 
 ### D Mode (PCM2612-style audio FX)
 - [ ] Audio input bus on plugin
-- [ ] `prescaler` DSP — sample-rate decimation 0.0..1.0
+- [ ] `prescaler` DSP — sample-rate decimation 0.0..1.0; UI surface is
+      the **header** DAC PRESCALER knob (mode-aware binding — see
+      `08-ui-views.md` view 1)
 - [ ] `mono` toggle — collapse L/R before decimation
 - [ ] `dry_wet` mix — 0.0..1.0 blend of decimated output with original input
-- [ ] Stereo level meters (input)
-- [ ] Plays nice with the Filter + Ladder toggles
+- [ ] Plays nice with the Filter + Ladder toggles (Output Filter active;
+      Ladder applied; both header-toggleable)
+- [ ] Signal-presence feedback via header NOTE ON LED + the DAW's
+      native track input meter (no panel-side input meters per
+      `08-ui-views.md` view 4)
 
 ### UI
 - [ ] Live algorithm diagram (selected algorithm highlighted)

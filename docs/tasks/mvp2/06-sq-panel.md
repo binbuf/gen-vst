@@ -28,12 +28,16 @@ SQ panel control.
 
 ## Context & key constraints
 
-- **Layout** (`08-ui-views.md` view 3): four vertical strips — three
-  tone-channel strips and one noise strip. Each tone strip has an
-  envelope-curve thumbnail at the top + the 5 envelope knobs
-  (ATK/DR1/SUS/DR2/RR) + DETUNE + VOL + PAN. The noise strip drops
-  DETUNE, gains TYPE (white/periodic) and RATE (low/mid/high/ch2)
-  selectors.
+- **Layout** (`08-ui-views.md` view 3): a small `GLOBAL IN` block on
+  the left edge carrying the read-only `PB` wheel visualizer, followed
+  by four vertical strips — three tone-channel strips and one noise
+  strip. Each tone strip has an envelope-curve thumbnail at the top +
+  the 5 envelope knobs (ATK/DR1/SUS/DR2/RR) + DETUNE + VOL + PAN. The
+  noise strip drops DETUNE, gains TYPE (white/periodic) and RATE
+  (low/mid/high/ch2) selectors. **MW is deliberately omitted** — v2
+  SQ has no software LFO / vibrato / tremolo destination wired to mod
+  wheel, so adding a visualizer would be misleading chrome (see view 3
+  for the full rationale).
 - **SN76489 engine carries forward** from v1 — `SN76489Engine`,
   `SN76489Wrapper`, and the per-channel software-ADSR code from
   v1/Task 23 are still in `src/`. No engine rewrite; this task is the
@@ -60,11 +64,21 @@ SQ panel control.
   (Task 02 added it); the SQ panel does **not** surface it on the v2
   layout in view 3. Leave the param wired through to the engine (it's
   already there from v1 Task 28) but no UI control on this panel.
+- **Pitch-bend** is fully functional via `SN76489Engine::pitchBend()`
+  (v1 Task 23 mechanism, retained — no engine changes needed). The
+  depth is governed by the **global** `pitch_bend_range` apvts param
+  shared with FM mode (set from the FM panel's `RANGE` stepper); SQ
+  does not duplicate the stepper. The `PB` widget in `GLOBAL IN` is a
+  pure visualizer (read-only, no user drag).
 
 ## Scope
 
 - New `ui/src/views/sq-view.js` building the panel HTML per view 3.
 - Mount + bind every control:
+  - **`GLOBAL IN` block**: a single `midi-wheel-pb` widget showing
+    live MIDI pitch-bend. Read-only — driven by the existing
+    pitch-bend telemetry stream the editor already pushes (same source
+    the FM panel's PB widget subscribes to; no new C++ work).
   - Per tone channel `0..2`: 5 envelope knobs, DETUNE, VOL, PAN, and
     the envelope-curve thumbnail (live-recomputed from the 5 envelope
     values).
@@ -94,9 +108,15 @@ SQ panel control.
 ## Implementation steps
 
 1. **`ui/src/views/sq-view.js`** — export `mountSqView(host)` and
-   `unmountSqView()`. Build the four-strip layout. Use the
-   `design-system.css` chassis/inset/knob/lcd recipes.
-2. Each tone strip:
+   `unmountSqView()`. Build the `GLOBAL IN` block (left edge) + the
+   four-strip layout (three tone strips + one noise strip). Use the
+   `design-system.css` chassis/inset/knob/lcd/midi-wheel recipes.
+2. **`GLOBAL IN` block** — mount one `midi-wheel-pb` widget. Subscribe
+   it to the `midiState` telemetry event (the same one the FM
+   panel's PB widget uses); set its thumb `bottom` from the live
+   pitch-bend value (0.5 = center). Caption: `PB`. No bound apvts
+   param — the widget is read-only.
+3. Each tone strip:
    - Mount an `envelope-curve` widget at the top, fed by `bindSlider`
      for the 5 envelope params (`psg_atk[ch]` … `psg_rr[ch]`) — on
      any change, call `setEnvelope(atk, dr1, sus, dr2, rr)`.
@@ -104,17 +124,17 @@ SQ panel control.
    - Mount DETUNE knob bound to `psg_detune[ch]`.
    - Mount VOL knob bound to `psg_vol[ch]`.
    - Mount PAN slider bound to `psg_pan[ch]`.
-3. Noise strip:
+4. Noise strip:
    - Mount the same envelope row.
    - Mount VOL + PAN knobs/slider.
    - Mount the TYPE combo bound to `psg_noise_type` (choices: white,
      periodic).
    - Mount the RATE combo bound to `psg_noise_rate` (choices: low,
      mid, high, ch2).
-4. Update `main.js` mode-dispatch: on `mode_select` change, if the new
+5. Update `main.js` mode-dispatch: on `mode_select` change, if the new
    mode is SQ, unmount the previous panel (if any) and call
    `mountSqView(modePanel)`.
-5. (Optional) verify the engine still handles `psg_noise_auto`
+6. (Optional) verify the engine still handles `psg_noise_auto`
    correctly — flip it via the host's generic editor; should drive
    the rate from MIDI note range when enabled. No UI surface change.
 
@@ -146,14 +166,23 @@ SQ panel control.
 7. **NOTE ON LED** (in the still-stub header) flickers on every PSG
    note-on (the header is laid out in Task 08; the telemetry already
    feeds the LED).
-8. `pluginval --strictness-level 8 --validate "<path>/Gen VST.vst3"` —
+8. **PB visualizer** — hold a note; send a pitch-bend from the host
+   (DAW pitch-wheel or a CC mapping); the `PB` wheel in `GLOBAL IN`
+   tracks the host's value (center detent at 0, top at +max, bottom
+   at -max) and the held note audibly bends by the depth set in the
+   global `pitch_bend_range` apvts param. Release the bend; the wheel
+   returns to centre.
+9. `pluginval --strictness-level 8 --validate "<path>/Gen VST.vst3"` —
    passes.
 
 ## Done when
 
-- [ ] SQ panel renders per `08-ui-views.md` view 3.
+- [ ] SQ panel renders per `08-ui-views.md` view 3, including the
+      `GLOBAL IN` block with the live `PB` wheel.
 - [ ] Every control on the panel is two-way bound and audibly affects
       the SN76489 engine.
+- [ ] PB visualizer tracks live MIDI pitch-bend and the held notes
+      bend audibly via `SN76489Engine::pitchBend()`.
 - [ ] Voice allocation rules (round-robin LRU tones, last-note noise)
       behave as before (no regression vs the v1 SN76489Engine tests).
 - [ ] Mode switch FM ↔ SQ ↔ D cleanly mounts / unmounts the SQ view.

@@ -169,6 +169,7 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 | `algorithm-mini` | The 8 YM2612 algorithm topologies, drawn small; selected one highlighted | Canvas |
 | `envelope-curve` | Per-operator (FM) or per-channel (SQ) ADSR shape; computed live from envelope params | Canvas |
 | `note-on-led` | Single header LED that lights on key-on (FM/SQ) or input-audio-present (D) | CSS animation on apvts-bound state |
+| `midi-wheel` | Vertical wheel/slider visualizing live MIDI pitch-bend (variant `midi-wheel-pb`, center-detent) or mod-wheel (variant `midi-wheel-mw`, full-range). Read-only — driven by the host's MIDI stream, not user-draggable. Used by the FM panel's `GLOBAL IN` block (PB + MW) and the SQ panel's `GLOBAL IN` block (PB only — see `08-ui-views.md` view 3 for why SQ omits MW) | CSS + thin Canvas overlay for the centerline glow |
 | `level-meter` | Stereo LED-style level bars; only deployed as the stacked `level-meter-mini` cell in the header for post-master output (no D-panel input variant in v2 — see `08-ui-views.md` view 4) | Canvas |
 | `decimator-knob` | Large 96 px central knob body variant (PCM2612-style — matte body, no top sheen); identical mechanics to `knob`. Used by the D panel's central `DRY/WET` knob | CSS body + Canvas indicator arc |
 | `patch-name-lcd` | Larger LCD readout in the header showing the active patch | Canvas; uses LCD-style font |

@@ -109,6 +109,19 @@
       <section class="mode-panel inset sq-panel">
         <h1 class="mode-title t-section-title on-inset">SQ</h1>
 
+        <!-- GLOBAL IN block: read-only PB visualizer. MW omitted because
+             v2 SQ has no software LFO/vibrato/tremolo destination wired
+             to mod wheel; see docs/design/08-ui-views.md view 3. -->
+        <div class="sq-globalin">
+          <span class="strip-title">Global In</span>
+          <div class="midi-wheel-cell">
+            <div class="midi-wheel midi-wheel-pb">
+              <span class="wheel-thumb" style="bottom: 50%;"></span>
+            </div>
+            <span class="wheel-label">PB</span>
+          </div>
+        </div>
+
         <!-- Three tone-channel strips, then one noise strip -->
 
         <!-- Tone 1 -->

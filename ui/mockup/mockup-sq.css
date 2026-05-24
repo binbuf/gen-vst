@@ -7,9 +7,37 @@
 
 .sq-panel {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  /* Leftmost narrow column for the GLOBAL IN block (PB wheel only —
+   * MW omitted in SQ, see docs/design/08-ui-views.md view 3), then
+   * four equal columns for the three tone strips + noise strip. */
+  grid-template-columns: 64px 1fr 1fr 1fr 1fr;
   gap: 12px;
   padding: 22px 14px 14px;
+}
+
+/* GLOBAL IN block — mirrors .fm-pbmw on the FM panel but holds only
+ * the PB wheel; the MW wheel cell is intentionally absent. */
+.sq-globalin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 4px 8px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  position: relative;
+}
+.sq-globalin > .strip-title {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  text-align: center;
+  font: 500 9px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text-dim);
 }
 
 .sq-strip {
