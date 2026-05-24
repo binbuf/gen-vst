@@ -138,6 +138,12 @@ public:
     void setEnvelopeRates  (int psgChannel, int atk, int dr1, int sus, int dr2, int rr) noexcept;
     void setEnvelopeVel    (int psgChannel, float vel01) noexcept;
 
+    // Task 28 — per-tone-channel portamento time in ms. 0 = instant (current
+    // behaviour); >0 makes a new note-on slide from the channel's current
+    // pitch to the new note over the configured time. Noise has no pitch and
+    // ignores this setter for any psgChannel >= kNumToneChs.
+    void setGlideTimeMs (int psgChannel, double ms) noexcept;
+
     // --- Per-block render ----------------------------------------------------
 
     // Add the PSG output (host-rate, stereo) to the given buffers. PSG
@@ -194,6 +200,15 @@ private:
 
         // Software ADSR — multiplied into the per-block mix gain. Task 23.
         PsgEnvelope    envelope;
+
+        // Task 28 — portamento state. glideTimeMs is mirrored from apvts each
+        // block; the *NotesPerSample rate is computed at note-on (and is the
+        // signed semitones-per-host-sample delta added each block while the
+        // glide is active). When current == target the rate is held at 0.0.
+        double         glideTimeMs             = 0.0;
+        double         glideCurrentMidi        = 0.0;
+        double         glideTargetMidi         = 0.0;
+        double         glideRateNotesPerSample = 0.0;
     };
 
     std::array<ChannelState, kNumChannels> ch;

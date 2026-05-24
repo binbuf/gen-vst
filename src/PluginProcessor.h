@@ -238,6 +238,10 @@ private:
     std::array<std::atomic<float>*, PartManager::kNumParts> polyModeParam     {};
     std::array<std::atomic<float>*, PartManager::kNumParts> monoGlideParam    {};
     std::array<std::atomic<float>*, PartManager::kNumParts> unisonSpreadParam {};
+    // Task 28 — per-part FM glide-time in ms (0..2000). Audible only in
+    // Mono+Legato; ignored in Poly / Unison. PSG counterparts live in
+    // psgDacParams.glideTimeMs below.
+    std::array<std::atomic<float>*, PartManager::kNumParts> glideTimeParam    {};
 
     // Task 22 — Per-rack-slot routing params (midi channel, transpose, range,
     // detune cents, balance). Cached as raw atomic pointers so the audio
@@ -324,6 +328,11 @@ private:
         std::atomic<float>* dacRate   = nullptr;
         std::atomic<float>* dacMode   = nullptr;
         std::atomic<float>* dacLevel  = nullptr;
+
+        // Task 28 — per-PSG-tone-channel glide-time in ms (0..2000). Indexed
+        // by tone channel 0..2; noise is omitted (no pitch). Pushed into
+        // SN76489Engine each block.
+        std::array<std::atomic<float>*, SN76489Engine::kNumToneChs> glideTimeMs { nullptr, nullptr, nullptr };
     };
     PsgDacParams psgDacParams;
 

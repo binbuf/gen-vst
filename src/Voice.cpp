@@ -1,5 +1,7 @@
 #include "Voice.h"
 
+#include <cmath>
+
 #include "FmRegisterMap.h"
 
 namespace
@@ -24,14 +26,17 @@ void Voice::reset()
 {
     chip.reset();
     shadow.fill (-1);
-    voiceState     = State::Idle;
-    partIndex      = -1;
-    midiNote       = -1;
-    noteVelocity   = 127;
-    bendSemitones  = 0.0;
-    voiceDetune    = 0.0;
-    sustained      = false;
-    lastNoteOnTime = 0;
+    voiceState              = State::Idle;
+    partIndex               = -1;
+    midiNote                = -1;
+    noteVelocity            = 127;
+    bendSemitones           = 0.0;
+    voiceDetune             = 0.0;
+    sustained               = false;
+    lastNoteOnTime          = 0;
+    glideCurrentMidi        = 0.0;
+    glideTargetMidi         = 0.0;
+    glideRateNotesPerSample = 0.0;
 }
 
 std::uint32_t Voice::nativeSampleRate()
@@ -62,18 +67,24 @@ void Voice::noteOn (int part, int note, int velocity, double bend,
             shadow[w.reg] = w.value;
     }
 
-    voiceState     = State::Active;
-    partIndex      = part;
-    midiNote       = note;
-    noteVelocity   = velocity;
-    bendSemitones  = bend;
-    voiceDetune    = voiceDetuneSemitones;
-    sustained      = false;
-    lastNoteOnTime = timestamp;
+    voiceState              = State::Active;
+    partIndex               = part;
+    midiNote                = note;
+    noteVelocity            = velocity;
+    bendSemitones           = bend;
+    voiceDetune             = voiceDetuneSemitones;
+    sustained               = false;
+    lastNoteOnTime          = timestamp;
+    // A fresh note-on always snaps the glide tracker to the new note — there
+    // is no previous pitch to slide from when the voice was Idle / Released.
+    glideCurrentMidi        = static_cast<double> (note);
+    glideTargetMidi         = glideCurrentMidi;
+    glideRateNotesPerSample = 0.0;
 }
 
 void Voice::legatoTo (int note, int velocity, double bend, bool velToTl,
-                      const Patch& patch, std::uint64_t timestamp)
+                      const Patch& patch, std::uint64_t timestamp,
+                      double glideTimeSamples)
 {
     // Mono Legato: update the serving note / velocity / bend in place and let
     // the dirty-diff push the new frequency (and any TL change from a different
@@ -83,7 +94,72 @@ void Voice::legatoTo (int note, int velocity, double bend, bool velToTl,
     noteVelocity   = velocity;
     bendSemitones  = bend;
     lastNoteOnTime = timestamp;
-    updateRegisters (patch, velToTl);
+
+    if (glideTimeSamples > 0.0
+        && std::abs (static_cast<double> (note) - glideCurrentMidi) > 1e-9)
+    {
+        // Task 28 — start (or re-target) a glide. glideCurrentMidi is held at
+        // wherever the previous note left it (potentially mid-glide), so a
+        // re-target while still sliding picks up smoothly from the live pitch
+        // rather than snapping back to the previous note's int value.
+        glideTargetMidi         = static_cast<double> (note);
+        glideRateNotesPerSample =
+            (glideTargetMidi - glideCurrentMidi) / glideTimeSamples;
+        // updateRegisters writes every param register; the frequency line uses
+        // glideCurrentMidi so the chip's current freq is preserved at this
+        // call — advanceGlide will walk it toward the target in subsequent
+        // blocks. Velocity / TL / patch changes still propagate immediately.
+        updateRegisters (patch, velToTl);
+    }
+    else
+    {
+        // Glide disabled (time == 0) or already at target — snap as before.
+        glideCurrentMidi        = static_cast<double> (note);
+        glideTargetMidi         = glideCurrentMidi;
+        glideRateNotesPerSample = 0.0;
+        updateRegisters (patch, velToTl);
+    }
+}
+
+void Voice::advanceGlide (int numSamples)
+{
+    if (glideRateNotesPerSample == 0.0 || numSamples <= 0)
+        return;
+
+    glideCurrentMidi += glideRateNotesPerSample * static_cast<double> (numSamples);
+
+    // Detect overshoot in either direction and clamp to the target — the
+    // glide ends precisely at the destination so subsequent blocks no-op.
+    if ((glideRateNotesPerSample > 0.0 && glideCurrentMidi >= glideTargetMidi)
+        || (glideRateNotesPerSample < 0.0 && glideCurrentMidi <= glideTargetMidi))
+    {
+        glideCurrentMidi        = glideTargetMidi;
+        glideRateNotesPerSample = 0.0;
+    }
+
+    writeFreqRegistersForMidi (glideCurrentMidi + voiceDetune + bendSemitones);
+}
+
+void Voice::writeFreqRegistersForMidi (double effectiveMidi)
+{
+    const FmRegisterMap::FreqRegs f = FmRegisterMap::midiNoteToFreq (effectiveMidi);
+    const std::uint8_t a4 = static_cast<std::uint8_t> (
+        ((f.blk & 0x07) << 3) | ((f.fnum >> 8) & 0x07));
+    const std::uint8_t a0 = static_cast<std::uint8_t> (f.fnum & 0xFF);
+
+    // YM2612 protocol: write the high byte (0xA4) before the low byte (0xA0)
+    // — the chip latches the high byte on a low-byte write so both register
+    // halves take effect atomically (02-fm-synthesis.md "Frequency Writes").
+    if (shadow[0xA4] != a4)
+    {
+        writeReg (0xA4, a4);
+        shadow[0xA4] = a4;
+    }
+    if (shadow[0xA0] != a0)
+    {
+        writeReg (0xA0, a0);
+        shadow[0xA0] = a0;
+    }
 }
 
 void Voice::noteOff()
@@ -101,9 +177,15 @@ void Voice::updateRegisters (const Patch& patch, bool velToTl)
     // the envelope. The frequency registers fall out of the diff naturally for
     // a static note; a pitch-bend or note change updates them through this same
     // path. Per-voice Unison detune is folded into the bend so each voice in a
-    // stack lands on its own F-number.
-    const FmRegisterMap::NoteParams np { noteVelocity, velToTl, bendSemitones + voiceDetune };
-    for (const auto& w : FmRegisterMap::buildNoteOn (patch, midiNote, np))
+    // stack lands on its own F-number. While a glide is in progress
+    // (glideCurrentMidi != midiNote) the frequency line follows the
+    // interpolated pitch so a patch / TL / bend edit doesn't snap the audible
+    // frequency back to the target mid-glide.
+    const int intPart  = static_cast<int> (std::floor (glideCurrentMidi));
+    const double frac  = glideCurrentMidi - static_cast<double> (intPart);
+    const FmRegisterMap::NoteParams np {
+        noteVelocity, velToTl, bendSemitones + voiceDetune + frac };
+    for (const auto& w : FmRegisterMap::buildNoteOn (patch, intPart, np))
     {
         if (w.reg == 0x28)
             continue;

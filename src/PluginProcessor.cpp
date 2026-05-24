@@ -246,6 +246,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
             "Unison Spread Part " + juce::String (part + 1),
             juce::NormalisableRange<float> (0.0f, 50.0f),
             12.0f));
+        // Task 28 — portamento / glide time in ms. Only audible in Mono+Legato
+        // (glide between legato voices); 0 = instant (current behaviour).
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "glide_time" + suffix, 1 },
+            "Glide Time Part " + juce::String (part + 1),
+            0, 2000, 0));
     }
 
     // --- PSG (SN76489) parameters --------------------------------------------
@@ -303,6 +309,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         layout.add (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { juce::String ("psg_vel_") + suffix, 1 },
             displayPrefix + " VEL", true));
+    }
+
+    // Task 28 — PSG tone-channel glide-time, mirror of the FM per-part glide.
+    // Noise has no pitch, so it is omitted; DAC has no pitch either.
+    for (int i = 0; i < SN76489Engine::kNumToneChs; ++i)
+    {
+        const auto suffix = kPsgChannelLabels[i].toLowerCase();   // "ch1".."ch3"
+        layout.add (std::make_unique<juce::AudioParameterInt> (
+            juce::ParameterID { "glide_time_psg_" + suffix, 1 },
+            "PSG " + kPsgChannelLabels[i] + " Glide Time",
+            0, 2000, 0));
     }
 
     layout.add (std::make_unique<juce::AudioParameterChoice> (
@@ -508,13 +525,15 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
     voiceCountParam       = apvts.getRawParameterValue ("voice_count");
 
-    // Per-part polyphony pointers (Task 15 / view 10).
+    // Per-part polyphony pointers (Task 15 / view 10) + per-part glide-time
+    // (Task 28).
     for (int part = 0; part < PartManager::kNumParts; ++part)
     {
         const juce::String suffix = "_part" + juce::String (part + 1);
         polyModeParam[(std::size_t) part]     = apvts.getRawParameterValue ("poly_mode"     + suffix);
         monoGlideParam[(std::size_t) part]    = apvts.getRawParameterValue ("mono_glide"    + suffix);
         unisonSpreadParam[(std::size_t) part] = apvts.getRawParameterValue ("unison_spread" + suffix);
+        glideTimeParam[(std::size_t) part]    = apvts.getRawParameterValue ("glide_time"    + suffix);
     }
 
     // PSG / DAC raw pointers — looked up once so the audio thread never
@@ -549,6 +568,12 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     psgDacParams.dacRate   = apvts.getRawParameterValue ("dac_rate");
     psgDacParams.dacMode   = apvts.getRawParameterValue ("dac_mode");
     psgDacParams.dacLevel  = apvts.getRawParameterValue ("dac_level");
+
+    // Task 28 — PSG tone-channel glide-time pointers (noise omitted; no pitch).
+    for (int i = 0; i < SN76489Engine::kNumToneChs; ++i)
+        psgDacParams.glideTimeMs[(std::size_t) i] =
+            apvts.getRawParameterValue (juce::String ("glide_time_psg_")
+                                        + kPsgIds[(std::size_t) i]);
 
     // Task 22 — Per-rack-slot routing param pointers. Cached once so the
     // audio thread (and MidiRouter routing-table sync) never pay a parameter
@@ -712,6 +737,14 @@ void GenVstAudioProcessor::pushPsgDacParameters()
         psgEngine.setChannelPan    (i, psgDacParams.pan[(std::size_t) i]->load());
         psgEngine.setChannelBendEnabled (i, psgDacParams.bendOn[(std::size_t) i]->load() > 0.5f);
 
+        // Task 28 — push per-tone-channel glide time (noise has no pitch and
+        // no glide param). Out-of-range channels skip cleanly.
+        if (i < SN76489Engine::kNumToneChs
+            && psgDacParams.glideTimeMs[(std::size_t) i] != nullptr)
+            psgEngine.setGlideTimeMs (i,
+                juce::jlimit (0.0, 2000.0,
+                              (double) psgDacParams.glideTimeMs[(std::size_t) i]->load()));
+
         // Task 23 — push the per-channel envelope ints/scalar into the
         // engine's PsgEnvelope each block. No-op when the apvts pointer is
         // null (defensive — they're built in the ctor and live for the
@@ -764,6 +797,11 @@ void GenVstAudioProcessor::pushPolyphonyParameters() noexcept
         if (unisonSpreadParam[(std::size_t) part] != nullptr)
             m.spreadCents = juce::jlimit (0.0, 50.0,
                                 (double) unisonSpreadParam[(std::size_t) part]->load());
+        // Task 28 — push the per-part glide-time. Only used by Mono+Legato
+        // note-ons; Poly / Unison ignore the value.
+        if (glideTimeParam[(std::size_t) part] != nullptr)
+            m.glideTimeMs = juce::jlimit (0.0, 2000.0,
+                                (double) glideTimeParam[(std::size_t) part]->load());
 
         voiceAllocator.setPartMode (part, m);
     }

@@ -227,11 +227,14 @@ void SN76489Engine::reset()
 
     for (auto& state : ch)
     {
-        state.note          = -1;
-        state.velocity      = 0;
-        state.active        = false;
-        state.bendSemitones = 0.0;
-        state.timestamp     = 0;
+        state.note                    = -1;
+        state.velocity                = 0;
+        state.active                  = false;
+        state.bendSemitones           = 0.0;
+        state.timestamp               = 0;
+        state.glideCurrentMidi        = 0.0;
+        state.glideTargetMidi         = 0.0;
+        state.glideRateNotesPerSample = 0.0;
         state.envelope.reset();
     }
     nextTimestamp = 0;
@@ -273,13 +276,36 @@ void SN76489Engine::noteOnTone (int midiNote, int velocity)
     }
 
     auto& state = ch[static_cast<std::size_t> (target)];
+    const bool wasActive = state.active;
+
+    // Task 28 — start a glide when the channel was already sounding and the
+    // user has dialled a non-zero glide time. A fresh allocation (channel was
+    // idle / released) snaps to the new note: there is no previous pitch to
+    // slide from, and the envelope's attack already shapes the onset.
+    if (wasActive && state.glideTimeMs > 0.0
+        && std::abs (static_cast<double> (midiNote) - state.glideCurrentMidi) > 1e-9)
+    {
+        const double samples = state.glideTimeMs * 0.001 * hostSampleRate;
+        state.glideTargetMidi         = static_cast<double> (midiNote);
+        state.glideRateNotesPerSample =
+            (state.glideTargetMidi - state.glideCurrentMidi) / samples;
+        // Don't write the freq register here — renderAdd will advance the
+        // glide and write the divider every block until the target is hit.
+    }
+    else
+    {
+        state.glideCurrentMidi        = static_cast<double> (midiNote);
+        state.glideTargetMidi         = state.glideCurrentMidi;
+        state.glideRateNotesPerSample = 0.0;
+        writeToneFreq (target, static_cast<double> (midiNote)
+                                + (state.bendEnabled ? state.bendSemitones : 0.0));
+    }
+
     state.note      = midiNote;
     state.velocity  = velocity;
     state.active    = true;
     state.timestamp = nextTimestamp++;
 
-    writeToneFreq   (target, static_cast<double> (midiNote)
-                              + (state.bendEnabled ? state.bendSemitones : 0.0));
     // The chip is held at full output (atten 0); the software envelope (and
     // its velocity-sensitivity scalar) does all the volume work. Without this
     // the chip's own 4-bit velocity attenuation would double-count against
@@ -341,9 +367,11 @@ void SN76489Engine::setPitchBendSemitones (int psgChannel, double semitones)
     state.bendSemitones = semitones;
 
     // Tone channels: re-derive the divider if pitch bend is enabled and the
-    // channel is sounding. Noise channel has no pitch.
+    // channel is sounding. Noise channel has no pitch. While a glide is in
+    // progress the current interpolated pitch is the base — bend rides on top
+    // and renderAdd keeps re-writing the divider as the glide advances.
     if (psgChannel < kNumToneChs && state.active && state.bendEnabled)
-        writeToneFreq (psgChannel, static_cast<double> (state.note) + semitones);
+        writeToneFreq (psgChannel, state.glideCurrentMidi + semitones);
 }
 
 // --- Parameter setters -----------------------------------------------------
@@ -413,6 +441,13 @@ void SN76489Engine::setEnvelopeVel (int psgChannel, float vel01) noexcept
     ch[static_cast<std::size_t> (psgChannel)].envelope.setVelocitySensitivity (vel01);
 }
 
+void SN76489Engine::setGlideTimeMs (int psgChannel, double ms) noexcept
+{
+    // Noise has no pitch, so any glide setting is silently dropped.
+    if (psgChannel < 0 || psgChannel >= kNumToneChs) return;
+    ch[static_cast<std::size_t> (psgChannel)].glideTimeMs = ms < 0.0 ? 0.0 : ms;
+}
+
 // --- Per-block render ------------------------------------------------------
 
 void SN76489Engine::renderAdd (float* outL, float* outR, int numSamples)
@@ -422,6 +457,33 @@ void SN76489Engine::renderAdd (float* outL, float* outR, int numSamples)
 
     if (static_cast<int> (chipScratch.size()) < numSamples)
         chipScratch.assign (static_cast<std::size_t> (numSamples), 0.0f);
+
+    // Task 28 — advance per-tone-channel portamento before generating samples.
+    // The divider write happens once per block at the new interpolated pitch;
+    // the chip resamples internally, so per-sample writes aren't necessary
+    // for an audible slide at typical block sizes (07-feature-spec.md
+    // "Portamento", 03-psg-synthesis.md).
+    for (int t = 0; t < kNumToneChs; ++t)
+    {
+        auto& state = ch[static_cast<std::size_t> (t)];
+        if (state.glideRateNotesPerSample == 0.0)
+            continue;
+
+        state.glideCurrentMidi +=
+            state.glideRateNotesPerSample * static_cast<double> (numSamples);
+
+        if ((state.glideRateNotesPerSample > 0.0
+             && state.glideCurrentMidi >= state.glideTargetMidi)
+            || (state.glideRateNotesPerSample < 0.0
+                && state.glideCurrentMidi <= state.glideTargetMidi))
+        {
+            state.glideCurrentMidi        = state.glideTargetMidi;
+            state.glideRateNotesPerSample = 0.0;
+        }
+
+        writeToneFreq (t, state.glideCurrentMidi
+                            + (state.bendEnabled ? state.bendSemitones : 0.0));
+    }
 
     for (int chIdx = 0; chIdx < kNumChannels; ++chIdx)
     {

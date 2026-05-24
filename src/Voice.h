@@ -51,8 +51,26 @@ public:
     // refresh its frequency registers via the dirty-diff path — skipping the
     // key-off / key-on, so the envelope continues from its current level.
     // 07-feature-spec.md Mono "Legato".
+    //
+    // glideTimeSamples > 0 (Task 28): instead of snapping the frequency to the
+    // new note, leave the voice's "current" pitch where it was and walk it
+    // linearly toward the target over the given number of native-rate samples.
+    // Per-block advance + register write happens in advanceGlide(). Velocity
+    // / TL / patch changes still propagate immediately via updateRegisters.
     void legatoTo (int note, int velocity, double bendSemitones, bool velToTl,
-                   const Patch& patch, std::uint64_t timestamp);
+                   const Patch& patch, std::uint64_t timestamp,
+                   double glideTimeSamples = 0.0);
+
+    // Advance the per-voice glide (Task 28) by `numSamples` native-rate samples
+    // and re-write the YM2612 F-number registers via the dirty-diff path when
+    // the interpolated pitch has moved. No-op when glide is inactive (either
+    // glide_time was 0 at note-on, or the current pitch has already caught up
+    // to the target). Called once per block from VoiceAllocator::render.
+    void advanceGlide (int numSamples);
+
+    // True while a glide is still in progress on this voice. Test introspection
+    // for Task 28; the audio path never reads this.
+    bool isGliding() const noexcept { return glideRateNotesPerSample != 0.0; }
 
     // Dirty-diff: re-derive the param registers from `patch` (with the voice's
     // current velocity, bend and velToTl applied) and write only the ones that
@@ -91,6 +109,11 @@ public:
 private:
     void writeReg (std::uint8_t reg, std::uint8_t value);
 
+    // Compute and write the YM2612 frequency-high (0xA4) + frequency-low (0xA0)
+    // registers for an effective MIDI note (with bend + detune already folded
+    // in). Dirty-diff'd against the shadow so a no-change call costs nothing.
+    void writeFreqRegistersForMidi (double effectiveMidi);
+
     GenVstYmfmInterface interface;
     ymfm::ym2612        chip { interface };
 
@@ -105,6 +128,18 @@ private:
     double        voiceDetune    = 0.0;
     bool          sustained      = false;
     std::uint64_t lastNoteOnTime = 0;
+
+    // Task 28 — portamento / glide state. glideCurrentMidi is the actually-
+    // sounding MIDI note (fractional), glideTargetMidi is the destination
+    // (always integer in practice, since legatoTo passes int notes), and
+    // glideRateNotesPerSample is the signed semitone delta added each native-
+    // rate sample while the glide is active. When current == target the rate
+    // is held at 0.0 so isGliding() returns false. In the non-glide path
+    // (poly mode, unison, fresh note-on) glideCurrentMidi tracks midiNote so
+    // updateRegisters() produces identical output to the pre-Task-28 code.
+    double        glideCurrentMidi        = 0.0;
+    double        glideTargetMidi         = 0.0;
+    double        glideRateNotesPerSample = 0.0;
 
     // Last value written to each bank-0 register, indexed by register address;
     // -1 means "never written". Diffed each block by updateRegisters so only

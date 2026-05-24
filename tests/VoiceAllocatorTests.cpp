@@ -462,6 +462,115 @@ TEST (VoiceAllocator, VoiceCountResetToFullPoolAllowsAllVoices)
     EXPECT_EQ (alloc.numActiveVoices(), 16);
 }
 
+// --- Task 28 — Mono+Legato portamento (glide time) --------------------------
+
+namespace
+{
+    // Mono+Legato with an explicit glide time (ms). Wraps the existing
+    // monoMode() helper which defaults glideTimeMs to 0.
+    VoiceAllocator::PartPolyMode monoLegatoWithGlide (double glideMs)
+    {
+        VoiceAllocator::PartPolyMode m {
+            VoiceAllocator::PartPolyMode::Mode::Mono, true, 12.0 };
+        m.glideTimeMs = glideMs;
+        return m;
+    }
+
+    // Native render-rate VoiceAllocator runs at — derived from the voice's
+    // chip sample rate via `voices[0].nativeSampleRate()` at prepare. The
+    // value here mirrors the one in Voice.cpp (NTSC YM2612 / 144).
+    constexpr double kNativeRate = 53267.0;
+}
+
+TEST (VoiceAllocator, GlideTimeZeroIsImmediate)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, monoLegatoWithGlide (0.0));   // glide off
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    // Legato to a new note with glide_time = 0 -> voice should not be gliding.
+    alloc.noteOn (0, 72, 100, 0.0, false, p);
+
+    bool found = false;
+    for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+    {
+        const auto& v = alloc.voiceAt (i);
+        if (v.isActive() && v.part() == 0 && v.note() == 72)
+        {
+            EXPECT_FALSE (v.isGliding());
+            found = true;
+        }
+    }
+    EXPECT_TRUE (found);
+}
+
+TEST (VoiceAllocator, GlideTimeReachesTargetWithinExpectedBlocks)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.setPartMode (0, monoLegatoWithGlide (100.0));   // 100 ms glide
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    alloc.noteOn (0, 72, 100, 0.0, false, p);   // legato hop, glide starts
+
+    // 100 ms at the chip's native rate is the glide duration; one extra
+    // block of slack covers the int-vs-double rounding in advanceGlide.
+    const int   glideSamples = static_cast<int> (100.0 * 0.001 * kNativeRate);
+    const int   blockSize    = 512;
+    const int   maxBlocks    = (glideSamples / blockSize) + 4;
+    const auto findGlidingVoice = [&]() -> const Voice*
+    {
+        for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+        {
+            const auto& v = alloc.voiceAt (i);
+            if (v.isActive() && v.part() == 0 && v.note() == 72)
+                return &v;
+        }
+        return nullptr;
+    };
+
+    const Voice* v = findGlidingVoice();
+    ASSERT_NE (v, nullptr);
+    EXPECT_TRUE (v->isGliding());
+
+    std::array<float, 512> outL {}, outR {};
+    bool reachedTarget = false;
+    for (int b = 0; b < maxBlocks; ++b)
+    {
+        alloc.render (outL.data(), outR.data(), blockSize);
+        if (! v->isGliding()) { reachedTarget = true; break; }
+    }
+    EXPECT_TRUE (reachedTarget) << "glide did not converge within "
+                                << maxBlocks << " blocks";
+}
+
+TEST (VoiceAllocator, GlideOnlyAppliesInMonoLegato)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    // Poly mode with a non-zero glide_time — must NOT glide. Each new note
+    // takes a fresh voice (LRU stealing irrelevant here), so the new voice's
+    // glide tracker is fresh (current == target).
+    VoiceAllocator::PartPolyMode polyWithGlide;
+    polyWithGlide.mode        = VoiceAllocator::PartPolyMode::Mode::Poly;
+    polyWithGlide.glideTimeMs = 500.0;
+    alloc.setPartMode (0, polyWithGlide);
+    const Patch p = makePatch();
+
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    alloc.noteOn (0, 72, 100, 0.0, false, p);
+
+    for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+    {
+        const auto& v = alloc.voiceAt (i);
+        if (v.isActive() && v.part() == 0)
+            EXPECT_FALSE (v.isGliding());
+    }
+}
+
 TEST (VoiceAllocator, UnisonPitchBendKeepsStackCoherent)
 {
     VoiceAllocator alloc;

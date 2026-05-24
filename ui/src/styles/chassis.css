@@ -365,11 +365,12 @@
 
 /* Task 22 — per-instrument routing strip cells. Each cell hosts a step-field
  * or canvas widget, so we just want the cell to fill its grid column and
- * align center-vertically. */
+ * align center-vertically. The Task-28 GLD cell mirrors the DET layout. */
 #rack-routing-group #rack-midi-cell,
 #rack-routing-group .trps-cell,
 #rack-routing-group .rng-cell,
-#rack-routing-group .rack-det-cell {
+#rack-routing-group .rack-det-cell,
+#rack-routing-group .rack-gld-cell {
   display: flex;
   align-items: center;
   gap: 4px;

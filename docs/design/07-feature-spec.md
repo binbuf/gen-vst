@@ -175,6 +175,26 @@ Single voice. New note-on either:
 
 Configurable via a "Mono Mode" toggle in the UI.
 
+#### Portamento / Glide time
+
+The per-part **glide-time** slider in the rack routing strip sets how long a
+Mono+Legato voice takes to slide between successive notes. Range **0–2000 ms**
+(integer), default **0** = instant (no slide). Glide is performed as a linear
+interpolation of MIDI-note value at native-rate sample granularity, re-deriving
+the YM2612 F-number each block; bend and per-voice detune ride on top of the
+interpolated pitch.
+
+- **Mono+Legato only.** Retrigger ignores glide (the key-off restart precludes
+  a smooth pitch slide). Poly ignores it (each voice is independent). Unison
+  ignores it (each note-on allocates a fresh voice stack).
+- **PSG tones** also expose a per-channel glide-time (`glide_time_psg_ch1..3`).
+  When a new note arrives on an already-sounding tone channel, the divider
+  register is interpolated per block over the configured time.
+- **DAC** and **PSG noise** have no pitch; no glide param exists for them and
+  the slider row is hidden from the routing strip.
+
+The slider's red LED readout shows `OFF` at 0 and the ms value otherwise.
+
 ### Unison
 
 All N voices play the same pitch simultaneously, each detuned by a per-voice

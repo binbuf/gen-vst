@@ -141,7 +141,14 @@ void VoiceAllocator::noteOnMono (int part, int note, int velocity, double bend,
     const auto& mode = partModes[(std::size_t) part];
     if (mode.monoLegato)
     {
-        existing->legatoTo (note, velocity, bend, velToTl, patch, nextTimestamp++);
+        // Task 28 — translate the per-part glide time (ms) to native-rate
+        // samples for the Voice. The voice walks its frequency register each
+        // block at native rate, so the rate units must match.
+        const double glideSamples = mode.glideTimeMs > 0.0
+            ? mode.glideTimeMs * 0.001 * nativeRate
+            : 0.0;
+        existing->legatoTo (note, velocity, bend, velToTl, patch,
+                            nextTimestamp++, glideSamples);
     }
     else
     {
@@ -254,7 +261,14 @@ void VoiceAllocator::render (float* outL, float* outR, int numSamples, DACPlayer
 
     for (auto& v : voices)
         if (! v.isIdle())
+        {
+            // Task 28 — advance any in-progress portamento before generating
+            // samples so the chip's frequency registers reflect the new
+            // interpolated pitch for the whole block. Cheap no-op when the
+            // voice isn't gliding (release / steady note).
+            v.advanceGlide (toGen);
             v.renderAdd (mixL + carry, mixR + carry, toGen);
+        }
 
     // The DAC is summed into the same native mix buffer as the FM voices so
     // a single resample pass handles both (ADR-0011, ADR-0014). The dedicated

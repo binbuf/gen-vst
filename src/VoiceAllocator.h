@@ -34,6 +34,9 @@ public:
         Mode   mode        = Mode::Poly;
         bool   monoLegato  = false;   // Mono only — false = Retrigger (MVP default), true = Legato
         double spreadCents = 12.0;    // Unison only — symmetric F-number fan-out (view 10 default)
+        // Task 28 — portamento time in ms. Audible only in Mono+Legato; Poly /
+        // Unison ignore it. 0 = instant (legacy behaviour).
+        double glideTimeMs = 0.0;
     };
 
     VoiceAllocator() = default;

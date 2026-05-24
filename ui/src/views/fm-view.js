@@ -430,8 +430,9 @@ function showToast(level, message) {
 
 function mountRackRoutingStrip(col) {
   // The DOM hosts (midi cell, trps cells, range slider+readout, detune
-  // slider+readout, balance slider) live in index.html; we recreate the
-  // bound widgets each time the selected row changes via bindRackRoutingStripToRow.
+  // slider+readout, glide slider+readout, balance slider) live in
+  // index.html; we recreate the bound widgets each time the selected row
+  // changes via bindRackRoutingStripToRow.
   fmViewState.rackRoutingHosts = {
     midi:        col.querySelector("#rack-midi-cell"),
     trpsSt:      col.querySelector("#rack-trps-st-cell"),
@@ -440,6 +441,10 @@ function mountRackRoutingStrip(col) {
     rangeReadout:col.querySelector("#rack-range-readout"),
     detuneCanvas:col.querySelector("#rack-detune-slider"),
     detuneReadout: col.querySelector("#rack-detune-readout"),
+    glideLabel:  col.querySelector("#rack-glide-label"),
+    glideCell:   col.querySelector("#rack-glide-cell"),
+    glideCanvas: col.querySelector("#rack-glide-slider"),
+    glideReadout: col.querySelector("#rack-glide-readout"),
     balanceCanvas: col.querySelector("#rack-balance-slider"),
   };
   clearRackRoutingStrip();
@@ -520,12 +525,47 @@ function bindRackRoutingStripToRow(row) {
     fmViewState.rackRoutingWidgets.push(readout);
   }
 
+  // Task 28 — Glide time (portamento) in ms. Only FM parts and PSG tone
+  // channels expose a glide_time apvts param; DAC and PSG noise have no
+  // pitch (and no param), so the whole GLD row collapses for those slots.
+  const glideParamId = glideParamIdForSuffix(suffix);
+  if (glideParamId !== null) {
+    if (h.glideLabel)  h.glideLabel.style.display = "";
+    if (h.glideCell)   h.glideCell.style.display  = "";
+    const binding = bindSlider(glideParamId);
+    const w = new Slider(h.glideCanvas, binding, { defaultNormalised: 0 });
+    fmViewState.rackRoutingWidgets.push(w);
+
+    // Readout shows "OFF" when value is 0, ms value otherwise. 4 chars fits
+    // up to "2000" + the "OFF" sentinel.
+    const readout = new LedReadout(h.glideReadout, {
+      binding, widthChars: 4, offWhenZero: true,
+    });
+    fmViewState.rackRoutingWidgets.push(readout);
+  } else {
+    // Hide both the GLD label and the cell so the BAL row collapses up
+    // visually for DAC / PSG-noise (which have no pitch and no glide param).
+    if (h.glideLabel) h.glideLabel.style.display = "none";
+    if (h.glideCell)  h.glideCell.style.display  = "none";
+  }
+
   // Balance — float -1..+1 slider.
   {
     const binding = bindSlider("balance" + suffix);
     const w = new Slider(h.balanceCanvas, binding, { defaultNormalised: 0.5 });
     fmViewState.rackRoutingWidgets.push(w);
   }
+}
+
+// Map a rack-row paramSuffix (e.g. "_part1", "_psg_ch2", "_dac") to the
+// matching glide_time apvts param id, or null if the row type has no glide.
+// FM parts: "glide_time_partN"; PSG tones: "glide_time_psg_chN"; everything
+// else (DAC, PSG noise) returns null.
+function glideParamIdForSuffix(suffix) {
+  if (!suffix) return null;
+  if (suffix.startsWith("_part")) return "glide_time" + suffix;
+  if (/^_psg_ch[123]$/.test(suffix)) return "glide_time" + suffix;
+  return null;
 }
 
 // Compact LED readout for the RNG widget: shows the lo-hi pair as
