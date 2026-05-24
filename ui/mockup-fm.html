@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1200, initial-scale=1" />
+    <title>Gen VST mockup — FM mode</title>
+    <link rel="stylesheet" href="/src/styles/design-system.css" />
+    <link rel="stylesheet" href="/mockup/mockup.css" />
+    <link rel="stylesheet" href="/mockup/mockup-fm.css" />
+  </head>
+  <body>
+    <div class="frame chassis">
+      <!-- ============================== HEADER ============================== -->
+      <header class="hdr inset">
+        <div class="hdr-brand">
+          <span class="note-on-led" title="NOTE ON"></span>
+          <span class="hdr-wordmark t-wordmark">
+            <span class="wm-gen">GEN</span>
+            <span class="wm-sep">·</span>
+            <span class="wm-vst">VST</span>
+          </span>
+        </div>
+
+        <div class="hdr-mode-pill btn-pill">
+          <button type="button" class="btn is-active">FM</button>
+          <button type="button" class="btn">SQ</button>
+          <button type="button" class="btn">D</button>
+        </div>
+
+        <div class="hdr-patch">
+          <button type="button" class="icon-btn" aria-label="Previous patch">◀</button>
+          <div class="lcd lcd-patch">
+            <span class="t-patch-lcd">GADGET BASS</span>
+          </div>
+          <button type="button" class="icon-btn" aria-label="Next patch">▶</button>
+          <button type="button" class="icon-btn" aria-label="Browse presets">📂</button>
+        </div>
+
+        <div></div>
+
+        <div class="hdr-filter-block">
+          <span class="filter-label">
+            <span class="filter-title">Output</span>
+            <span class="filter-title">Filter</span>
+          </span>
+          <div class="switch-2way">
+            <div class="switch-pos is-active">LEGACY</div>
+            <div class="switch-pos">CRYSTAL CLEAR</div>
+          </div>
+        </div>
+
+        <div class="col">
+          <span class="t-label">LADDER</span>
+          <span class="toggle is-on" title="Ladder effect on"></span>
+        </div>
+
+        <div class="hdr-vol">
+          <span class="t-label">VOL</span>
+          <span class="knob knob-sm"></span>
+        </div>
+
+        <button type="button" class="icon-btn hdr-gear" aria-label="Open settings">⚙</button>
+      </header>
+
+      <!-- ============================== FM MODE PANEL ======================= -->
+      <section class="mode-panel inset fm-panel">
+        <h1 class="mode-title t-section-title on-inset">FM</h1>
+
+        <!-- ============ TOP ROW =================================== -->
+        <div class="fm-top">
+          <!-- LFO + global controls block -->
+          <div class="block">
+            <span class="block-title">LFO · MW · GLOBAL</span>
+            <div class="fm-lfo">
+              <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">LFO</span></div>
+              <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">RATE</span></div>
+              <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">PMS</span></div>
+              <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">AMS</span></div>
+              <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">MW→PMS</span></div>
+            </div>
+            <div class="fm-globals">
+              <span>POLY</span>
+              <span class="stepper">
+                <span class="stepper-val">11</span>
+                <button type="button" class="stepper-btn">▲</button>
+                <button type="button" class="stepper-btn">▼</button>
+              </span>
+              <span>RANGE</span>
+              <span class="stepper">
+                <span class="stepper-val">2</span>
+                <button type="button" class="stepper-btn">▲</button>
+                <button type="button" class="stepper-btn">▼</button>
+              </span>
+              <div class="pb-mw-row">
+                <div class="switch-2way" style="font-size: 7px;">
+                  <div class="switch-pos">LEGATO</div>
+                  <div class="switch-pos is-active">RETRIG</div>
+                </div>
+                <div class="col" style="gap: 2px;">
+                  <span class="t-label" style="font-size: 7px;">PB</span>
+                  <div class="level-meter" style="padding: 1px;">
+                    <span class="seg is-on" style="width: 3px; height: 5px;"></span>
+                    <span class="seg is-on" style="width: 3px; height: 5px;"></span>
+                    <span class="seg is-on" style="width: 3px; height: 5px;"></span>
+                    <span class="seg" style="width: 3px; height: 5px;"></span>
+                    <span class="seg" style="width: 3px; height: 5px;"></span>
+                  </div>
+                </div>
+                <div class="col" style="gap: 2px;">
+                  <span class="t-label" style="font-size: 7px;">MW</span>
+                  <div class="level-meter" style="padding: 1px;">
+                    <span class="seg is-on" style="width: 3px; height: 5px;"></span>
+                    <span class="seg is-on" style="width: 3px; height: 5px;"></span>
+                    <span class="seg" style="width: 3px; height: 5px;"></span>
+                    <span class="seg" style="width: 3px; height: 5px;"></span>
+                    <span class="seg" style="width: 3px; height: 5px;"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Envelope curve placeholder -->
+          <div class="block fm-env">
+            <span class="block-title">ENVELOPE · OP 1</span>
+            <div class="fm-env-lcd">
+              <!-- Static ADSR polyline; the live curve lands in Task 04. -->
+              <svg class="fm-env-curve" viewBox="0 0 360 96" preserveAspectRatio="none">
+                <polyline
+                  points="0,88 60,8 120,40 220,40 280,88 360,88"
+                  fill="none"
+                  stroke="#4ea0ff"
+                  stroke-width="1.5"
+                  stroke-linejoin="round"
+                  filter="drop-shadow(0 0 4px rgba(78,160,255,0.65))" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- FREQ CTRL MODE pill -->
+          <div class="block fm-freqctrl">
+            <span class="block-title">FREQ CTRL MODE</span>
+            <button type="button" class="btn is-active">INT MUL</button>
+            <button type="button" class="btn">FLOAT MUL</button>
+            <button type="button" class="btn">AUTO RETRIG</button>
+          </div>
+
+          <!-- RETRIG RATE -->
+          <div class="block fm-retrig">
+            <span class="block-title">RETRIG RATE</span>
+            <div class="lcd lcd-readout" style="min-width: 64px;">
+              <span class="t-knob-readout" style="font-size: 14px; opacity: 0.35;">498</span>
+            </div>
+            <div class="row" style="gap: 4px;">
+              <button type="button" class="icon-btn" style="width:22px; height:22px; font-size:11px;">▲</button>
+              <button type="button" class="icon-btn" style="width:22px; height:22px; font-size:11px;">▼</button>
+            </div>
+          </div>
+
+          <!-- OP1 FB -->
+          <div class="block fm-opfb">
+            <span class="block-title">OP1 FB</span>
+            <span class="knob"></span>
+            <div class="lcd lcd-readout" style="min-width: 36px;">
+              <span class="t-knob-readout">5</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ OPERATOR GRID + SIDE BLOCKS =============== -->
+        <div class="fm-mid">
+          <!-- Operator grid block -->
+          <div class="block fm-opgrid">
+            <span class="block-title">OPERATOR GRID</span>
+
+            <!-- Column heads -->
+            <span></span>
+            <span class="col-head">AM</span>
+            <span class="col-head">AR</span>
+            <span class="col-head">DR</span>
+            <span class="col-head">SL</span>
+            <span class="col-head">SR</span>
+            <span class="col-head">RR</span>
+            <span class="col-head">RS</span>
+            <span class="col-head">SSG</span>
+            <span class="col-head">MUL</span>
+            <span class="col-head">FREQ</span>
+            <span class="col-head">FIX</span>
+            <span class="col-head">DT</span>
+
+            <!-- Operator 1 -->
+            <span class="op-badge is-active">1</span>
+            <span class="toggle toggle-sm"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="combo">OFF</span>
+            <span class="knob"></span>
+            <span class="lcd lcd-mini"><span class="t-knob-readout">3.00</span></span>
+            <span class="toggle toggle-sm"></span>
+            <span class="knob"></span>
+
+            <!-- Operator 2 -->
+            <span class="op-badge">2</span>
+            <span class="toggle toggle-sm"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="combo">OFF</span>
+            <span class="knob"></span>
+            <span class="lcd lcd-mini"><span class="t-knob-readout">1.00</span></span>
+            <span class="toggle toggle-sm"></span>
+            <span class="knob"></span>
+
+            <!-- Operator 3 -->
+            <span class="op-badge">3</span>
+            <span class="toggle toggle-sm is-on"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="combo">REPEAT</span>
+            <span class="knob"></span>
+            <span class="lcd lcd-mini"><span class="t-knob-readout">0.50</span></span>
+            <span class="toggle toggle-sm"></span>
+            <span class="knob"></span>
+
+            <!-- Operator 4 -->
+            <span class="op-badge">4</span>
+            <span class="toggle toggle-sm"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="knob"></span>
+            <span class="combo">OFF</span>
+            <span class="knob"></span>
+            <span class="lcd lcd-mini"><span class="t-knob-readout">0.50</span></span>
+            <span class="toggle toggle-sm is-on"></span>
+            <span class="knob"></span>
+          </div>
+
+          <!-- TL / VEL / MW right margin block -->
+          <div class="block fm-tlblock">
+            <span class="block-title">TL · VEL · MW</span>
+
+            <span></span>
+            <span class="col-head">VEL</span>
+            <span class="col-head">MW</span>
+
+            <span class="tl-slider"><span class="tl-thumb" style="bottom: 70%;"></span></span>
+            <span class="knob knob-xs"></span>
+            <span class="knob knob-xs"></span>
+
+            <span class="tl-slider"><span class="tl-thumb" style="bottom: 50%;"></span></span>
+            <span class="knob knob-xs"></span>
+            <span class="knob knob-xs"></span>
+
+            <span class="tl-slider"><span class="tl-thumb" style="bottom: 35%;"></span></span>
+            <span class="knob knob-xs"></span>
+            <span class="knob knob-xs"></span>
+
+            <span class="tl-slider"><span class="tl-thumb" style="bottom: 20%;"></span></span>
+            <span class="knob knob-xs"></span>
+            <span class="knob knob-xs"></span>
+          </div>
+
+          <!-- Algorithm tile -->
+          <div class="block fm-algo">
+            <span class="block-title">ALGO</span>
+            <div class="lcd algo-diagram">
+              <!-- Algorithm 4 mini diagram. Throwaway approximation —
+                   Task 04 introduces the real renderer. -->
+              <svg viewBox="0 0 80 80">
+                <g fill="none" stroke="#4ea0ff" stroke-width="1.2"
+                   filter="drop-shadow(0 0 2px rgba(78,160,255,0.6))">
+                  <rect x="6"  y="10" width="14" height="14"/>
+                  <rect x="6"  y="36" width="14" height="14"/>
+                  <rect x="6"  y="62" width="14" height="14"/>
+                  <rect x="34" y="36" width="14" height="14"/>
+                  <line x1="20" y1="17" x2="34" y2="43"/>
+                  <line x1="20" y1="69" x2="34" y2="43"/>
+                  <line x1="48" y1="43" x2="72" y2="43"/>
+                  <line x1="20" y1="43" x2="34" y2="43"/>
+                </g>
+                <text x="58" y="48" fill="#4ea0ff" font-family="IBM Plex Mono"
+                      font-size="9" font-weight="500"
+                      filter="drop-shadow(0 0 2px rgba(78,160,255,0.6))">→</text>
+              </svg>
+            </div>
+            <span class="algo-label">ALG 4</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== STATUS BAR ========================== -->
+      <footer class="status">
+        <div class="status-meters">
+          <div class="ch">
+            <span class="ch-label">L</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+          <div class="ch">
+            <span class="ch-label">R</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+        </div>
+        <span class="status-version">v0.2.0</span>
+      </footer>
+    </div>
+  </body>
+</html>

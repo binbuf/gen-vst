@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1200, initial-scale=1" />
+    <title>Gen VST mockup — D mode</title>
+    <link rel="stylesheet" href="/src/styles/design-system.css" />
+    <link rel="stylesheet" href="/mockup/mockup.css" />
+    <link rel="stylesheet" href="/mockup/mockup-d.css" />
+  </head>
+  <body>
+    <div class="frame chassis">
+      <!-- ============================== HEADER ============================== -->
+      <header class="hdr inset">
+        <div class="hdr-brand">
+          <span class="note-on-led" title="NOTE ON"></span>
+          <span class="hdr-wordmark t-wordmark">
+            <span class="wm-gen">GEN</span>
+            <span class="wm-sep">·</span>
+            <span class="wm-vst">VST</span>
+          </span>
+        </div>
+
+        <div class="hdr-mode-pill btn-pill">
+          <button type="button" class="btn">FM</button>
+          <button type="button" class="btn">SQ</button>
+          <button type="button" class="btn is-active">D</button>
+        </div>
+
+        <div class="hdr-patch">
+          <button type="button" class="icon-btn" aria-label="Previous patch">◀</button>
+          <div class="lcd lcd-patch">
+            <span class="t-patch-lcd">CRUNCHY DRUMS</span>
+          </div>
+          <button type="button" class="icon-btn" aria-label="Next patch">▶</button>
+          <button type="button" class="icon-btn" aria-label="Browse presets">📂</button>
+        </div>
+
+        <div></div>
+
+        <div class="hdr-filter-block">
+          <span class="filter-label">
+            <span class="filter-title">Output</span>
+            <span class="filter-title">Filter</span>
+          </span>
+          <div class="switch-2way">
+            <div class="switch-pos is-active">LEGACY</div>
+            <div class="switch-pos">CRYSTAL CLEAR</div>
+          </div>
+        </div>
+
+        <div class="col">
+          <span class="t-label">LADDER</span>
+          <span class="toggle is-on" title="Ladder effect on"></span>
+        </div>
+
+        <div class="hdr-vol">
+          <span class="t-label">VOL</span>
+          <span class="knob knob-sm"></span>
+        </div>
+
+        <button type="button" class="icon-btn hdr-gear" aria-label="Open settings">⚙</button>
+      </header>
+
+      <!-- ============================== D MODE PANEL ======================== -->
+      <section class="mode-panel inset d-panel">
+        <h1 class="mode-title d-title t-section-title on-inset">D — RETRO DECIMATOR UNIT</h1>
+
+        <div class="d-wordmark">RETRO DECIMATOR</div>
+
+        <div class="d-prescaler">
+          <span class="d-prescaler-label">DAC Prescaler</span>
+          <span class="knob decimator-knob"></span>
+          <div class="lcd lcd-readout d-prescaler-readout">
+            <span class="t-knob-readout" style="font-size: 14px;">0.42</span>
+          </div>
+        </div>
+
+        <div class="d-meters">
+          <span class="ch-label">L</span>
+          <div class="level-meter level-meter-tall">
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg"></span>
+            <span class="seg is-warm"></span><span class="seg is-warm"></span>
+          </div>
+
+          <div class="mono-block">
+            <span class="t-label">MONO</span>
+            <span class="toggle" title="Mono off"></span>
+          </div>
+
+          <div class="level-meter level-meter-tall">
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg is-on"></span>
+            <span class="seg is-on"></span><span class="seg"></span>
+            <span class="seg"></span><span class="seg"></span>
+            <span class="seg is-warm"></span><span class="seg is-warm"></span>
+          </div>
+          <span class="ch-label">R</span>
+        </div>
+
+        <div class="d-drywet">
+          <span class="d-drywet-label">Dry / Wet</span>
+          <span class="knob"></span>
+        </div>
+      </section>
+
+      <!-- ============================== STATUS BAR ========================== -->
+      <footer class="status">
+        <div class="status-meters">
+          <div class="ch">
+            <span class="ch-label">L</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+          <div class="ch">
+            <span class="ch-label">R</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+        </div>
+        <span class="status-version">v0.2.0</span>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1200, initial-scale=1" />
+    <title>Gen VST mockup — SQ mode</title>
+    <link rel="stylesheet" href="/src/styles/design-system.css" />
+    <link rel="stylesheet" href="/mockup/mockup.css" />
+    <link rel="stylesheet" href="/mockup/mockup-sq.css" />
+  </head>
+  <body>
+    <div class="frame chassis">
+      <!-- ============================== HEADER ============================== -->
+      <header class="hdr inset">
+        <div class="hdr-brand">
+          <span class="note-on-led" title="NOTE ON"></span>
+          <span class="hdr-wordmark t-wordmark">
+            <span class="wm-gen">GEN</span>
+            <span class="wm-sep">·</span>
+            <span class="wm-vst">VST</span>
+          </span>
+        </div>
+
+        <div class="hdr-mode-pill btn-pill">
+          <button type="button" class="btn">FM</button>
+          <button type="button" class="btn is-active">SQ</button>
+          <button type="button" class="btn">D</button>
+        </div>
+
+        <div class="hdr-patch">
+          <button type="button" class="icon-btn" aria-label="Previous patch">◀</button>
+          <div class="lcd lcd-patch">
+            <span class="t-patch-lcd">PULSE ARP</span>
+          </div>
+          <button type="button" class="icon-btn" aria-label="Next patch">▶</button>
+          <button type="button" class="icon-btn" aria-label="Browse presets">📂</button>
+        </div>
+
+        <div></div>
+
+        <div class="hdr-filter-block">
+          <span class="filter-label">
+            <span class="filter-title">Output</span>
+            <span class="filter-title">Filter</span>
+          </span>
+          <div class="switch-2way">
+            <div class="switch-pos is-active">LEGACY</div>
+            <div class="switch-pos">CRYSTAL CLEAR</div>
+          </div>
+        </div>
+
+        <div class="col">
+          <span class="t-label t-label-dim">LADDER</span>
+          <span class="toggle" title="Ladder effect disabled in SQ mode"
+                style="opacity: 0.35;"></span>
+        </div>
+
+        <div class="hdr-vol">
+          <span class="t-label">VOL</span>
+          <span class="knob knob-sm"></span>
+        </div>
+
+        <button type="button" class="icon-btn hdr-gear" aria-label="Open settings">⚙</button>
+      </header>
+
+      <!-- ============================== SQ MODE PANEL ======================= -->
+      <section class="mode-panel inset sq-panel">
+        <h1 class="mode-title t-section-title on-inset">SQ</h1>
+
+        <!-- Three tone-channel strips, then one noise strip -->
+
+        <!-- Tone 1 -->
+        <div class="sq-strip">
+          <span class="strip-title">Tone 1</span>
+          <div class="sq-env-lcd">
+            <span class="label-only">ADSR</span>
+          </div>
+          <div class="sq-env-row">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">ATK</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR1</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">SUS</span></div>
+          </div>
+          <div class="sq-env-row row2">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR2</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">RR</span></div>
+          </div>
+          <div class="sq-bottom">
+            <div class="sq-bottom-row">
+              <span class="label-col">Detune</span>
+              <span class="value-col"><span class="knob knob-xs"></span></span>
+            </div>
+            <div class="sq-bottom-row">
+              <span class="label-col">Vol</span>
+              <span class="value-col"><span class="knob knob-xs"></span></span>
+            </div>
+            <div class="sq-bottom-row">
+              <span class="label-col">Pan</span>
+              <span class="value-col">
+                <span class="sq-pan"><span class="sq-pan-thumb" style="left: 42%;"></span></span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tone 2 -->
+        <div class="sq-strip">
+          <span class="strip-title">Tone 2</span>
+          <div class="sq-env-lcd">
+            <span class="label-only">ADSR</span>
+          </div>
+          <div class="sq-env-row">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">ATK</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR1</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">SUS</span></div>
+          </div>
+          <div class="sq-env-row row2">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR2</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">RR</span></div>
+          </div>
+          <div class="sq-bottom">
+            <div class="sq-bottom-row">
+              <span class="label-col">Detune</span>
+              <span class="value-col"><span class="knob knob-xs"></span></span>
+            </div>
+            <div class="sq-bottom-row">
+              <span class="label-col">Vol</span>
+              <span class="value-col"><span class="knob knob-xs"></span></span>
+            </div>
+            <div class="sq-bottom-row">
+              <span class="label-col">Pan</span>
+              <span class="value-col">
+                <span class="sq-pan"><span class="sq-pan-thumb" style="left: 22%;"></span></span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tone 3 -->
+        <div class="sq-strip">
+          <span class="strip-title">Tone 3</span>
+          <div class="sq-env-lcd">
+            <span class="label-only">ADSR</span>
+          </div>
+          <div class="sq-env-row">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">ATK</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR1</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">SUS</span></div>
+          </div>
+          <div class="sq-env-row row2">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR2</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">RR</span></div>
+          </div>
+          <div class="sq-bottom">
+            <div class="sq-bottom-row">
+              <span class="label-col">Detune</span>
+              <span class="value-col"><span class="knob knob-xs"></span></span>
+            </div>
+            <div class="sq-bottom-row">
+              <span class="label-col">Vol</span>
+              <span class="value-col"><span class="knob knob-xs"></span></span>
+            </div>
+            <div class="sq-bottom-row">
+              <span class="label-col">Pan</span>
+              <span class="value-col">
+                <span class="sq-pan"><span class="sq-pan-thumb" style="left: 64%;"></span></span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Noise -->
+        <div class="sq-strip">
+          <span class="strip-title">Noise</span>
+          <div class="sq-env-lcd">
+            <span class="label-only">ADSR</span>
+          </div>
+          <div class="sq-env-row sq-noise-env-row">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">ATK</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR1</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">SUS</span></div>
+          </div>
+          <div class="sq-env-row sq-noise-env-row-b">
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">DR2</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">RR</span></div>
+            <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">VOL</span></div>
+          </div>
+          <div class="sq-bottom">
+            <div class="sq-bottom-row">
+              <span class="label-col">Pan</span>
+              <span class="value-col">
+                <span class="sq-pan"><span class="sq-pan-thumb" style="left: 50%;"></span></span>
+              </span>
+            </div>
+            <div class="sq-noise-extras">
+              <div class="sq-bottom-row">
+                <span class="label-col">Type</span>
+                <span class="value-col">
+                  <div class="btn-pill" style="font-size: 8px;">
+                    <button type="button" class="btn is-active">W</button>
+                    <button type="button" class="btn">P</button>
+                  </div>
+                </span>
+              </div>
+              <div class="sq-bottom-row">
+                <span class="label-col">Rate</span>
+                <span class="value-col">
+                  <div class="btn-pill" style="font-size: 7px;">
+                    <button type="button" class="btn">L</button>
+                    <button type="button" class="btn is-active">M</button>
+                    <button type="button" class="btn">H</button>
+                    <button type="button" class="btn">CH2</button>
+                  </div>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== STATUS BAR ========================== -->
+      <footer class="status">
+        <div class="status-meters">
+          <div class="ch">
+            <span class="ch-label">L</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+          <div class="ch">
+            <span class="ch-label">R</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+        </div>
+        <span class="status-version">v0.2.0</span>
+      </footer>
+    </div>
+  </body>
+</html>

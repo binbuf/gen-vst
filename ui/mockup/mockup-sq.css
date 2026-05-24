@@ -1,0 +1,138 @@
+/*
+ * Throwaway CSS for mockup-sq.html.
+ * Three tone-channel strips + one noise strip — view 3.
+ *
+ * Deleted in Task 04.
+ */
+
+.sq-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 12px;
+  padding: 22px 14px 14px;
+}
+
+.sq-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 16px 12px 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  position: relative;
+}
+.sq-strip > .strip-title {
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  font: 500 9px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text-dim);
+}
+
+.sq-env-lcd {
+  height: 64px;
+  background: var(--lcd-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;
+  box-shadow:
+    inset 2px 2px 5px rgba(0, 0, 0, 0.7),
+    0 0 0 1px var(--lcd-bg-edge);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sq-env-lcd::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, 0.45) 0%, transparent 15%, transparent 85%,
+    rgba(78, 160, 255, 0.04) 100%);
+  pointer-events: none;
+}
+.sq-env-lcd .label-only {
+  font: 500 10px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.25em;
+  color: var(--lcd-text-on);
+  opacity: 0.55;
+  text-shadow:
+    0 0 4px var(--lcd-text-glow),
+    0 0 1px var(--lcd-text-glow);
+}
+
+.sq-env-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px 4px;
+  justify-items: center;
+}
+.sq-env-row.row2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.sq-noise-env-row {
+  grid-template-columns: repeat(3, 1fr);
+}
+.sq-noise-env-row-b {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.sq-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.sq-bottom-row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  align-items: center;
+  gap: 4px 8px;
+}
+.sq-bottom-row .label-col {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  text-align: left;
+}
+.sq-bottom-row .value-col {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.sq-pan {
+  width: 100%;
+  height: 10px;
+  background: var(--led-meter-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;
+  position: relative;
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.6);
+}
+.sq-pan-thumb {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 14px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--knob-body-light), var(--knob-body-dark));
+  border: 1px solid var(--knob-rim);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.sq-noise-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 6px;
+}

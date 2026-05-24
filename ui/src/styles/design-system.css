@@ -1,77 +1,146 @@
 /*
- * Gen VST design system
- * ---------------------
- * The single source of truth for colour and the pixel-art discipline.
- * Palette values are taken verbatim from docs/genny-ui.md "Color Palette" and
- * docs/design/05-ui-ux.md; new colours are added to that table first, never
- * invented here. Pixel-art rules are binding (05-ui-ux.md "Pixel-Art Style
- * Rules"): 1x grid, no anti-aliasing, no border-radius, hard-edge bevels, no
- * gradients, 8px base grid.
+ * Gen VST v2 design system
+ * ------------------------
+ * Single authoritative source for the v2 visual identity: palette tokens,
+ * typography utilities, and the CSS recipes per widget.
+ *
+ * Values copied verbatim from docs/design/09-visual-spec.md. New colours,
+ * fonts, or widget recipes go in that file first; never hand-typed here.
+ *
+ * Binding principles (docs/design/05-ui-ux.md, ADR-0022):
+ *   1. Top-left light source on every shadow / bevel / gradient.
+ *   2. Layered box-shadows for depth (inner + outer + edge highlight).
+ *   3. Gradients on physical surfaces; flat fills on LCDs and labels.
+ *   4. Press feedback = scale(0.97) + inset shadow with <=120ms ease.
+ *   5. Monospace labels with 0.10-0.20em letter-spacing, uppercase.
+ *   6. Antialiasing on (browser default).
+ *   7. border-radius sparingly: 2-4px on buttons/pills, larger on chassis,
+ *      square on LCD insets.
+ *   8. No ordered dithering.
  */
 
-/* ---- Fonts (extern/fonts/, pulled into the build by Vite publicDir) -------- */
+/* ============================================================== */
+/* Fonts                                                          */
+/* ============================================================== */
+/* IBM Plex Mono — SIL OFL. Loaded from extern/fonts/ibm-plex-mono/      */
+/* via Vite's publicDir mapping (vite.config.js publicDir = ../extern/   */
+/* fonts → served at the web root, copied verbatim into dist/).          */
+/* Three weights × two unicode-range subsets — see README in fonts dir.   */
 
 @font-face {
-  font-family: "Press Start 2P";
-  src: url("/press-start-2p/PressStart2P-Regular.ttf") format("truetype");
-  font-weight: normal;
+  font-family: "IBM Plex Mono";
   font-style: normal;
+  font-weight: 400;
   font-display: block;
+  src: url("/ibm-plex-mono/ibm-plex-mono-latin-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url("/ibm-plex-mono/ibm-plex-mono-latin-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("/ibm-plex-mono/ibm-plex-mono-latin-700.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/ibm-plex-mono/ibm-plex-mono-latin-ext-400.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url("/ibm-plex-mono/ibm-plex-mono-latin-ext-500.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("/ibm-plex-mono/ibm-plex-mono-latin-ext-700.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* The Segment7 7-segment font was removed once the patch-name display moved to
- * the 5x7 dot-matrix renderer (a 7-segment alphabet renders ambiguously — T
- * collapses onto 7, B onto 8). The font files remain in extern/fonts/ for
- * possible future use; nothing in the build loads them. */
-
-/* ---- Palette (docs/genny-ui.md) ------------------------------------------- */
+/* ============================================================== */
+/* Palette                                                        */
+/* ============================================================== */
 
 :root {
-  /* Chassis & panels */
-  --chassis: #000000;        /* pure-black plastic chassis */
-  --panel: #0a0a0a;          /* very dark gray panel inset surface */
-  --bevel-light: #2a2a2a;    /* lit bevel edge */
-  --bevel-dark: #000000;     /* shadowed bevel edge */
+  /* ---- Chassis (light silver region — PCM2612-style) -------- */
+  --chassis-bg-top:    #c8ccd0;
+  --chassis-bg-mid:    #aaaeb2;
+  --chassis-bg-bottom: #6b6e72;
+  --chassis-edge:      #3a3c40;
 
-  /* Green LCD screens */
-  --lcd-base: #3d5a2e;       /* muted olive-green screen base */
-  --lcd-base-hi: #4a6b38;    /* lighter olive band */
-  --lcd-pixel: #a8d878;      /* phosphor-green active pixel */
-  --lcd-pixel-hi: #c8e89a;   /* bright phosphor highlight */
-  --lcd-text-dark: #1a2818;  /* dark olive ink for labels printed on the LCD */
+  /* ---- Inset (recessed dark surfaces — RYM2612-style) ------- */
+  --inset-bg:         #1c1f24;
+  --inset-edge-dark:  #0a0c10;
+  --inset-edge-light: #2a2d32;
 
-  /* Red LED segment / dot-matrix readouts */
-  --led-base: #2a0808;       /* dark red-black segment base */
-  --led-dim: #2a0808;        /* unlit 5x7 dot (05-ui-ux.md) */
-  --led-on: #ff2020;         /* lit segment / dot */
+  /* ---- Knobs ----------------------------------------------- */
+  --knob-body-light: #4a5570;
+  --knob-body-dark:  #1f2532;
+  --knob-rim:        #0a0e15;
+  --knob-indicator:  #f8fafc;
+  --knob-highlight:  rgba(255, 255, 255, 0.15);
 
-  /* Blue knobs */
-  --knob-body: #4a78c8;      /* mid-blue knob body */
-  --knob-ring: #1e3a6e;      /* darker blue ring */
-  --knob-dot: #d8f0ff;       /* white/cyan indicator dot */
-  --knob-spec: #ffffff;      /* 2x2 specular highlight on the knob body */
-  --knob-bevel-light: #7aa0e0; /* lit bevel tint on the knob body */
+  /* ---- LCDs ------------------------------------------------ */
+  --lcd-bg:        #0d1424;
+  --lcd-bg-edge:   #06080f;
+  --lcd-text-on:   #4ea0ff;
+  --lcd-text-glow: rgba(78, 160, 255, 0.6);
+  --lcd-text-off:  #1a2438;
 
-  /* Gold "GEN VST" logotype */
-  --logo: #f5c842;           /* gold */
-  --logo-shadow: #c89020;    /* gold shadow */
-  --logo-underline: #d83030; /* red underline stroke */
-  --logo-dark: #2a2208;      /* darkened gold for warn-level toast background */
+  /* ---- LED meters ----------------------------------------- */
+  --led-on:       #2196f3;
+  --led-on-warm:  #ff5252;
+  --led-dim:      #082040;
+  --led-meter-bg: #060810;
 
-  /* Text & selection */
-  --label: #e0e0e0;          /* off-white bitmap label text */
-  --select: #cc2020;         /* selected-item red highlight */
+  /* ---- Toggles & buttons --------------------------------- */
+  --toggle-on:     #2196f3;
+  --toggle-off:    #2a2d32;
+  --toggle-rim:    #0a0c10;
+  --btn-bg-top:    #4a5570;
+  --btn-bg-bottom: #2a3245;
+  --btn-active-bg: #2196f3;
+  --btn-text:      #e8eaee;
 
-  /* Operator badge (shares the knob blue) */
-  --badge: #4a78c8;
-  --badge-bevel-light: #6a98e8; /* lit bevel tint on the badge */
-  --badge-text: #ffffff;        /* white numeral on the badge face */
+  /* ---- Operator badges ----------------------------------- */
+  --op-badge-bg:          #2196f3;
+  --op-badge-text:        #ffffff;
+  --op-badge-active-glow: rgba(33, 150, 243, 0.55);
 
-  /* 8px base grid */
-  --grid: 8px;
+  /* ---- Text ---------------------------------------------- */
+  --label-text:      #d8dce0;
+  --label-text-dim:  #888a8d;
+  --text-on-chassis: #2a2c30;
+
+  /* ---- Brand / accents / toasts -------------------------- */
+  --accent-info:    #2196f3;
+  --accent-warning: #ff9100;
+  --accent-error:   #ff5252;
+  --brand-mark:     #5a5d62;
 }
 
-/* ---- Pixel-art base rules ------------------------------------------------- */
+/* ============================================================== */
+/* Reset                                                          */
+/* ============================================================== */
 
 *,
 *::before,
@@ -79,18 +148,18 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  border-radius: 0; /* binding: all corners are square */
 }
 
 html,
 body {
-  width: 960px;
-  height: 640px;
-  overflow: hidden; /* fixed 960x640 window — ADR-0007 */
-  background: var(--chassis);
-  color: var(--label);
-  image-rendering: pixelated; /* no anti-aliased upscaling */
-  -webkit-font-smoothing: none;
+  width: 1200px;
+  height: 560px;
+  overflow: hidden;                /* fixed 1200×560 — ADR-0023 */
+  background: var(--chassis-bg-mid);
+  color: var(--label-text);
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Mono", "SF Mono",
+               "Consolas", monospace;
+  -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
@@ -98,45 +167,461 @@ body {
 
 canvas {
   display: block;
-  image-rendering: pixelated;
 }
 
-/* ---- Bevels --------------------------------------------------------------- */
-/* Hard-border bevels, never box-shadow blur (05-ui-ux.md). A raised panel is
- * lit top/left; a recessed inset (LCD/LED screens) is lit bottom/right. */
+/* ============================================================== */
+/* Typography utilities                                           */
+/* ============================================================== */
+/* Mirrors the typography table in 09-visual-spec.md.              */
 
-.bevel-raised {
-  border: 2px solid;
-  border-top-color: var(--bevel-light);
-  border-left-color: var(--bevel-light);
-  border-right-color: var(--bevel-dark);
-  border-bottom-color: var(--bevel-dark);
-}
-
-.bevel-inset {
-  border: 2px solid;
-  border-top-color: var(--bevel-dark);
-  border-left-color: var(--bevel-dark);
-  border-right-color: var(--bevel-light);
-  border-bottom-color: var(--bevel-light);
-}
-
-/* ---- Typography ----------------------------------------------------------- */
-/* Press Start 2P is rendered only at 8px / 16px — never fractional sizes. */
-
-.label {
-  font-family: "Press Start 2P", monospace;
-  font-size: 8px;
-  line-height: 1;
-  color: var(--label);
+.t-section-title {
+  font: 500 11px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
+  color: var(--text-on-chassis);
+}
+.t-section-title.on-inset {
+  color: var(--label-text);
+}
+
+.t-label {
+  font: 500 9px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text);
+}
+.t-label-dim {
+  color: var(--label-text-dim);
+}
+
+.t-knob-readout {
+  font: 500 10px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.06em;
+  color: var(--lcd-text-on);
+  text-shadow:
+    0 0 4px var(--lcd-text-glow),
+    0 0 1px var(--lcd-text-glow);
+}
+
+.t-patch-lcd {
+  font: 500 18px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lcd-text-on);
+  text-shadow:
+    0 0 8px var(--lcd-text-glow),
+    0 0 3px var(--lcd-text-glow),
+    0 0 1px var(--lcd-text-glow);
+}
+
+.t-algo {
+  font: 500 12px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0;
+  color: var(--label-text);
+}
+
+.t-wordmark {
+  font: 700 22px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--brand-mark);
+}
+
+.t-body {
+  font: 400 12px/1.4 "IBM Plex Mono", monospace;
+  letter-spacing: 0;
+  color: var(--label-text);
+}
+
+/* ============================================================== */
+/* CSS recipes — chassis & inset                                  */
+/* ============================================================== */
+
+.chassis {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 0 1px,
+      transparent 1px 3px
+    ),
+    linear-gradient(
+      180deg,
+      var(--chassis-bg-top)    0%,
+      var(--chassis-bg-mid)   50%,
+      var(--chassis-bg-bottom) 100%
+    );
+  border: 1px solid var(--chassis-edge);
+  box-shadow:
+    4px 4px 12px rgba(0, 0, 0, 0.45),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.35),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+}
+
+.inset {
+  background: var(--inset-bg);
+  border: 1px solid var(--inset-edge-dark);
+  box-shadow:
+    inset 2px 2px 6px rgba(0, 0, 0, 0.6),
+    inset -1px -1px 0 var(--inset-edge-light);
+  border-radius: 4px;
+}
+
+/* ============================================================== */
+/* CSS recipes — knob                                             */
+/* ============================================================== */
+
+.knob {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 25%, var(--knob-highlight), transparent 55%),
+    linear-gradient(135deg, var(--knob-body-light), var(--knob-body-dark));
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    2px 2px 4px rgba(0, 0, 0, 0.55),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.55),
+    inset 1px 1px 1px rgba(255, 255, 255, 0.10);
+  cursor: ns-resize;
+  position: relative;
+}
+.knob:active {
+  transform: scale(0.97);
+  transition: transform 80ms ease-out;
+}
+
+/* Static white indicator line at the resting 7 o'clock position.
+ * Real implementation (Task 04) draws this on a Canvas overlay; the
+ * mockup uses a pseudo-element so the static rest position reads. */
+.knob::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.5px;
+  height: 38%;
+  background: var(--knob-indicator);
+  border-radius: 1px;
+  /* The default vertical line (no rotation) points straight down toward
+   * 6 o'clock. 7 o'clock sits 30° counter-clockwise from there. */
+  transform: translate(-50%, 0) rotate(-30deg);
+  transform-origin: top center;
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.knob.decimator-knob {
+  width: 96px;
+  height: 96px;
+  background: linear-gradient(135deg, #2a3040, var(--knob-body-dark));
+  box-shadow:
+    4px 4px 8px rgba(0, 0, 0, 0.6),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.65),
+    inset 2px 2px 2px rgba(255, 255, 255, 0.06);
+}
+.knob.decimator-knob::after {
+  width: 2px;
+  border-radius: 1.5px;
+}
+
+.knob.knob-sm {
+  width: 32px;
+  height: 32px;
+}
+.knob.knob-sm::after {
+  width: 1.5px;
+}
+
+.knob.knob-xs {
+  width: 24px;
+  height: 24px;
+}
+.knob.knob-xs::after {
+  width: 1px;
+  height: 38%;
+}
+
+/* ============================================================== */
+/* CSS recipes — button (pill / square)                           */
+/* ============================================================== */
+
+.btn {
+  font: 500 9px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--btn-text);
+  padding: 6px 12px;
+  background: linear-gradient(180deg,
+    var(--btn-bg-top) 0%,
+    var(--btn-bg-bottom) 100%);
+  border: 1px solid var(--knob-rim);
+  border-radius: 3px;
+  box-shadow:
+    2px 2px 3px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.10);
+  cursor: pointer;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
   white-space: nowrap;
 }
+.btn:active,
+.btn.is-active {
+  transform: scale(0.97);
+  background: var(--btn-active-bg);
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.45),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.10);
+}
+.btn:disabled,
+.btn.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 
-.label-lg {
-  font-family: "Press Start 2P", monospace;
-  font-size: 16px;
-  line-height: 1;
+/* Pill group — segmented selector, e.g. FM / SQ / D, INT MUL /
+ * FLOAT MUL / AUTO RETRIG. Children are .btn elements joined without
+ * gap; the active one carries .is-active. */
+.btn-pill {
+  display: inline-flex;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    2px 2px 3px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08);
+}
+.btn-pill .btn {
+  border: 0;
+  border-right: 1px solid var(--knob-rim);
+  border-radius: 0;
+  box-shadow: none;
+}
+.btn-pill .btn:last-child {
+  border-right: 0;
+}
+.btn-pill .btn.is-active {
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.45),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.10);
+}
+
+/* ============================================================== */
+/* CSS recipes — toggle                                           */
+/* ============================================================== */
+
+.toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--toggle-off);
+  border: 1px solid var(--toggle-rim);
+  box-shadow:
+    inset 1px 1px 2px rgba(0, 0, 0, 0.5),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.05);
+  transition: background 120ms ease-out, box-shadow 120ms ease-out;
+  cursor: pointer;
+}
+.toggle.is-on {
+  background: var(--toggle-on);
+  box-shadow:
+    0 0 8px rgba(33, 150, 243, 0.6),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.25);
+}
+
+.toggle.toggle-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+}
+
+/* Two-position labelled switch (e.g. LEGACY / CRYSTAL CLEAR). Two
+ * .btn-like segments inside; one carries .is-active. */
+.switch-2way {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    2px 2px 3px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08);
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  white-space: nowrap;
+}
+.switch-2way .switch-pos {
+  padding: 3px 8px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  color: var(--label-text-dim);
+  cursor: pointer;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.switch-2way .switch-pos.is-active {
+  background: var(--toggle-on);
+  color: var(--btn-text);
+  box-shadow:
+    inset 1px 1px 2px rgba(0, 0, 0, 0.4),
+    0 0 6px rgba(33, 150, 243, 0.45);
+}
+
+/* ============================================================== */
+/* CSS recipes — LCD readout                                      */
+/* ============================================================== */
+/* The patch-name LCD + per-knob value LCDs share this background.    */
+/* The real text-glow comes from the typography utility classes above. */
+
+.lcd {
+  background: var(--lcd-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;            /* near-square, idiomatic for screens */
+  box-shadow:
+    inset 2px 2px 6px rgba(0, 0, 0, 0.7),
+    inset -1px -1px 0 rgba(78, 160, 255, 0.08),
+    0 0 0 1px var(--lcd-bg-edge);
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+/* Top inner-shadow gradient overlay — gives the recessed feel. */
+.lcd::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, 0.45) 0%,
+    transparent        15%,
+    transparent        85%,
+    rgba(78, 160, 255, 0.04) 100%);
+  pointer-events: none;
+}
+
+.lcd-readout {
+  min-width: 48px;
+  padding: 3px 6px;
+}
+.lcd-patch {
+  padding: 8px 16px;
+  min-width: 240px;
+}
+
+/* ============================================================== */
+/* CSS recipes — level meter (static row of bars)                 */
+/* ============================================================== */
+
+.level-meter {
+  display: inline-flex;
+  gap: 1px;
+  padding: 3px;
+  background: var(--led-meter-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.7),
+    inset -1px -1px 0 var(--inset-edge-light);
+}
+.level-meter .seg {
+  width: 4px;
+  height: 8px;
+  background: var(--led-dim);
+  border-radius: 1px;
+}
+.level-meter .seg.is-on {
+  background: var(--led-on);
+  box-shadow: 0 0 3px rgba(33, 150, 243, 0.7);
+}
+.level-meter .seg.is-on.is-warm {
+  background: var(--led-on-warm);
+  box-shadow: 0 0 4px rgba(255, 82, 82, 0.8);
+}
+
+.level-meter.level-meter-wide .seg {
+  width: 6px;
+  height: 10px;
+}
+.level-meter.level-meter-tall .seg {
+  height: 14px;
+}
+
+/* ============================================================== */
+/* CSS recipes — operator badge                                   */
+/* ============================================================== */
+
+.op-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--op-badge-bg);
+  color: var(--op-badge-text);
+  font: 500 12px/1 "IBM Plex Mono", monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.18),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.35),
+    1px 1px 2px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: box-shadow 120ms ease-out;
+}
+.op-badge.is-active {
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.25),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.35),
+    0 0 8px var(--op-badge-active-glow);
+}
+
+/* ============================================================== */
+/* CSS recipes — NOTE ON LED (small round indicator)              */
+/* ============================================================== */
+
+.note-on-led {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff8a8a, #b71c1c 70%, #5a0c0c 100%);
+  border: 1px solid #050608;
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.35),
+    inset -1px -1px 1px rgba(0, 0, 0, 0.5),
+    0 0 6px rgba(255, 82, 82, 0.55);
+}
+.note-on-led.is-off {
+  background: radial-gradient(circle at 30% 30%, #4a2828, #1a0808 80%);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.05),
+    inset -1px -1px 1px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================== */
+/* Icon buttons (gear, folder, prev/next)                         */
+/* ============================================================== */
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  color: var(--btn-text);
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    2px 2px 3px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.10);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+}
+.icon-btn:active {
+  transform: scale(0.95);
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.45),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.08);
 }

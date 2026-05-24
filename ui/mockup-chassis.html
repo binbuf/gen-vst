@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1200, initial-scale=1" />
+    <title>Gen VST mockup — chassis</title>
+    <link rel="stylesheet" href="/src/styles/design-system.css" />
+    <link rel="stylesheet" href="/mockup/mockup.css" />
+  </head>
+  <body>
+    <div class="frame chassis">
+      <!-- ============================== HEADER ============================== -->
+      <header class="hdr inset">
+        <!-- 1. NOTE ON LED + wordmark -->
+        <div class="hdr-brand">
+          <span class="note-on-led is-off" title="NOTE ON"></span>
+          <span class="hdr-wordmark t-wordmark">
+            <span class="wm-gen">GEN</span>
+            <span class="wm-sep">·</span>
+            <span class="wm-vst">VST</span>
+          </span>
+        </div>
+
+        <!-- 2. Mode selector -->
+        <div class="hdr-mode-pill btn-pill">
+          <button type="button" class="btn">FM</button>
+          <button type="button" class="btn is-active">SQ</button>
+          <button type="button" class="btn">D</button>
+        </div>
+
+        <!-- 3. Patch-name LCD + nav -->
+        <div class="hdr-patch">
+          <button type="button" class="icon-btn" aria-label="Previous patch">◀</button>
+          <div class="lcd lcd-patch">
+            <span class="t-patch-lcd">— EMPTY —</span>
+          </div>
+          <button type="button" class="icon-btn" aria-label="Next patch">▶</button>
+          <button type="button" class="icon-btn" aria-label="Browse presets">📂</button>
+        </div>
+
+        <!-- spacer cell -->
+        <div></div>
+
+        <!-- 4. Output filter 2-way switch -->
+        <div class="hdr-filter-block">
+          <span class="filter-label">
+            <span class="filter-title">Output</span>
+            <span class="filter-title">Filter</span>
+          </span>
+          <div class="switch-2way">
+            <div class="switch-pos is-active">LEGACY</div>
+            <div class="switch-pos">CRYSTAL CLEAR</div>
+          </div>
+        </div>
+
+        <!-- 5. Ladder effect rocker -->
+        <div class="col">
+          <span class="t-label">LADDER</span>
+          <span class="toggle is-on" title="Ladder effect on"></span>
+        </div>
+
+        <!-- 6. VOL knob -->
+        <div class="hdr-vol">
+          <span class="t-label">VOL</span>
+          <span class="knob knob-sm"></span>
+        </div>
+
+        <!-- 7. Gear icon -->
+        <button type="button" class="icon-btn hdr-gear" aria-label="Open settings">⚙</button>
+      </header>
+
+      <!-- ============================== MODE PANEL ========================== -->
+      <section class="mode-panel inset">
+        <h1 class="mode-title t-section-title on-inset">MODE PANEL — empty (chassis-only mockup)</h1>
+      </section>
+
+      <!-- ============================== STATUS BAR ========================== -->
+      <footer class="status">
+        <div class="status-meters">
+          <div class="ch">
+            <span class="ch-label">L</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+          <div class="ch">
+            <span class="ch-label">R</span>
+            <div class="level-meter">
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span><span class="seg is-on"></span>
+              <span class="seg is-on"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span><span class="seg"></span><span class="seg"></span>
+              <span class="seg"></span>
+              <span class="seg is-warm"></span><span class="seg is-warm"></span>
+            </div>
+          </div>
+        </div>
+        <span class="status-version">v0.2.0</span>
+      </footer>
+    </div>
+  </body>
+</html>

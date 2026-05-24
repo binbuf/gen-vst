@@ -1,0 +1,284 @@
+/*
+ * Throwaway CSS for mockup-fm.html.
+ * Layout for the FM mode panel — top row (LFO / envelope / freq-ctrl /
+ * retrig / OP1 FB) above the dense 4×13 operator grid + TL/VEL/MW
+ * right-margin block + algorithm tile.
+ *
+ * Deleted in Task 04.
+ */
+
+.fm-panel {
+  display: grid;
+  grid-template-rows: 138px 1fr;
+  gap: 8px;
+  padding: 18px 12px 10px;
+}
+
+/* ---- Top row: LFO/MW | envelope | freq-ctrl | retrig | OP1 FB ---- */
+
+.fm-top {
+  display: grid;
+  grid-template-columns: 270px 1fr 170px 110px 70px;
+  gap: 8px;
+}
+
+.fm-top .block {
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+}
+
+/* LFO / MW block */
+.fm-lfo {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px 4px;
+  padding-top: 16px;
+}
+.fm-lfo .knob-cell {
+  gap: 3px;
+}
+
+/* envelope curve placeholder */
+.fm-env {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+.fm-env-lcd {
+  width: 100%;
+  height: 100%;
+  background: var(--lcd-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;
+  box-shadow:
+    inset 2px 2px 6px rgba(0, 0, 0, 0.7),
+    0 0 0 1px var(--lcd-bg-edge);
+  position: relative;
+  overflow: hidden;
+}
+.fm-env-lcd::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, 0.45) 0%, transparent 15%, transparent 85%,
+    rgba(78, 160, 255, 0.04) 100%);
+  pointer-events: none;
+}
+.fm-env-curve {
+  position: absolute;
+  inset: 8px 10px 8px 10px;
+  pointer-events: none;
+}
+
+/* freq ctrl mode pill (3 stacked) */
+.fm-freqctrl {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  padding-top: 12px;
+}
+.fm-freqctrl .btn {
+  text-align: center;
+  padding: 5px 8px;
+}
+
+/* retrig rate */
+.fm-retrig {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding-top: 12px;
+}
+
+/* OP1 FB */
+.fm-opfb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding-top: 12px;
+}
+
+/* ---- Operator grid + side blocks ---- */
+
+.fm-mid {
+  display: grid;
+  grid-template-columns: 1fr 132px 64px;
+  gap: 8px;
+}
+
+.fm-opgrid {
+  display: grid;
+  grid-template-columns: 28px repeat(12, 1fr);
+  grid-auto-rows: 1fr;
+  align-items: center;
+  justify-items: center;
+  row-gap: 6px;
+  column-gap: 4px;
+  padding: 22px 8px 6px;
+  position: relative;
+}
+.fm-opgrid .col-head {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text-dim);
+  padding-bottom: 3px;
+}
+.fm-opgrid .lcd-mini {
+  min-width: 0;
+  width: 44px;
+  padding: 2px 4px;
+  font-size: 9px;
+}
+.fm-opgrid .lcd-mini .t-knob-readout {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+.fm-opgrid .knob {
+  width: 24px;
+  height: 24px;
+}
+.fm-opgrid .knob::after {
+  width: 1px;
+  height: 36%;
+}
+.fm-opgrid .toggle {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+}
+.fm-opgrid .combo {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--btn-text);
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  border: 1px solid var(--knob-rim);
+  border-radius: 2px;
+  padding: 3px 5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* TL / VEL / MW right margin block */
+.fm-tlblock {
+  display: grid;
+  grid-template-columns: 36px 1fr 1fr;
+  grid-auto-rows: 1fr;
+  align-items: center;
+  justify-items: center;
+  row-gap: 6px;
+  column-gap: 4px;
+  padding: 22px 6px 6px;
+}
+.fm-tlblock .col-head {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text-dim);
+}
+.fm-tlblock .tl-slider {
+  width: 16px;
+  height: 50px;
+  background: var(--led-meter-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 2px;
+  position: relative;
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.6);
+}
+.fm-tlblock .tl-thumb {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  height: 6px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--knob-body-light), var(--knob-body-dark));
+  border: 1px solid var(--knob-rim);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Algorithm tile */
+.fm-algo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 22px 4px 4px;
+}
+.fm-algo .lcd {
+  padding: 6px;
+}
+.fm-algo .algo-diagram {
+  width: 56px;
+  height: 56px;
+  position: relative;
+}
+.fm-algo .algo-diagram svg {
+  width: 100%;
+  height: 100%;
+}
+.fm-algo .algo-label {
+  font: 500 11px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.16em;
+  color: var(--label-text);
+}
+
+/* Global controls under LFO block */
+.fm-globals {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 4px 0;
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+}
+.fm-globals .stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--knob-rim);
+  border-radius: 2px;
+  background: var(--lcd-bg);
+  padding: 0;
+  box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.fm-globals .stepper .stepper-val {
+  padding: 2px 8px;
+  min-width: 30px;
+  text-align: center;
+  font: 500 10px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.06em;
+  color: var(--lcd-text-on);
+  text-shadow:
+    0 0 4px var(--lcd-text-glow),
+    0 0 1px var(--lcd-text-glow);
+}
+.fm-globals .stepper .stepper-btn {
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  border: 0;
+  border-left: 1px solid var(--knob-rim);
+  color: var(--btn-text);
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.fm-globals .pb-mw-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}

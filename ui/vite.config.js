@@ -23,11 +23,17 @@ export default defineConfig({
     assetsInlineLimit: 0, // keep fonts as real files — never inline as data URIs
     rollupOptions: {
       // Multi-page setup: index.html is the production UI, gallery.html is a
-      // dev-only widget catalog (Task 10). Both build into dist/ — the
-      // gallery is reachable in dev with `npm run dev` open /gallery.html.
+      // dev-only widget catalog (Task 10). The mockup-*.html pages are the
+      // throwaway v2 visual-lockdown surfaces (docs/tasks/mvp2/01-static-ui-
+      // mockup.md); they are removed in Task 04 once the real widget library
+      // lands. All build into dist/ — reachable in dev with `npm run dev`.
       input: {
-        main:    resolve(here, "index.html"),
-        gallery: resolve(here, "gallery.html"),
+        main:           resolve(here, "index.html"),
+        gallery:        resolve(here, "gallery.html"),
+        mockupChassis:  resolve(here, "mockup-chassis.html"),
+        mockupFm:       resolve(here, "mockup-fm.html"),
+        mockupSq:       resolve(here, "mockup-sq.html"),
+        mockupD:        resolve(here, "mockup-d.html"),
       },
     },
   },

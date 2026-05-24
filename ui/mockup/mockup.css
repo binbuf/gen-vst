@@ -1,0 +1,202 @@
+/*
+ * Throwaway CSS shared by the v2 visual mockups
+ * (Task 01 — docs/tasks/mvp2/01-static-ui-mockup.md).
+ *
+ * Layout chrome only — the 1200×560 chassis frame, header strip, mode
+ * panel wrapper, status bar — using the recipes from design-system.css.
+ *
+ * This file is DELETED in Task 04 once the real widget library lands.
+ */
+
+/* ---- Page frame -------------------------------------------------- */
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1c1f;             /* dark backdrop so the chassis pops */
+  padding: 0;
+  margin: 0;
+}
+
+.frame {
+  width: 1200px;
+  height: 560px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+  position: relative;
+  isolation: isolate;
+}
+
+/* ---- Header ------------------------------------------------------ */
+
+.hdr {
+  height: 64px;
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+}
+
+.hdr-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hdr-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+}
+.hdr-wordmark .wm-gen { color: var(--brand-mark); }
+.hdr-wordmark .wm-sep { color: var(--brand-mark); opacity: 0.45; padding: 0 4px; }
+.hdr-wordmark .wm-vst { color: var(--brand-mark); }
+
+.hdr-mode-pill {
+  display: inline-flex;
+}
+
+.hdr-patch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: center;
+}
+
+.hdr-filter-block {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hdr-filter-block .filter-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  font: 500 7px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+}
+.hdr-filter-block .filter-label .filter-title {
+  opacity: 0.8;
+}
+
+.hdr-vol {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.hdr-gear {
+  margin-left: 4px;
+}
+
+/* ---- Mode panel -------------------------------------------------- */
+
+.mode-panel {
+  flex: 1;
+  padding: 14px;
+  position: relative;
+}
+
+.mode-title {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  z-index: 1;
+}
+
+/* ---- Status bar -------------------------------------------------- */
+
+.status {
+  height: 24px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.status-meters {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.status-meters .ch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-meters .ch-label {
+  font: 500 9px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  color: var(--text-on-chassis);
+}
+
+.status-version {
+  font: 500 9px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  color: var(--text-on-chassis);
+  opacity: 0.75;
+}
+
+/* ---- Block helpers ----------------------------------------------- */
+/* Inset surface labelled with a small title pinned at the top-left.   */
+
+.block {
+  position: relative;
+  padding: 16px 12px 10px;
+}
+.block > .block-title {
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.78;
+  pointer-events: none;
+  z-index: 2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* ---- Misc -------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.knob-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.knob-cell .knob-cell-label {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.85;
+}

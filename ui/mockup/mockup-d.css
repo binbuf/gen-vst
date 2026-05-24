@@ -1,0 +1,125 @@
+/*
+ * Throwaway CSS for mockup-d.html.
+ * Centered PCM2612-style decimator layout — view 4.
+ *
+ * Deleted in Task 04.
+ */
+
+.d-panel {
+  display: grid;
+  grid-template-rows: auto auto auto auto 1fr;
+  align-items: center;
+  justify-items: center;
+  padding: 36px 14px 14px;
+  gap: 14px;
+}
+
+.d-wordmark {
+  font: 700 14px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.7;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.d-prescaler {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.d-prescaler-label {
+  font: 500 10px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.30em;
+  text-transform: uppercase;
+  color: var(--label-text);
+}
+.d-prescaler-readout {
+  margin-top: 4px;
+  min-width: 96px;
+}
+
+.d-meters {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 720px;
+  padding: 10px 18px;
+  background: rgba(0, 0, 0, 0.20);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+}
+.d-meters .ch-label {
+  font: 500 11px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.25em;
+  color: var(--label-text);
+}
+.d-meters .level-meter {
+  width: 100%;
+  flex: 1;
+  display: flex;
+}
+.d-meters .level-meter .seg {
+  flex: 1;
+  height: 14px;
+  width: auto;
+}
+.d-meters .mono-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.d-meters .mono-block .t-label {
+  letter-spacing: 0.25em;
+}
+
+.d-drywet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.d-drywet-label {
+  font: 500 10px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.30em;
+  text-transform: uppercase;
+  color: var(--label-text);
+}
+
+/* "Wing" decorations — vertical brushed-metal bands flanking the
+ * centered column. These exist purely so the wide empty regions on
+ * either side don't read as dead space; PCM2612's portrait artwork
+ * doesn't have this issue, but our 1200×560 landscape canvas does
+ * (see 08-ui-views.md §4 "Layout note"). */
+.d-panel::before,
+.d-panel::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  width: 120px;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.04) 0 1px,
+      transparent 1px 4px
+    ),
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(0, 0, 0, 0.25) 100%);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.d-panel::before { left: 24px; }
+.d-panel::after  { right: 24px; }
+
+/* The mode-title sits inside the inset; pull it forward of the wings. */
+.mode-title.d-title {
+  z-index: 2;
+}
