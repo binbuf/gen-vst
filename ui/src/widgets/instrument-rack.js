@@ -4,12 +4,15 @@
  * Renders a green-LCD list of rack rows, one per active rack slot, plus a
  * trailing "+" cell. Each row shows:
  *
- *   ◇  type-icon  patch-name              :::  −
+ *   ◇  type-icon  patch-name           C  P  :::  −
  *
  * - type-icon: sine glyph (FM), square (SQ), tiny drum-kit pixel (D)
  * - patch-name: from getRackState() — for FM that's the patch file stem, for
  *   SQ a literal "PSG n / Noise" label, for D the loaded WAV name (or
  *   "— no sample —" if none)
+ * - "C": copy the row's full state into the editor-session clipboard (Task 33).
+ * - "P": paste the clipboard into this row — only shown when the clipboard is
+ *   non-empty AND its captured type matches this row's type.
  * - "+" / "-": add a row (opens the type popover) / remove the selected row
  * - drag-handle (:::): grab + drag to reorder rows (Task 27).
  *
@@ -41,6 +44,11 @@ const ADD_ROW_LABEL = "+ ADD INSTRUMENT";
 // Drag-handle column (Task 27). Width matches the inline "::: " glyph and the
 // gap that follows it before the remove cell.
 const DRAG_HANDLE_W   = 14;
+// Copy + paste cells (Task 33). Reserve space for both regardless of clipboard
+// state so toggling the clipboard never reflows the row layout — the paste
+// glyph itself is drawn conditionally.
+const COPY_W  = 11;
+const PASTE_W = 11;
 // Pointer-movement threshold (px²) before a press becomes a real drag. Below
 // this, the press falls through to the normal click handler so a fingertap
 // on the handle still selects the row.
@@ -59,6 +67,14 @@ export class InstrumentRack {
     this.onAdd    = options.onAdd    ?? null;   // (clientX, clientY) -> opens popover
     this.onRemove = options.onRemove ?? null;   // (row) -> remove from rack
     this.onReorder = options.onReorder ?? null; // (fromIndex, toIndex) -> reorder
+    this.onCopy   = options.onCopy   ?? null;   // (row) -> Task 33 copy
+    this.onPaste  = options.onPaste  ?? null;   // (row) -> Task 33 paste
+
+    // Task 33 — Editor-session clipboard type ("fm" | "sq" | "d" | null). The
+    // FM view sets this via setClipboardType after a copy succeeds; null hides
+    // every paste glyph. The rack does NOT own the payload — only the type,
+    // which is enough to decide which rows show the paste affordance.
+    this.clipboardType = null;
 
     const setup = setupPixelCanvas(canvas);
     this.ctx = setup.ctx;
@@ -99,6 +115,23 @@ export class InstrumentRack {
     this.render();
   }
 
+  // Task 33 — Show/hide the paste glyph on rows whose type matches `type`.
+  // Pass `null` to hide every paste glyph (clipboard empty).
+  setClipboardType(type) {
+    this.clipboardType = type ?? null;
+    this.render();
+  }
+
+  // Right-edge cell X coordinates for one data row. Centralises the layout so
+  // _onClick hit-testing and _renderDataRow stay in sync.
+  _rowCells() {
+    const removeX = this.w - SCROLLBAR_W - REMOVE_W;
+    const dragX   = removeX - DRAG_HANDLE_W;
+    const pasteX  = dragX   - PASTE_W;
+    const copyX   = pasteX  - COPY_W;
+    return { copyX, pasteX, dragX, removeX };
+  }
+
   // Find the row index from a Y pixel coordinate, accounting for scroll. The
   // "+" cell sits one row past the last data row. Returns -1 if outside.
   _hitRowIndex(y) {
@@ -131,9 +164,22 @@ export class InstrumentRack {
     if (idx < 0 || idx >= this.rows.length) return;
 
     const row = this.rows[idx];
-    const removeX = this.w - SCROLLBAR_W - REMOVE_W;
+    const { copyX, pasteX, removeX } = this._rowCells();
     if (x >= removeX) {
       this.onRemove?.(row);
+      return;
+    }
+    if (x >= pasteX && x < pasteX + PASTE_W) {
+      // Paste hit is silently ignored on rows whose type doesn't match the
+      // clipboard — the glyph isn't drawn in that case, so clicking the
+      // empty space behaves like clicking the row body (select it).
+      if (this.clipboardType && this.clipboardType === row.type) {
+        this.onPaste?.(row);
+        return;
+      }
+    }
+    if (x >= copyX && x < copyX + COPY_W) {
+      this.onCopy?.(row);
       return;
     }
 
@@ -153,8 +199,7 @@ export class InstrumentRack {
   // _onPointerDown to decide between starting a row-drag and falling through
   // to the normal scrollbar / row-select / remove behaviour.
   _dragHandleRange() {
-    const removeX = this.w - SCROLLBAR_W - REMOVE_W;
-    const dragX   = removeX - DRAG_HANDLE_W;
+    const { dragX } = this._rowCells();
     return { lo: dragX, hi: dragX + DRAG_HANDLE_W };
   }
 
@@ -380,13 +425,21 @@ export class InstrumentRack {
     // Type icon.
     this._drawTypeIcon(ICON_X, y + 2, row.type, isSel);
 
-    // Patch name — uppercase, trimmed to fit before the drag handle.
-    const removeX = W - SCROLLBAR_W - REMOVE_W;
-    const dragX   = removeX - DRAG_HANDLE_W;
-    const nameMaxPx = dragX - NAME_X - 2;
+    // Patch name — uppercase, trimmed to fit before the copy cell. The right
+    // edge reserves COPY_W + PASTE_W + DRAG_HANDLE_W + REMOVE_W + SCROLLBAR_W
+    // regardless of clipboard state so toggling the clipboard never reflows
+    // the visible name.
+    const { copyX, pasteX, dragX, removeX } = this._rowCells();
+    const nameMaxPx = copyX - NAME_X - 2;
     const name = (row.patchName ?? "").toString().toUpperCase();
     ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-pixel"];
     this._drawClippedText(name, NAME_X, snap(y + (ROW_H - FONT_PX) / 2), nameMaxPx);
+
+    // Task 33 — Copy glyph on every row. Paste glyph only when the clipboard
+    // is non-empty AND its captured type matches this row's type.
+    this._drawCopyCell(copyX, y, isSel);
+    if (this.clipboardType && this.clipboardType === row.type)
+      this._drawPasteCell(pasteX, y, isSel);
 
     // Drag-handle glyph (live target for Task 27 drag).
     ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-text-dark"] || pal["lcd-pixel"];
@@ -499,6 +552,26 @@ export class InstrumentRack {
     // A thin "-" glyph centered in the cell. Color follows selection.
     ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-pixel"];
     ctx.fillRect(x + 3, y + Math.floor(ROW_H / 2), REMOVE_W - 6, 1);
+  }
+
+  // Task 33 — letterform glyphs for the copy + paste cells. Drawn as solid
+  // 5x7-ish pixel letters in the canvas's standard pixel font so they read at
+  // the same scale as the surrounding "+" / "-" cells. Same selection-aware
+  // colour rule as the other cells.
+  _drawCopyCell(x, y, isSel) {
+    const ctx = this.ctx;
+    const pal = palette();
+    ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-pixel"];
+    ctx.fillText("C", snap(x + (COPY_W - FONT_PX) / 2),
+                       snap(y + (ROW_H - FONT_PX) / 2));
+  }
+
+  _drawPasteCell(x, y, isSel) {
+    const ctx = this.ctx;
+    const pal = palette();
+    ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-pixel"];
+    ctx.fillText("P", snap(x + (PASTE_W - FONT_PX) / 2),
+                       snap(y + (ROW_H - FONT_PX) / 2));
   }
 
   _drawScrollbar() {

@@ -189,6 +189,14 @@ const selectPartFn     = Juce.getNativeFunction("selectPart");
 const clearPartFn      = Juce.getNativeFunction("clearPart");
 const addInstrumentFn  = Juce.getNativeFunction("addInstrument");
 const reorderRackRowFn = Juce.getNativeFunction("reorderRackRow");
+const copySlotFn       = Juce.getNativeFunction("copySlot");
+const pasteSlotFn      = Juce.getNativeFunction("pasteSlot");
+
+// Human-readable slot-type label for cross-type paste toasts (Task 33). The
+// rack widget hides the glyph on incompatible rows, so the toast path only
+// fires for the defensive backend rejection — but the wording should still
+// match what the user expects to see.
+const TYPE_LABEL = { fm: "FM", sq: "PSG", d: "DAC" };
 
 function mountInstrumentRack(col) {
   const canvas = col.querySelector("#instrument-rack");
@@ -201,6 +209,8 @@ function mountInstrumentRack(col) {
     onAdd:     (cx, cy) => openAddPopover(cx, cy),
     onRemove:  (row) => removeRow(row),
     onReorder: (fromIdx, toIdx) => reorderRow(fromIdx, toIdx),
+    onCopy:    (row) => copyRow(row),
+    onPaste:   (row) => pasteRow(row),
   });
   fmViewState.rack = rack;
 
@@ -319,6 +329,61 @@ async function reorderRow(fromIdx, toIdx) {
     fmViewState.rack.scrollY = Math.max(0, Math.min(max, savedScroll));
     fmViewState.rack.render();
   }
+}
+
+// Task 33 — Per-slot copy/paste. The clipboard lives in this module (editor-
+// session scoped): closing the editor or reloading the project wipes it. The
+// payload is the opaque blob returned by the native copySlot — JS only inspects
+// `type` so the rack widget can show the paste glyph on compatible rows.
+async function copyRow(row) {
+  const rows = fmViewState.rackRows ?? [];
+  const idx = rows.findIndex(r => r.type === row.type && r.slotIndex === row.slotIndex);
+  if (idx < 0) return;
+
+  let resp;
+  try { resp = await copySlotFn(idx); }
+  catch (e) { console.error("copySlot failed", e); return; }
+  if (!resp || !resp.ok) {
+    showToast("error", resp?.error ?? "Could not copy slot.");
+    return;
+  }
+
+  fmViewState.clipboardRow = { type: resp.type, payload: resp.payload };
+  fmViewState.rack?.setClipboardType(resp.type);
+}
+
+async function pasteRow(row) {
+  const clip = fmViewState.clipboardRow;
+  if (!clip) return;
+  if (clip.type !== row.type) {
+    showToast("warn",
+      `Cannot paste ${TYPE_LABEL[clip.type] ?? clip.type} patch into `
+      + `${TYPE_LABEL[row.type] ?? row.type} slot`);
+    return;
+  }
+  const rows = fmViewState.rackRows ?? [];
+  const idx = rows.findIndex(r => r.type === row.type && r.slotIndex === row.slotIndex);
+  if (idx < 0) return;
+
+  let resp;
+  try { resp = await pasteSlotFn(idx, clip.payload); }
+  catch (e) { console.error("pasteSlot failed", e); return; }
+  if (!resp || !resp.ok) {
+    // The C++ side also rejects type mismatches defensively; map its error
+    // back to the same friendly wording as the JS-side guard above.
+    if (resp?.error === "type mismatch") {
+      showToast("warn",
+        `Cannot paste ${TYPE_LABEL[clip.type] ?? clip.type} patch into `
+        + `${TYPE_LABEL[row.type] ?? row.type} slot`);
+    } else {
+      showToast("error", resp?.error ?? "Could not paste slot.");
+    }
+    return;
+  }
+
+  // The C++ side emits patchRootsChanged after a successful paste; the
+  // existing listener calls refreshRack, which rebinds the routing strip
+  // and refreshes the rack labels. Nothing more to do here.
 }
 
 function openAddPopover(clientX, clientY) {
@@ -978,6 +1043,9 @@ const fmViewState = {
   // can restore the persisted highlight + tab choice after project reload.
   setChannelsSelected: null,
   presetTabsBinding:   null,
+  // Task 33 — Per-slot copy/paste clipboard ({ type, payload } when set, null
+  // otherwise). Editor-session scoped: a new editor mount starts empty.
+  clipboardRow: null,
 };
 
 // Walk the right-column Presets/Import list and highlight the row matching

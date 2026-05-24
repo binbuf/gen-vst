@@ -181,6 +181,182 @@ namespace
         out->setProperty ("cells", juce::var (cells));
         return juce::var (out);
     }
+
+    // --- Task 33 — Per-slot copy/paste helpers --------------------------------
+    // captureSlotState builds a JSON-serialisable juce::var snapshot of every
+    // parameter that defines a rack slot's identity (Patch + routing + polyphony
+    // for FM; PSG envelope + routing for SQ; DACKit cells + routing for D). The
+    // clipboard payload is opaque to JS — round-tripped through copySlot ->
+    // pasteSlot — so its layout only has to be stable within a single editor
+    // session. applySlotState replays the snapshot through setValueNotifyingHost
+    // (and DACKit::loadCellRawPcm for D rows), the same path bank-import uses
+    // so the audio thread picks up every change via the standard apvts ->
+    // FmParamCache pipeline.
+
+    // Snapshot every apvts param in `ids` under the suffix into an object var.
+    juce::var snapshotParams (juce::AudioProcessorValueTreeState& apvts,
+                              const juce::String&                  suffix,
+                              const std::vector<const char*>&      ids)
+    {
+        auto* obj = new juce::DynamicObject();
+        for (const char* id : ids)
+        {
+            const juce::String fullId = juce::String (id) + suffix;
+            if (auto* p = apvts.getRawParameterValue (fullId))
+                obj->setProperty (id, (double) p->load());
+        }
+        return juce::var (obj);
+    }
+
+    // Replay every property of `paramsVar` onto the apvts param `<key><suffix>`.
+    void applyParams (juce::AudioProcessorValueTreeState& apvts,
+                      const juce::String&                  suffix,
+                      const juce::var&                     paramsVar)
+    {
+        auto* obj = paramsVar.getDynamicObject();
+        if (obj == nullptr) return;
+        for (const auto& prop : obj->getProperties())
+        {
+            const juce::String fullId = prop.name.toString() + suffix;
+            if (auto* p = apvts.getParameter (fullId))
+            {
+                const float v = (float) (double) prop.value;
+                p->setValueNotifyingHost (p->convertTo0to1 (v));
+            }
+        }
+    }
+
+    // Per-slot apvts param IDs (suffix-relative). Routing applies to every
+    // slot type; the rest are per-type. Stays in sync with createParameterLayout
+    // in PluginProcessor.cpp.
+    const std::vector<const char*>& routingParamIds()
+    {
+        static const std::vector<const char*> ids {
+            "midi_ch", "transpose_st", "transpose_oct",
+            "note_lo", "note_hi", "detune_cents", "balance"
+        };
+        return ids;
+    }
+
+    const std::vector<const char*>& fmPolyphonyParamIds()
+    {
+        static const std::vector<const char*> ids {
+            "poly_mode", "mono_glide", "unison_spread", "glide_time"
+        };
+        return ids;
+    }
+
+    const std::vector<const char*>& psgChannelParamIds()
+    {
+        static const std::vector<const char*> ids {
+            "psg_vol", "psg_pan", "psg_bend",
+            "psg_atk", "psg_dr1", "psg_sus", "psg_dr2", "psg_rr",
+            "psg_detune", "psg_freq", "psg_ksr", "psg_ssg", "psg_vel"
+        };
+        return ids;
+    }
+
+    // Serialise a Patch struct into a juce::var (object with per-field
+    // arrays for the per-op data, scalars for the per-part data). Mirrors
+    // the patch model in PatchSystem.h.
+    juce::var patchToVar (const Patch& patch)
+    {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty ("name",       juce::String (patch.name));
+        obj->setProperty ("alg",        (int) patch.alg);
+        obj->setProperty ("fb",         (int) patch.fb);
+        obj->setProperty ("lr",         (int) patch.lr);
+        obj->setProperty ("ams",        (int) patch.ams);
+        obj->setProperty ("pms",        (int) patch.pms);
+        obj->setProperty ("lfo_enable", (int) patch.lfo_enable);
+        obj->setProperty ("lfo_rate",   (int) patch.lfo_rate);
+
+        auto packOps = [] (const std::uint8_t (&src)[4])
+        {
+            juce::Array<juce::var> arr;
+            for (int i = 0; i < 4; ++i) arr.add ((int) src[i]);
+            return juce::var (arr);
+        };
+        obj->setProperty ("mul",  packOps (patch.mul));
+        obj->setProperty ("dt",   packOps (patch.dt));
+        obj->setProperty ("tl",   packOps (patch.tl));
+        obj->setProperty ("ks",   packOps (patch.ks));
+        obj->setProperty ("ar",   packOps (patch.ar));
+        obj->setProperty ("dr",   packOps (patch.dr));
+        obj->setProperty ("sr",   packOps (patch.sr));
+        obj->setProperty ("rr",   packOps (patch.rr));
+        obj->setProperty ("sl",   packOps (patch.sl));
+        obj->setProperty ("ssg",  packOps (patch.ssg));
+        obj->setProperty ("amon", packOps (patch.amon));
+        return juce::var (obj);
+    }
+
+    Patch varToPatch (const juce::var& v)
+    {
+        Patch p;
+        auto* obj = v.getDynamicObject();
+        if (obj == nullptr) return p;
+
+        auto readByte = [obj] (const char* key, std::uint8_t dflt) -> std::uint8_t
+        {
+            if (! obj->hasProperty (key)) return dflt;
+            return (std::uint8_t) juce::jlimit (0, 255, (int) obj->getProperty (key));
+        };
+        if (obj->hasProperty ("name"))
+            p.name = obj->getProperty ("name").toString().toStdString();
+        p.alg        = readByte ("alg",        0);
+        p.fb         = readByte ("fb",         0);
+        p.lr         = readByte ("lr",         3);
+        p.ams        = readByte ("ams",        0);
+        p.pms        = readByte ("pms",        0);
+        p.lfo_enable = readByte ("lfo_enable", 0);
+        p.lfo_rate   = readByte ("lfo_rate",   0);
+
+        auto unpackOps = [obj] (const char* key, std::uint8_t (&dst)[4])
+        {
+            if (! obj->hasProperty (key)) return;
+            auto v = obj->getProperty (key);
+            if (auto* arr = v.getArray())
+                for (int i = 0; i < juce::jmin (4, arr->size()); ++i)
+                    dst[i] = (std::uint8_t) juce::jlimit (0, 255, (int) (*arr)[i]);
+        };
+        unpackOps ("mul",  p.mul);
+        unpackOps ("dt",   p.dt);
+        unpackOps ("tl",   p.tl);
+        unpackOps ("ks",   p.ks);
+        unpackOps ("ar",   p.ar);
+        unpackOps ("sr",   p.sr);
+        unpackOps ("dr",   p.dr);
+        unpackOps ("rr",   p.rr);
+        unpackOps ("sl",   p.sl);
+        unpackOps ("ssg",  p.ssg);
+        unpackOps ("amon", p.amon);
+        return p;
+    }
+
+    // PSG sub-id strings keyed by SlotId.index (matches kPsgRackIds in
+    // PluginEditor's getRackState).
+    const std::array<const char*, SN76489Engine::kNumChannels>& psgSubIds()
+    {
+        static const std::array<const char*, SN76489Engine::kNumChannels>
+            ids { "ch1", "ch2", "ch3", "noise" };
+        return ids;
+    }
+
+    // Build the apvts suffix for a slot ("_part1", "_psg_ch1", "_dac", ...).
+    juce::String suffixForSlot (PartManager::SlotId slot)
+    {
+        switch (slot.type)
+        {
+            case PartManager::InstrumentType::FM:
+                return "_part" + juce::String (slot.index + 1);
+            case PartManager::InstrumentType::SQ:
+                return juce::String ("_psg_") + psgSubIds()[(std::size_t) slot.index];
+            case PartManager::InstrumentType::D:
+                return "_dac";
+        }
+        return {};
+    }
 }
 
 std::vector<std::unique_ptr<juce::WebSliderRelay>>
@@ -1366,9 +1542,19 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                     {
                         if (slot.index < 0 || slot.index >= PartManager::kNumRackFmSlots) continue;
                         const auto path = browser.activePatchPath (slot.index);
-                        const juce::String name = path.isNotEmpty()
-                            ? juce::File (path).getFileNameWithoutExtension()
-                            : juce::String ("— empty —");
+                        // Fall back to the PartManager-cached patch.name when
+                        // no patch file is bound (Task 33 — a pasted slot is
+                        // by-value, so it has no source path but it does have
+                        // a patch.name carried over in the clipboard payload).
+                        juce::String name;
+                        if (path.isNotEmpty())
+                            name = juce::File (path).getFileNameWithoutExtension();
+                        else
+                        {
+                            const auto& pname = parts.getPatch (slot.index).name;
+                            name = pname.empty() ? juce::String ("— empty —")
+                                                 : juce::String (pname);
+                        }
                         pushRow (slot, "_part" + juce::String (slot.index + 1), name, slot.index + 1);
                         break;
                     }
@@ -1543,6 +1729,267 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             const int to   = (int) args[1];
             processor.getPartManager().reorderSlot (from, to);
             completion (makeStatusVar ({}));
+        });
+
+    // Task 33 — Per-slot copy/paste.
+    //
+    // copySlot snapshots every parameter (Patch / routing / polyphony / PSG
+    // envelope / DAC cells) that defines a rack row's identity into a juce::var
+    // payload the JS side stores opaquely. pasteSlot replays that payload onto
+    // a different slot of the *same type*: cross-type pastes are rejected at
+    // the boundary (the rack widget also hides the paste glyph for
+    // incompatible rows, but this is the authoritative guard).
+    //
+    // The clipboard lives JS-side: a paste needs the full payload round-tripped
+    // back through args, so closing + reopening the editor naturally wipes the
+    // clipboard (per task spec "editor-session only").
+    //
+    // Indices: like reorderRackRow above, the rowIndex refers to a position in
+    // PartManager::rackOrder. Resolving rowIndex → SlotId at call time means
+    // copy and paste both follow the user-visible row order even if the
+    // backend slot pool indices look different (e.g. PSG noise is SQ slot 3).
+    options = options.withNativeFunction ("copySlot",
+        [this, rackSlotTypeToString] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.isEmpty() || ! args[0].isInt())
+            { completion (makeStatusVar ("rowIndex required")); return; }
+            const int rowIdx = (int) args[0];
+            auto& parts = processor.getPartManager();
+            const auto& order = parts.getRackOrder();
+            if (rowIdx < 0 || rowIdx >= (int) order.size())
+            { completion (makeStatusVar ("rowIndex out of range")); return; }
+
+            const auto slot   = order[(std::size_t) rowIdx];
+            const auto suffix = suffixForSlot (slot);
+            auto& apvts       = processor.getValueTreeState();
+
+            auto* payload = new juce::DynamicObject();
+            payload->setProperty ("type",    rackSlotTypeToString (slot.type));
+            payload->setProperty ("routing", snapshotParams (apvts, suffix, routingParamIds()));
+
+            switch (slot.type)
+            {
+                case PartManager::InstrumentType::FM:
+                {
+                    Patch live;
+                    processor.readLivePatch (slot.index, live);
+                    // PartManager carries the last-loaded patch.name; the live
+                    // apvts snapshot has no name field, so fold it back in.
+                    live.name = parts.getPatch (slot.index).name;
+                    payload->setProperty ("patch",     patchToVar (live));
+                    payload->setProperty ("patchPath", processor.getPatchBrowser()
+                                                            .activePatchPath (slot.index));
+                    payload->setProperty ("polyphony",
+                        snapshotParams (apvts, suffix, fmPolyphonyParamIds()));
+                    break;
+                }
+                case PartManager::InstrumentType::SQ:
+                {
+                    payload->setProperty ("psg",
+                        snapshotParams (apvts, suffix, psgChannelParamIds()));
+                    // Tone channels expose glide_time_psg_<ch>; noise has none.
+                    if (slot.index < SN76489Engine::kNumToneChs)
+                    {
+                        const juce::String gid = "glide_time_psg_"
+                            + juce::String (psgSubIds()[(std::size_t) slot.index]);
+                        if (auto* p = apvts.getRawParameterValue (gid))
+                            payload->setProperty ("psgGlide", (double) p->load());
+                    }
+                    break;
+                }
+                case PartManager::InstrumentType::D:
+                {
+                    auto& kit = processor.getDacKit();
+                    juce::Array<juce::var> cells;
+                    for (int i = 0; i < DACKit::kNumCells; ++i)
+                    {
+                        if (! kit.hasCell (i)) continue;
+                        const auto* c = kit.cellPtr (i);
+                        if (c == nullptr || c->mtPcm.empty()) continue;
+
+                        auto* cellObj = new juce::DynamicObject();
+                        cellObj->setProperty ("index", i);
+                        cellObj->setProperty ("rate",  c->mtRate);
+                        cellObj->setProperty ("name",  c->name);
+
+                        juce::MemoryOutputStream b64;
+                        juce::Base64::convertToBase64 (b64, c->mtPcm.data(), c->mtPcm.size());
+                        cellObj->setProperty ("pcm", b64.toString());
+
+                        cells.add (juce::var (cellObj));
+                    }
+                    payload->setProperty ("cells", juce::var (cells));
+                    break;
+                }
+            }
+
+            auto* result = new juce::DynamicObject();
+            result->setProperty ("ok",      true);
+            result->setProperty ("type",    rackSlotTypeToString (slot.type));
+            result->setProperty ("payload", juce::var (payload));
+            completion (juce::var (result));
+        });
+
+    options = options.withNativeFunction ("pasteSlot",
+        [this, rackSlotTypeToString] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.size() < 2 || ! args[0].isInt())
+            { completion (makeStatusVar ("rowIndex, payload required")); return; }
+            const int rowIdx = (int) args[0];
+            const juce::var payloadVar = args[1];
+            auto* payload = payloadVar.getDynamicObject();
+            if (payload == nullptr)
+            { completion (makeStatusVar ("payload must be an object")); return; }
+
+            auto& parts = processor.getPartManager();
+            const auto& order = parts.getRackOrder();
+            if (rowIdx < 0 || rowIdx >= (int) order.size())
+            { completion (makeStatusVar ("rowIndex out of range")); return; }
+
+            const auto slot = order[(std::size_t) rowIdx];
+            const juce::String payloadType = payload->getProperty ("type").toString();
+            const juce::String slotType    = rackSlotTypeToString (slot.type);
+            if (payloadType != slotType)
+            { completion (makeStatusVar ("type mismatch")); return; }
+
+            const auto suffix = suffixForSlot (slot);
+            auto& apvts       = processor.getValueTreeState();
+
+            // Routing applies to every type. Order matters here only for the
+            // user's perception of intermediate states — apvts writes are
+            // synchronous on the message thread, so the audio thread sees one
+            // coherent slot configuration on the next block regardless.
+            if (payload->hasProperty ("routing"))
+                applyParams (apvts, suffix, payload->getProperty ("routing"));
+
+            switch (slot.type)
+            {
+                case PartManager::InstrumentType::FM:
+                {
+                    if (payload->hasProperty ("patch"))
+                    {
+                        const Patch p = varToPatch (payload->getProperty ("patch"));
+                        // Replay each per-op + per-part FM param through
+                        // setValueNotifyingHost (same path as writePatchToParams
+                        // in PluginProcessor.cpp) so the DAW sees the changes
+                        // for automation purposes. Also stash the patch in
+                        // PartManager so the rack-row label can fall back to
+                        // patch.name when activePatchPath is empty.
+                        for (int op = 0; op < kNumOps; ++op)
+                        {
+                            auto setOp = [&] (const char* base, int v, int lo, int hi)
+                            {
+                                const auto id = juce::String (base) + "_op"
+                                                + juce::String (op + 1) + suffix;
+                                if (auto* prm = apvts.getParameter (id))
+                                    prm->setValueNotifyingHost (
+                                        prm->convertTo0to1 (
+                                            (float) juce::jlimit (lo, hi, v)));
+                            };
+                            setOp ("dt",   p.dt[op],   0, 6);
+                            setOp ("mul",  p.mul[op],  0, 15);
+                            setOp ("tl",   p.tl[op],   0, 127);
+                            setOp ("ks",   p.ks[op],   0, 3);
+                            setOp ("ar",   p.ar[op],   0, 31);
+                            setOp ("dr",   p.dr[op],   0, 31);
+                            setOp ("sr",   p.sr[op],   0, 31);
+                            setOp ("rr",   p.rr[op],   0, 15);
+                            setOp ("sl",   p.sl[op],   0, 15);
+                            setOp ("ssg",  p.ssg[op],  0, 15);
+                            setOp ("amon", p.amon[op], 0, 1);
+                        }
+                        auto setPart = [&] (const char* base, int v, int lo, int hi)
+                        {
+                            const auto id = juce::String (base) + suffix;
+                            if (auto* prm = apvts.getParameter (id))
+                                prm->setValueNotifyingHost (
+                                    prm->convertTo0to1 (
+                                        (float) juce::jlimit (lo, hi, v)));
+                        };
+                        setPart ("alg",        p.alg,        0, 7);
+                        setPart ("fb",         p.fb,         0, 7);
+                        setPart ("ams",        p.ams,        0, 3);
+                        setPart ("pms",        p.pms,        0, 7);
+                        setPart ("lr",         p.lr,         0, 3);
+                        setPart ("lfo_enable", p.lfo_enable, 0, 1);
+                        setPart ("lfo_rate",   p.lfo_rate,   0, 7);
+
+                        parts.loadPatch (slot.index, p);
+                    }
+                    if (payload->hasProperty ("polyphony"))
+                        applyParams (apvts, suffix, payload->getProperty ("polyphony"));
+                    // Clone is by-value: the pasted slot is no longer tied to
+                    // the source patch file. Clearing activePatchPath lets the
+                    // rack-row label fall back to patch.name (see getRackState).
+                    processor.getPatchBrowser().clearActivePatchPath (slot.index);
+                    break;
+                }
+                case PartManager::InstrumentType::SQ:
+                {
+                    if (payload->hasProperty ("psg"))
+                        applyParams (apvts, suffix, payload->getProperty ("psg"));
+                    if (payload->hasProperty ("psgGlide")
+                        && slot.index < SN76489Engine::kNumToneChs)
+                    {
+                        const juce::String gid = "glide_time_psg_"
+                            + juce::String (psgSubIds()[(std::size_t) slot.index]);
+                        if (auto* prm = apvts.getParameter (gid))
+                        {
+                            const float v = (float) (double) payload->getProperty ("psgGlide");
+                            prm->setValueNotifyingHost (prm->convertTo0to1 (v));
+                        }
+                    }
+                    break;
+                }
+                case PartManager::InstrumentType::D:
+                {
+                    auto& kit = processor.getDacKit();
+                    kit.clearAll();
+                    if (payload->hasProperty ("cells"))
+                    {
+                        const auto cellsVar = payload->getProperty ("cells");
+                        if (auto* arr = cellsVar.getArray())
+                        {
+                            for (const auto& cv : *arr)
+                            {
+                                auto* cobj = cv.getDynamicObject();
+                                if (cobj == nullptr) continue;
+                                const int idx = (int) cobj->getProperty ("index");
+                                if (idx < 0 || idx >= DACKit::kNumCells) continue;
+                                const auto pcmStr = cobj->getProperty ("pcm").toString();
+                                if (pcmStr.isEmpty()) continue;
+                                juce::MemoryOutputStream decoded;
+                                if (! juce::Base64::convertFromBase64 (decoded, pcmStr))
+                                    continue;
+                                const int rate = (int) cobj->getProperty ("rate");
+                                const auto name = cobj->getProperty ("name").toString();
+                                kit.loadCellRawPcm (idx,
+                                    static_cast<const std::uint8_t*> (decoded.getData()),
+                                    decoded.getDataSize(), rate, name);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Re-page FM attachments so the bottom panel + operator widgets
+            // repaint against the now-modified part. The apvts writes above
+            // already drove every relay, but the FM widgets are bound to the
+            // *selected* part — if the user pasted into the currently selected
+            // FM slot, rebind so they see the changes immediately.
+            if (slot.type == PartManager::InstrumentType::FM
+                && slot.index == selectedPart)
+                rebuildFmAttachments (selectedPart);
+
+            // Refresh the rack so the row label updates (FM patch name) and
+            // every downstream listener (e.g. the routing strip) re-resolves.
+            emitPatchRootsChanged();
+
+            auto* result = new juce::DynamicObject();
+            result->setProperty ("ok",   true);
+            result->setProperty ("type", slotType);
+            completion (juce::var (result));
         });
 
     // --- Editor UI state (persisted across DAW project save/load) ------------
