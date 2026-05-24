@@ -82,8 +82,14 @@ icon for settings.
   - **📂** — opens the preset browser modal (view 6).
 - **Output character toggles** — two `toggle-switch` widgets bound to
   `output_filter` and `ladder_effect` apvts params
-  ([ADR-0024](adr/0024-hardware-filter-toggles.md)). The Ladder toggle
-  is **greyed out in SQ mode** (it has no audible effect there).
+  ([ADR-0024](adr/0024-hardware-filter-toggles.md)). The Output Filter
+  toggle is rendered as a labelled 2-position physical switch —
+  `LEGACY` / `CRYSTAL CLEAR` — where `LEGACY` = `output_filter == true`
+  (Model-1 analog stage modelled, the default Genesis sound) and
+  `CRYSTAL CLEAR` = `output_filter == false` (pure digital, filter
+  bypassed); the labelling mirrors the RYM2612 and PCM2612 panels. The
+  Ladder toggle is a single on/off LED rocker. **Ladder is greyed out
+  in SQ mode** (it has no audible effect there).
 - **⚙ Gear** — opens the Settings modal (view 7).
 
 The header persists across mode swaps. The patch-name LCD updates to
@@ -99,28 +105,32 @@ flanking it, an envelope curve overlay, and a frequency-control mode
 selector.
 
 ```
-┌─ FM MODE ──────────────────────────────────────────────────────────────────────┐
-│ LFO  RATE  PMS  AMS    ┌─ ENVELOPE CURVE ─┐  FREQ CTRL MODE          OP1 FB    │
-│ [○] [○]  [○]  [○]      │                  │  [INT MUL]                          │
-│ POLY  LEGATO RANGE     │   ╱╲___          │  [FLOAT MUL]                [○]    │
-│ [⋅]   [⋅⋅]  [⋅⋅⋅]      │                  │  [AUTO RETRIG]                      │
-│ PB ▭▭▭                 └──────────────────┘                                     │
-│ MW ▭▭▭                                                                          │
-│                                                                                  │
-│  ┌─ OPERATOR GRID ────────────────────────────────────────────────┐  ┌ ALGO ─┐ │
-│  │       AM  AR  DR  SL  SR  RR  RS  SSG-EG  MUL  FREQ  FIXED  DT │  │  ┌──┐ │ │
-│  │  [1]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [3.00] ▢     ○  │  │  │ 4│ │ │
-│  │  [2]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [1.00] ▢     ○  │  │  └──┘ │ │
-│  │  [3]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │ ALG 4 │ │
-│  │  [4]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │       │ │
-│  │  TL: |▟|  |▟|  |▟|  |▟|     VEL: ○  ○  ○  ○                    │  │       │ │
-│  └────────────────────────────────────────────────────────────────┘  └───────┘ │
-└────────────────────────────────────────────────────────────────────────────────┘
+┌─ FM MODE ──────────────────────────────────────────────────────────────────────────┐
+│ LFO  RATE  PMS  AMS  MW→PMS  ┌─ ENVELOPE CURVE ─┐  FREQ CTRL MODE   RETRIG  OP1 FB │
+│ [○] [○]  [○]  [○]    [○]     │                  │  [INT MUL]        ▌498▐          │
+│ POLY  LEGATO RANGE           │   ╱╲___          │  [FLOAT MUL]             [○]     │
+│ [⋅]   [⋅⋅]  [⋅⋅⋅]            │                  │  [AUTO RETRIG]                   │
+│ PB ▭▭▭                       └──────────────────┘                                  │
+│ MW ▭▭▭                                                                             │
+│                                                                                     │
+│  ┌─ OPERATOR GRID ────────────────────────────────────────────────┐  ┌ ALGO ─┐    │
+│  │       AM  AR  DR  SL  SR  RR  RS  SSG-EG  MUL  FREQ  FIXED  DT │  │  ┌──┐ │    │
+│  │  [1]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [3.00] ▢     ○  │  │  │ 4│ │    │
+│  │  [2]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [1.00] ▢     ○  │  │  └──┘ │    │
+│  │  [3]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │ ALG 4 │    │
+│  │  [4]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │       │    │
+│  │  TL: |▟| |▟| |▟| |▟|   VEL: ○ ○ ○ ○   MW: ○ ○ ○ ○              │  │       │    │
+│  └────────────────────────────────────────────────────────────────┘  └───────┘    │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Top-left block — LFO & global controls**
 
 - `LFO`, `RATE`, `PMS`, `AMS` — four small `knob`s.
+- `MW→PMS` — `knob`. Modwheel (CC 1) → PMS depth scaling. RYM2612 manual
+  describes this as the "MW knob which allows to modulate the LFO's PMS
+  setting" for a performance-controlled vibrato. Default 1.0 (full
+  effect). Bound to apvts param `mw_to_pms`.
 - `POLY` — three-position `toggle-switch`: `POLY / MONO / UNISON`.
 - `LEGATO` — only visible in Mono: `RETRIG / LEGATO`.
 - `RANGE` — only visible in Unison: spread (0–50¢).
@@ -134,20 +144,34 @@ operator's** ADSR shape, computed live from its envelope knobs. Click
 an operator row's number badge `[1]..[4]` to swap which operator the
 curve tracks.
 
-**Top-right — frequency control mode + OP1 feedback**
+**Top-right — frequency control mode + retrig rate + OP1 feedback**
 
 - `FREQ CTRL MODE` — three-button pill: `INT MUL / FLOAT MUL / AUTO
-  RETRIG`. Selects how the operator `FREQ` value is interpreted
-  (integer multiple of the note, free-running float, or auto-retriggering
-  for percussion). Bound to a new apvts param `freq_ctrl_mode`.
+  RETRIG`. Selects how each operator's `FREQ` value is interpreted.
+  Bound to apvts param `freq_ctrl_mode` (enum: 0=INT_MUL, 1=FLOAT_MUL,
+  2=AUTO_RETRIG). Behaviour and the per-op `FREQ` display change
+  state-dependently — see the `FREQ` row in the operator grid table
+  below, and [`02-fm-synthesis.md`](02-fm-synthesis.md) §
+  *FREQ Control Mode* for the register semantics.
+- `RETRIG RATE` — `lcd-readout` + stepper, visible only when
+  `freq_ctrl_mode == AUTO_RETRIG`; greyed out otherwise. Range 0–1023
+  (the YM2612 TimerA value; lower = faster retrigger; the RYM2612
+  reference panel shows `498`). Bound to apvts param `retrig_rate`.
+  Writes YM2612 registers `0x24` / `0x25` per the
+  [register reference](02-fm-synthesis.md#0x24--0x25--timer-a-retrig-rate).
 - `OP1 FB` — single `knob` for operator-1 self-feedback (the YM2612 `FB`
   field).
 
 **Centre-right — algorithm diagram**
 
-`algorithm-mini` widget showing the current algorithm topology (the
-8 YM2612 routings; selected one highlighted). Beneath it: `ALG N`
-label and a small selector for picking algorithm 1–8.
+`algorithm-mini` widget showing the **current** algorithm topology (one
+of the 8 YM2612 routings, drawn live with the operator boxes), with an
+`ALG N` label beneath. The tile **is itself the picker**: clicking the
+tile opens an 8-tile popover (a 4×2 mini-grid of all algorithms) over
+the panel; clicking an algorithm in the popover selects it and dismisses
+the popover; clicking outside dismisses without changing the selection.
+This matches the integrated `ALGORITHM` block on the RYM2612 reference
+panel — there is no separate spinner / combo for algorithm number.
 
 **Operator grid (main body)**
 
@@ -161,15 +185,20 @@ Columns:
 | `AM` | Toggle | `amon[op]` |
 | `AR / DR / SL / SR / RR` | Knobs | Envelope rate values |
 | `RS` (Rate Scaling) | Knob | `ks[op]` |
-| `SSG-EG` | Combo (OFF + 8 shapes) | `ssg[op]` |
-| `MUL` | Knob | `mul[op]` |
-| `FREQ` | LCD readout | Derived (mul × note) display |
-| `FIXED` | Toggle | A new "fixed frequency" flag (post-MVP if not trivial) |
+| `SSG-EG` | Combo (OFF + 8 named shapes — `Repeat`, `Hold`, `Alternate`, `Inv. Repeat`, …) | `ssg[op]` |
+| `MUL` | Knob | `mul[op]` in `INT_MUL` mode (integer 0–15); `mul_float[op]` in `FLOAT_MUL` mode (decimal); ignored when `fixed[op]` is on |
+| `FREQ` | LCD readout (state-dependent) | Display depends on `freq_ctrl_mode` × `fixed[op]`: <br>• `INT MUL` → integer multiplier (`×0.5`, `×1`, `×2`, …, `×15`); `FIXED` has no effect<br>• `FLOAT MUL`, fixed off → float multiplier (e.g. `1.50`)<br>• `FLOAT MUL`, fixed on → absolute frequency in Hz (e.g. `523 Hz`)<br>• `AUTO RETRIG` → same as `FLOAT MUL` |
+| `FIXED` | Toggle | `fixed[op]` — when on (and mode = `FLOAT_MUL`/`AUTO_RETRIG`), the operator runs at the absolute frequency `freq_fixed_hz[op]` instead of `note × mul_float[op]`. Greyed out in `INT_MUL` mode (no effect). |
 | `DT` | Knob | `dt[op]` |
-| `TL` (right margin) | Vertical slider | `tl[op]` — separate vertical column so it reads at a glance |
-| `VEL` (right margin) | Knob | A new per-op velocity-to-TL scaling factor |
+| `TL` (right margin) | Vertical slider | `tl[op]` — UI value is **level** (0 = silent, max = full); see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation* for the inversion |
+| `VEL` (right margin) | Knob | `vel[op]` — per-op velocity → TL depth (0 = no effect, 1 = full) |
+| `MW` (right margin) | Knob | `mw[op]` — per-op modwheel → TL depth (0 = no effect, 1 = full). RYM2612 manual page 10 |
 
 All controls in the grid are `apvts`-bound through the standard relays.
+The two right-margin columns (`VEL`, `MW`) implement the per-operator
+modulation routing described in the RYM2612 manual page 10
+("the Total Level of each operator can be modulated by a desired
+amount of either velocity, modulation wheel or CV").
 
 ---
 

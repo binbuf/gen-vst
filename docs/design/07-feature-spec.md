@@ -68,8 +68,14 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] Unison mode: N voices playing same note with per-voice detune spread
 
 ### FM Features
-- [ ] Channel 3 special mode (per-operator pitch for 4 independent pitches) — *post-MVP ([ADR-0014](adr/0014-special-channel-features.md))*
-- [ ] SSG-EG for all 8 looping envelope shapes
+- [ ] Channel 3 special mode (per-operator pitch as a top-level UI editor) — *post-MVP ([ADR-0014](adr/0014-special-channel-features.md))*
+- [ ] SSG-EG for all 8 looping envelope shapes (UI exposes them with named labels: Repeat, Hold, Alternate, Inv. Repeat, etc., not raw `8`–`15`)
+- [ ] **FREQ CTRL MODE** — three-state selector (`INT_MUL` / `FLOAT_MUL` / `AUTO_RETRIG`); RYM2612 manual page 11. `FLOAT_MUL` and `AUTO_RETRIG` use Channel 3 Special / CSM internally — see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *FREQ Control Mode*.
+- [ ] **FIXED per-operator** toggle — when active in `FLOAT_MUL` / `AUTO_RETRIG`, the operator runs at an absolute Hz value (`freq_fixed_hz[op]`) instead of `note × mul_float[op]`. Greyed out in `INT_MUL`.
+- [ ] **RETRIG RATE** (TimerA value, 0–1023) — visible/editable only when `freq_ctrl_mode == AUTO_RETRIG`; writes YM2612 registers `0x24` / `0x25`.
+- [ ] **MW → PMS** global depth knob (`mw_to_pms`) — scales modwheel's effect on PMS vibrato depth; default 1.0. RYM2612 manual page 10.
+- [ ] **MW → TL per-operator** depth knob (`mw[op]`, 4 params) — per-op modwheel → operator-amplitude depth; default 0. RYM2612 manual page 10.
+- [ ] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*.
 
 ### Output character (all modes, v2 additions per [ADR-0024](adr/0024-hardware-filter-toggles.md))
 - [ ] **Output Filtering** toggle — Model-1 RC lowpass + amp coloration on mix bus
@@ -149,6 +155,9 @@ active mode are silently ignored.
 | 80–83 | AMON OP1–OP4 | 0/127 | FM | |
 | 86 | Output Filtering toggle | 0/127 | All | New v2 ([ADR-0024](adr/0024-hardware-filter-toggles.md)) |
 | 87 | Ladder Effect toggle | 0/127 | FM, D | New v2 ([ADR-0024](adr/0024-hardware-filter-toggles.md)) |
+| 88 | FREQ CTRL MODE | 0=INT_MUL, 64=FLOAT_MUL, 127=AUTO_RETRIG | FM | New v2 ([02-fm-synthesis.md](02-fm-synthesis.md) § *FREQ Control Mode*) |
+| 89 | RETRIG RATE (TimerA) | 0–127 → 0–1023 (×8 + 7) | FM | New v2; only audible when CC 88 = AUTO_RETRIG |
+| 90 | MW → PMS depth | 0–127 → 0.0–1.0 | FM | New v2 |
 | 120 | All Sound Off | — | FM, SQ | Standard (immediate silence) |
 | 121 | Reset All Controllers | — | FM, SQ | Standard |
 | 123 | All Notes Off | — | FM, SQ | Standard (with release) |

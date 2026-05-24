@@ -44,21 +44,53 @@ struct Patch {
     uint8_t lfo_rate;     // 0–7: LFO frequency select
 
     // Per-operator (index 0=OP1/S1, 1=OP2/S2, 2=OP3/S3, 3=OP4/S4)
-    uint8_t mul[4];       // 0–15: frequency multiple
+    uint8_t mul[4];       // 0–15: integer frequency multiple (used in INT_MUL mode)
     uint8_t dt[4];        // 0–6: detune
-    uint8_t tl[4];        // 0–127: total level (attenuation)
+    uint8_t tl[4];        // 0–127: total level (hardware attenuation — 0 = loudest; UI exposes the inverted "level" — see 02-fm-synthesis.md § UI level vs hardware attenuation)
     uint8_t ks[4];        // 0–3: key scale
     uint8_t ar[4];        // 0–31: attack rate
     uint8_t dr[4];        // 0–31: first decay rate
     uint8_t sr[4];        // 0–31: second decay / sustain rate
     uint8_t rr[4];        // 0–15: release rate
-    uint8_t sl[4];        // 0–15: sustain level
+    uint8_t sl[4];        // 0–15: sustain level (hardware attenuation, like tl[])
     uint8_t ssg[4];       // 0 or 8–15: SSG-EG (values 1–7 are invalid)
     uint8_t amon[4];      // 0/1: amplitude mod enable per operator
+
+    // ---- v2 additions (modelled on RYM2612; default for legacy formats) ----
+    // FREQ CTRL MODE — see 02-fm-synthesis.md § FREQ Control Mode
+    uint8_t freq_ctrl_mode;  // 0=INT_MUL (default), 1=FLOAT_MUL, 2=AUTO_RETRIG
+    uint16_t retrig_rate;    // 0–1023: TimerA value for AUTO_RETRIG (default 500)
+    float    mul_float[4];   // 0.5–15.99: per-op float multiplier (FLOAT_MUL / AUTO_RETRIG); default mirrors mul[]
+    uint8_t  fixed[4];       // 0/1: per-op fixed-frequency flag; default 0
+    float    freq_fixed_hz[4]; // 20.0–20000.0 Hz: per-op absolute frequency when fixed[op]=1; default 440.0
+
+    // Per-op modulation depth (RYM2612 manual page 10)
+    float    mw[4];          // 0.0–1.0: per-op modwheel → TL depth; default 0.0
+    float    vel[4];         // 0.0–1.0: per-op velocity → TL depth; default 0.0
+    // Global modulation depth
+    float    mw_to_pms;      // 0.0–1.0: modwheel → PMS depth; default 1.0
 
     std::string name;     // display name (from filename or DMP internal)
 };
 ```
+
+**Defaults on legacy-format load.** TFI / VGI / DMP / Y12 / OPM
+predate every field below the dashed comment line. Loaders set
+defaults that preserve legacy-faithful playback:
+
+| Field | Default on legacy-format load |
+|---|---|
+| `freq_ctrl_mode` | `INT_MUL` (0) |
+| `retrig_rate` | `500` |
+| `mul_float[op]` | `(float)mul[op]` (mirrors integer mul) |
+| `fixed[op]` | `0` (off) |
+| `freq_fixed_hz[op]` | `440.0` |
+| `mw[op]` | `0.0` (no modwheel→TL effect) |
+| `vel[op]` | `0.0` (no velocity→TL effect; ADR-0023 / Settings toggle controls a global enable) |
+| `mw_to_pms` | `1.0` (modwheel scales PMS at full depth) |
+
+These defaults make a legacy patch sound identical to the v1 behaviour
+once loaded.
 
 ---
 

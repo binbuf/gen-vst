@@ -87,6 +87,22 @@ Convenience wrappers for Bank 1: `write_address_hi(addr)`, `write_data_hi(data)`
 | 6    | 10.00 Hz  |
 | 7    | 69.22 Hz  |
 
+### `0x24` / `0x25` — Timer A (retrig rate)
+
+10-bit TimerA value, written as a high byte (`0x24`) and a low 2-bit
+byte (`0x25`):
+
+| Register | Bits | Field |
+|----------|------|-------|
+| `0x24` | 7:0 | TimerA value high 8 bits |
+| `0x25` | 1:0 | TimerA value low 2 bits |
+
+The 10-bit value is the count the timer loads on each tick (1024 − N
+internally clocks); **lower N = faster trigger**. Combined with CSM
+mode in `0x27`, this gives the auto-retrigger behaviour exposed by the
+UI as `AUTO RETRIG`. See *FREQ Control Mode* below for the
+register-write sequence.
+
 ### `0x27` — Mode / Channel 3 Special
 
 | Bits | Field | Description |
@@ -96,7 +112,18 @@ Convenience wrappers for Bank 1: `write_address_hi(addr)`, `write_data_hi(data)`
 | 3:2  | EN    | Timer enable (bit3=B, bit2=A) |
 | 1:0  | LOAD  | Timer load (bit1=B, bit0=A) |
 
-**Special mode** (01): Channel 3's four operators can play at independent pitches using registers `0xA8`–`0xAF`. Useful for chord/arpeggio effects without consuming multiple channels. Channel 3 special mode is **deferred to post-MVP** — see [ADR-0014](adr/0014-special-channel-features.md).
+**Special mode** (01): Channel 3's four operators can play at independent
+pitches using registers `0xA8`–`0xAF`. Useful for chord/arpeggio effects
+without consuming multiple channels. **CSM mode** (11): adds an internal
+timer (TimerA, registers `0x24`/`0x25`) that auto-fires key-on/off on
+overflow, creating a tone from rapid retriggering — the foundation of
+the UI's `AUTO RETRIG` feature (see *FREQ Control Mode* below).
+
+Exposing Channel 3 special mode as a standalone **editor surface**
+(four independent pitch knobs for ch3's operators) is **deferred to
+post-MVP** per [ADR-0014](adr/0014-special-channel-features.md); the
+v2 `FREQ CTRL MODE` selector uses Special/CSM under the hood but does
+not expose per-channel-3-operator pitches as a top-level UI affordance.
 
 ### `0x28` — Key On / Off
 
@@ -273,6 +300,76 @@ When `0x27` bits 7:6 = 01 (special mode), each of channel 3's operators can be p
 
 ---
 
+## FREQ Control Mode
+
+The v2 UI exposes a per-voice **FREQ CTRL MODE** selector (apvts param
+`freq_ctrl_mode`) with three states — `INT MUL`, `FLOAT MUL`, and
+`AUTO RETRIG` — modelled on the RYM2612's "Frequency Control Mode"
+switch (manual page 11). The selector changes how each operator's
+frequency is derived from the played note and which YM2612 registers
+are used to drive it.
+
+### State semantics
+
+| Mode | Per-op pitch source | `FIXED` toggle | Per-op FREQ display | YM2612 register path |
+|---|---|---|---|---|
+| `INT_MUL` (default) | `note × mul[op]`, mul ∈ {½, 1, 2, …, 15} | Ignored (greyed out) | Integer multiplier (`×0.5`, `×1`, …) | Standard `0xA4`/`0xA0` per channel — every voice shares one F-number, MUL field per op |
+| `FLOAT_MUL`, fixed off | `note × mul_float[op]`, mul_float ∈ [0.5, 15.99] | Off | Decimal multiplier (e.g. `1.50`) | Channel 3 special mode (`0x27` bits 7:6 = `01`) + per-op F-numbers `0xA8`/`0xAC`/`0xA9`/`0xAD`/`0xAA`/`0xAE`/`0xA2`/`0xA6` |
+| `FLOAT_MUL`, fixed on | `freq_fixed_hz[op]` (absolute Hz) | On | Absolute frequency (`523 Hz`) | Channel 3 special mode + per-op F-numbers computed directly from Hz |
+| `AUTO_RETRIG` | Same as `FLOAT_MUL` | Same as `FLOAT_MUL` | Same as `FLOAT_MUL` | Channel 3 **CSM** mode (`0x27` bits 7:6 = `11`) + per-op F-numbers + TimerA value from `retrig_rate` written to `0x24`/`0x25` |
+
+`AUTO_RETRIG` implies the `FLOAT_MUL` semantics — exactly as the
+RYM2612 manual states ("note that this mode implies the Float Mul
+Frequency Control Mode, just as with the real YM2612", page 11).
+
+### Implementation note — channel 3 dependency
+
+`FLOAT_MUL` and `AUTO_RETRIG` rely on the YM2612's **Channel 3 Special
+Mode** (or CSM) for per-operator independent pitches. Under
+[ADR-0010](adr/0010-ymfm-instance-model.md), each voice lives in its
+own `ymfm::ym2612` instance and uses channel 0 — `INT_MUL` is therefore
+the simplest case and matches the existing voice model directly.
+
+For `FLOAT_MUL` / `AUTO_RETRIG`, each voice instead writes to **channel 3
+of its own ymfm instance** and sets `0x27` to enable Special (or CSM)
+mode on that channel; per-operator F-numbers go to `0xA8`–`0xAF` instead
+of the standard `0xA0`/`0xA4` block. The 16-voice pool topology
+(ADR-0010, ADR-0013→0021) is unchanged — only the *active channel
+within each instance* changes per mode.
+
+`mul_float[op]`, `freq_fixed_hz[op]`, and `fixed[op]` are new apvts
+params introduced for this feature; they are dormant when
+`freq_ctrl_mode == INT_MUL` and need not round-trip through legacy patch
+formats (TFI / VGI / DMP / Y12 / OPM all default them on load — see
+[`04-patch-system.md`](04-patch-system.md)).
+
+### Register-write sequence for `AUTO_RETRIG`
+
+```cpp
+// 1. Switch the voice's ymfm channel target to ch3, enable CSM.
+chip.write(bankAddr, 0x27); chip.write(bankData, 0xC0);  // bits 7:6 = 11 (CSM)
+
+// 2. Write per-operator F-numbers to 0xA8..0xAF (see 0x27 reference above).
+//    Each operator gets its own pitch derived from
+//    `note × mul_float[op]` or `freq_fixed_hz[op]`.
+// ... per-op writes ...
+
+// 3. Write TimerA value (10-bit retrig_rate) — high 8 bits, then low 2 bits.
+chip.write(bankAddr, 0x24); chip.write(bankData, (retrig_rate >> 2) & 0xFF);
+chip.write(bankAddr, 0x25); chip.write(bankData,  retrig_rate       & 0x03);
+
+// 4. Set 0x27 LOAD/EN bits for TimerA to start the timer (and reset it).
+chip.write(bankAddr, 0x27); chip.write(bankData, 0xC0 | 0x15);
+// bits 7:6 = CSM | bit4 = RST A | bit2 = EN A | bit0 = LOAD A
+```
+
+The standard per-channel note-on path (`0x28`) is **not** used in CSM
+mode — the timer fires key-on/off internally. Operators must have a
+non-zero RR so each "auto-keyed" event has audible release (manual
+page 15 caution).
+
+---
+
 ## FM Algorithms
 
 ALG selects the operator modulation topology. **M** = modulator (feeds another operator), **C** = carrier (outputs to mix bus). Operators in parentheses are summed before modulating.
@@ -321,6 +418,29 @@ effective_rate = base_rate * 2 + (key_code >> (3 - KS))
 ```
 
 Higher KS values speed up envelopes at higher pitches, closely mimicking acoustic instrument behavior.
+
+### UI level vs hardware attenuation
+
+The YM2612 stores `TL` and `SL` as **attenuation** — 0 = loudest, max
+(127 for TL, 15 for SL) ≈ silence. The v2 UI inverts this for both
+knobs and value displays so the user sees a **level** — the rest
+position of the knob corresponds to silence (0) and full clockwise
+corresponds to maximum loudness. RYM2612 follows the same convention
+(manual page 7: *"in the RYM2612, Sustain and Total Levels are expressed
+as is, 'levels', and are internally converted"*).
+
+The inversion lives in the apvts → register layer (per-op `tl[op]` /
+`sl[op]` in the `Patch` struct stay as **hardware attenuation** for
+round-trip compatibility with TFI/VGI/DMP/Y12/OPM); only the UI display
+and the knob value range are flipped. Concretely, the apvts param
+exposed to the host (and the on-screen knob) is the level
+`level = max - attenuation`; the register write reverses it back to
+`attenuation = max - level`.
+
+This convention is **for the UI / apvts surface only**; every reference
+to `tl[op]` / `sl[op]` in `04-patch-system.md`, `01-architecture.md`,
+and the patch loaders refers to the *register* value (attenuation),
+matching the on-disk patch formats.
 
 ---
 

@@ -168,9 +168,14 @@ DAW-automatable and state-persistent.
 The v2 `apvts` holds:
 
 - **Mode** — `mode_select` (choice: FM | SQ | D).
-- **FM params** — a single patch's worth, ~50 params: per-operator
+- **FM params** — a single patch's worth, ~70 params total. Core per-operator
   (TL/MUL/DT/AR/DR/SR/RR/SL/KS/SSG-EG/AMON), per-channel (ALG/FB/AMS/PMS),
-  global LFO. **No `_part<n>` suffix** — v1's multi-part naming is retired.
+  global LFO; plus the v2 RYM2612-modelled additions
+  (`freq_ctrl_mode`, `retrig_rate`, per-op `mul_float` / `fixed` /
+  `freq_fixed_hz`, per-op `mw` / `vel` TL-modulation depth, global
+  `mw_to_pms`). See [`04-patch-system.md`](04-patch-system.md) §
+  *FM Patch Data Model* for the full field list. **No `_part<n>`
+  suffix** — v1's multi-part naming is retired.
 - **SQ params** — per-channel envelope (ATK/DR1/SUS/DR2/RR), tuning, volume,
   pan; noise type/rate.
 - **D params** — `prescaler` (0.0–1.0), `mono` (bool), `dry_wet` (0.0–1.0).

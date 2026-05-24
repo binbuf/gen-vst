@@ -26,3 +26,4 @@ third_party/furnace/
 # Genny VST reference screenshots and local tooling (never committed)
 /reference/
 /tools
+/docs/design/reference

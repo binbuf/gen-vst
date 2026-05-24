@@ -37,6 +37,18 @@ Gen VST exposes **two independent output-character toggles** in the header:
 Both default **on** because that's the sound users expect when they reach for
 a Genesis emulator; producers wanting pristine emulator output flip them off.
 
+**Visual rendering.** Output Filtering is rendered as a **2-position
+physical-switch widget** with the labels `LEGACY` and `CRYSTAL CLEAR`,
+matching the convention on the Inphonik RYM2612 and PCM2612 panels:
+
+- `LEGACY` position → `output_filter == true` → Model-1 stage on
+- `CRYSTAL CLEAR` position → `output_filter == false` → bypass
+
+The underlying apvts parameter stays a bool; only the on-screen
+labelling differs from a generic on/off toggle. Ladder Effect is a
+single on/off LED rocker (no two-state labelling), since the RYM2612
+panel shows it that way as well.
+
 **Scope:**
 
 - The emulated console is **Model-1 only** (the warmer one). A Model-2 / VA
