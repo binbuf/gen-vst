@@ -127,6 +127,13 @@ public:
     // (08-ui-views.md view 1; ADR-0010).
     std::uint32_t activeVoiceMask() const noexcept;
 
+    // Task 34 — 6-bit per-FM-part "sounding" bitmap: bit p = at least one
+    // voice serving FM part p is non-Idle (Active or Released). Released
+    // voices count as on until their envelope reaches silence so the per-row
+    // activity LEDs decay naturally with the audible tail. Audio-thread only;
+    // callers publish to the message thread through an atomic mirror.
+    std::uint16_t fmPartSoundingMask() const noexcept;
+
     // Read-only voice view for unit tests — used to verify per-voice Unison
     // detune offsets. Out-of-range access is UB; callers should iterate over
     // [0, kNumVoices).

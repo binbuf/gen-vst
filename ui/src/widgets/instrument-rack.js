@@ -36,8 +36,17 @@ const ROW_H        = 14;
 const ROW_PAD_TOP  = 4;
 const ICON_X       = 6;
 const ICON_W       = 10;
-const NAME_X       = 22;
 const FONT_PX      = 8;
+// Task 34 — per-row activity LED strip. 10 dots (FM 1-6 + PSG 1-3 + NOISE)
+// sit between the type icon and the patch name, vertically centered. The
+// strip width is constant regardless of clipboard state, so the visible name
+// space stays stable when the paste glyph appears.
+const LED_SIZE     = 2;
+const LED_GAP      = 1;
+const LED_COUNT    = 10;
+const LED_STRIP_W  = LED_COUNT * LED_SIZE + (LED_COUNT - 1) * LED_GAP;
+const LED_STRIP_X  = ICON_X + ICON_W + 2;
+const NAME_X       = LED_STRIP_X + LED_STRIP_W + 4;
 const REMOVE_W     = 14;        // width of the "-" cell at the right edge
 const SCROLLBAR_W  = 6;
 const ADD_ROW_LABEL = "+ ADD INSTRUMENT";
@@ -76,6 +85,12 @@ export class InstrumentRack {
     // which is enough to decide which rows show the paste affordance.
     this.clipboardType = null;
 
+    // Task 34 — per-row activity bitmasks (10 bits each: FM 1-6 + PSG 1-3 +
+    // NOISE). Stored parallel to this.rows; setActiveMasks updates entries
+    // without rebuilding the row list. Empty / undefined entries render as
+    // all-off, so a missing notify field cannot light spurious LEDs.
+    this.activeMasks = [];
+
     const setup = setupPixelCanvas(canvas);
     this.ctx = setup.ctx;
     this.w = setup.width;
@@ -107,7 +122,33 @@ export class InstrumentRack {
     if (selectedIndex >= rows.length) selectedIndex = Math.max(-1, rows.length - 1);
     this.selected = selectedIndex;
     this.scrollY = 0;
+    // Drop stale activity masks past the new row count; the next notify tick
+    // will repopulate. Leaving them in place would leak a previous row's lit
+    // LEDs onto a freshly-added row at the same index.
+    if (this.activeMasks.length > rows.length)
+      this.activeMasks.length = rows.length;
     this.render();
+  }
+
+  // Task 34 — Update per-row activity LEDs. Called from the meterData event
+  // handler at ~30 Hz. Skips the repaint when nothing actually changed so a
+  // long-held note doesn't burn a canvas fill every tick.
+  setActiveMasks(masks) {
+    if (!Array.isArray(masks)) return;
+    const n = this.rows.length;
+    let changed = false;
+    for (let i = 0; i < n; ++i) {
+      const m = (masks[i] | 0) & 0x3ff;
+      if ((this.activeMasks[i] | 0) !== m) {
+        this.activeMasks[i] = m;
+        changed = true;
+      }
+    }
+    if (this.activeMasks.length > n) {
+      this.activeMasks.length = n;
+      changed = true;
+    }
+    if (changed) this.render();
   }
 
   setSelected(index) {
@@ -406,10 +447,11 @@ export class InstrumentRack {
 
   _renderDataRow(i) {
     const y = ROW_PAD_TOP + i * ROW_H - this.scrollY;
-    this._renderRowAt(this.rows[i], y, i === this.selected);
+    this._renderRowAt(this.rows[i], y, i === this.selected,
+                      this.activeMasks[i] | 0);
   }
 
-  _renderRowAt(row, y, isSel) {
+  _renderRowAt(row, y, isSel, activeMask = 0) {
     const ctx = this.ctx;
     const pal = palette();
     const W = this.w;
@@ -424,6 +466,12 @@ export class InstrumentRack {
 
     // Type icon.
     this._drawTypeIcon(ICON_X, y + 2, row.type, isSel);
+
+    // Task 34 — per-channel activity LEDs between the type icon and the
+    // patch name. Drawn unconditionally (unlit dots stay visible) so the
+    // row's horizontal rhythm matches across every row regardless of state.
+    this._drawActivityStrip(LED_STRIP_X, y + Math.floor((ROW_H - LED_SIZE) / 2),
+                             activeMask, isSel);
 
     // Patch name — uppercase, trimmed to fit before the copy cell. The right
     // edge reserves COPY_W + PASTE_W + DRAG_HANDLE_W + REMOVE_W + SCROLLBAR_W
@@ -468,7 +516,8 @@ export class InstrumentRack {
     if (row) {
       ctx.save();
       ctx.globalAlpha = 0.65;
-      this._renderRowAt(row, ghostY, true);   // draw as selected for legibility
+      this._renderRowAt(row, ghostY, true,
+                        this.activeMasks[drag.fromIndex] | 0);
       ctx.restore();
     }
   }
@@ -544,6 +593,24 @@ export class InstrumentRack {
     for (let r = 0; r < 3; ++r)
       for (let c = 0; c < 2; ++c)
         ctx.fillRect(x + c * 3, y + r * 3, 1, 1);
+  }
+
+  // Task 34 — Draw the 10-LED per-channel activity strip. bit 0 is leftmost
+  // (FM 1), bit 9 is rightmost (PSG noise). Lit dots follow the same
+  // selection-aware colour rule as the other glyphs (lcd-pixel on an unsel
+  // row, lcd-base on the lcd-pixel-bg of a selected row); unlit dots stay at
+  // lcd-base-hi everywhere so the strip reads as a panel of indicators
+  // rather than disappearing on the selected row.
+  _drawActivityStrip(x, y, mask, isSel) {
+    const ctx = this.ctx;
+    const pal = palette();
+    const lit = isSel ? pal["lcd-base"] : pal["lcd-pixel"];
+    const dim = pal["lcd-base-hi"];
+    for (let i = 0; i < LED_COUNT; ++i) {
+      ctx.fillStyle = ((mask >> i) & 1) ? lit : dim;
+      ctx.fillRect(snap(x + i * (LED_SIZE + LED_GAP)), snap(y),
+                   LED_SIZE, LED_SIZE);
+    }
   }
 
   _drawRemoveCell(x, y, isSel) {

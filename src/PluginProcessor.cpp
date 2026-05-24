@@ -941,6 +941,21 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // record the voice-activity mask. Audio-thread → message-thread handoff
     // is via atomics inside telemetry — no allocation, no locks.
     telemetry.finishBlock (voiceAllocator.activeVoiceMask());
+
+    // Task 34 — per-rack-row activity bitmap. 10 bits: FM parts 0..5 in bits
+    // 0..5, PSG tone channels 0..2 in bits 6..8, PSG noise in bit 9. PSG
+    // channels use the software envelope's not-Idle stage rather than the
+    // raw note-on flag so the indicator follows the audible release tail.
+    {
+        std::uint16_t rack = voiceAllocator.fmPartSoundingMask() & 0x003Fu;
+        using PsgStage = SN76489Engine::PsgEnvelope::Stage;
+        for (int t = 0; t < SN76489Engine::kNumToneChs; ++t)
+            if (psgEngine.channelStage (t) != PsgStage::Idle)
+                rack |= (std::uint16_t) (1u << (6 + t));
+        if (psgEngine.channelStage (SN76489Engine::kNoiseCh) != PsgStage::Idle)
+            rack |= (std::uint16_t) (1u << 9);
+        telemetry.setRackChannelActivity (rack);
+    }
 }
 
 void GenVstAudioProcessor::renderSubBlock (juce::AudioBuffer<float>& buffer,

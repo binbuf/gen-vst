@@ -345,3 +345,16 @@ std::uint32_t VoiceAllocator::activeVoiceMask() const noexcept
             m |= (std::uint32_t {1} << i);
     return m;
 }
+
+std::uint16_t VoiceAllocator::fmPartSoundingMask() const noexcept
+{
+    std::uint16_t m = 0;
+    for (const auto& v : voices)
+    {
+        if (v.isIdle()) continue;
+        const int p = v.part();
+        if (p >= 0 && p < kNumParts)
+            m |= (std::uint16_t) (1u << p);
+    }
+    return m;
+}

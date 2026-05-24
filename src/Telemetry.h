@@ -61,6 +61,20 @@ public:
 
     std::uint32_t voiceMask() const noexcept { return mask.load (std::memory_order_relaxed); }
 
+    // Task 34 — per-rack-row activity bitmap. 10 bits packed: FM parts 0..5
+    // in bits 0..5, PSG tone channels 0..2 in bits 6..8, PSG noise in bit 9.
+    // Audio thread sets it via setRackChannelActivity once per block; the
+    // editor's ~30 Hz timer reads it and derives per-row masks from the
+    // current rack ordering.
+    void setRackChannelActivity (std::uint16_t bits) noexcept
+    {
+        rackChannelMask.store (bits, std::memory_order_relaxed);
+    }
+    std::uint16_t rackChannelActivity() const noexcept
+    {
+        return rackChannelMask.load (std::memory_order_relaxed);
+    }
+
 private:
     // Lossy SPSC scope ring. Only the audio thread advances writeIdx; the
     // reader takes a snapshot of writeIdx and copies the N samples preceding
@@ -86,4 +100,5 @@ private:
     std::atomic<float>         publishedVuR { 0.0f };
     std::atomic<bool>          clipFlag     { false };
     std::atomic<std::uint32_t> mask         { 0 };
+    std::atomic<std::uint16_t> rackChannelMask { 0 };
 };

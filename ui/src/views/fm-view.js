@@ -122,6 +122,11 @@ function mountHeader(header) {
       vuMeter.setLevels(event.vuL, event.vuR);
     if (typeof event.voiceMask === "number") voiceLeds.setMask(event.voiceMask);
     if (event.clip) clipLed.setClip(true);
+    // Task 34 — per-rack-row activity LEDs. Backend emits one 10-bit mask per
+    // row in the current rack ordering; the rack widget skips a repaint when
+    // the masks haven't changed.
+    if (Array.isArray(event.rowActiveMasks))
+      fmViewState.rack?.setActiveMasks(event.rowActiveMasks);
   });
 }
 

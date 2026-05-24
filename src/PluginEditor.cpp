@@ -2768,6 +2768,41 @@ void GenVstAudioProcessorEditor::timerCallback()
     payload->setProperty ("clip",      juce::var (tel.consumeClip()));
     payload->setProperty ("voiceMask", juce::var ((int) tel.voiceMask()));
 
+    // Task 34 — slice the 10-bit rack-channel mask into per-row masks aligned
+    // with the user's current rack ordering, so the JS widget can paint the
+    // activity LEDs without re-fetching getRackState every tick. Each row's
+    // mask carries only the bit for its assigned hardware channel.
+    {
+        const std::uint16_t rack = tel.rackChannelActivity();
+        const auto& order = processor.getPartManager().getRackOrder();
+        juce::Array<juce::var> rowMasks;
+        rowMasks.ensureStorageAllocated ((int) order.size());
+        for (const auto& slot : order)
+        {
+            std::uint16_t m = 0;
+            switch (slot.type)
+            {
+                case PartManager::InstrumentType::FM:
+                    if (slot.index >= 0 && slot.index < 6)
+                        m = (std::uint16_t) (rack & (1u << slot.index));
+                    break;
+                case PartManager::InstrumentType::SQ:
+                    if (slot.index >= 0 && slot.index < SN76489Engine::kNumToneChs)
+                        m = (std::uint16_t) (rack & (1u << (6 + slot.index)));
+                    else if (slot.index == SN76489Engine::kNoiseCh)
+                        m = (std::uint16_t) (rack & (1u << 9));
+                    break;
+                case PartManager::InstrumentType::D:
+                    // DAC plays back samples rather than keyed voices; the
+                    // indicator semantics don't apply (task 34 out-of-scope).
+                    m = 0;
+                    break;
+            }
+            rowMasks.add (juce::var ((int) m));
+        }
+        payload->setProperty ("rowActiveMasks", juce::var (rowMasks));
+    }
+
     webView.emitEventIfBrowserIsVisible ("meterData", juce::var (payload));
 
     // Task 16: drain any notifications setStateInformation queued before the
