@@ -174,6 +174,7 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 | `patch-name-lcd` | Larger LCD readout in the header showing the active patch | Canvas; uses LCD-style font |
 | `op-badge` | Blue-filled square showing the operator number `1..4`; click to make that operator the active target of the `envelope-curve` widget; carries an outer glow when active | CSS only |
 | `notification-toast` | Transient banner for errors / warnings; same role as v1 | CSS only |
+| `tooltip` | Hover descriptor for every interactive control; reads `data-tip-name` + `data-tip-desc` from the host; gated by the global `tooltips_enabled` toggle (header `TIPS` + Settings `TOOLTIPS`). Single shared DOM node reused across hovers. | CSS only |
 
 Live redraws (knob indicator, algorithm diagram, ADSR curve, level meter)
 are driven by JS-side parameter-change events — only the level meter
@@ -183,10 +184,47 @@ The v1 widgets `algo-buttons`, `step-field`, `section-tabs`,
 `lcd-list`, `instrument-rack`, `range-slider`, `routing-controls`,
 `voice-leds`, `seg-display`, `vu-meter`, `waveform-display`,
 `oscilloscope`, `clip-led`, `pixel`, `folder-icon`, `gear-icon`,
-`wordmark`, `true-stereo-toggle`, `operator-panel`, `tooltip` are all
-**retired**. Some concepts return under new names (e.g., level-meter
-replaces vu-meter); others are gone entirely (e.g., voice-leds —
-v2 has a single note-on indicator).
+`wordmark`, `true-stereo-toggle`, `operator-panel` are all **retired**.
+Some concepts return under new names (e.g., level-meter replaces
+vu-meter); others are gone entirely (e.g., voice-leds — v2 has a
+single note-on indicator). The v1 `tooltip` widget is **re-introduced
+under the same name** but with a new content schema (see *Tooltip
+system* below).
+
+---
+
+## Tooltip system
+
+The global `tooltips_enabled` apvts param (header `TIPS` toggle +
+Settings `TOOLTIPS` row, both bound to the same boolean, default on)
+gates a single shared `.tooltip` widget that surfaces a short
+descriptor when the user hovers an interactive control. The widget
+recipe lives in [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip*;
+the **content** lives on each control as two `data-*` attributes:
+
+| Attribute | Role | Length |
+|---|---|---|
+| `data-tip-name` | Full uppercase name of the control (e.g., `TOTAL LEVEL (TL)`, `DAC PRESCALER`, `FREQ CTRL MODE`). | ≤ 32 chars |
+| `data-tip-desc` | One sentence describing what the control does, in plain English. | ≤ 120 chars |
+
+The binding layer (Task 04) attaches a single hover handler on the
+mode-panel root that reads the data attributes off the hovered
+descendant, populates one shared `.tooltip` DOM node, and positions it
+near the cursor with a ~400 ms enter delay (no delay on leave). When
+`tooltips_enabled` flips off, the handler early-returns without
+showing anything.
+
+**Canonical tooltips** live in `ui/src/widgets/tooltip-content.js` as a
+plain JS object keyed by widget id / param name; each widget mount
+reads its entry once and writes the two attributes. The Settings
+`HARDWARE STRICT` row, for example, would carry
+`data-tip-name="HARDWARE STRICT (FM)"` and
+`data-tip-desc="Clamp polyphony to 6 + restrict FLOAT_MUL / AUTO_RETRIG to one voice + force filter and ladder on. Matches real YM2612 constraints."`.
+
+The data lives in code (not in `08-ui-views.md`) because the per-widget
+copy is small, evolves with the widgets, and is referenced by Task 04's
+widget library. The doc is the source of truth for *which* widgets get
+tooltips; the JS object is the source of truth for *what they say*.
 
 ---
 

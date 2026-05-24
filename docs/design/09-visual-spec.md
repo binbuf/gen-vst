@@ -646,6 +646,63 @@ column / row centers that the operator grid produces. The `OP1 FB`
 short connector is implemented as a CSS `::after` pseudo-element on
 the OP1 FB knob (no SVG needed — single short vertical line).
 
+### Tooltip — hover descriptor (`.tooltip`)
+
+Every interactive control on the chassis exposes a short descriptor
+that surfaces on hover when the global `tooltips_enabled` apvts param
+is **on** (default). The widget pairs the control's full name (top
+row, uppercase, glowing) with a one-sentence description (bottom row,
+regular weight). The container reads as a small inset LCD-style box so
+it sits naturally on the dark-inset surfaces without competing with
+the controls themselves.
+
+```css
+.tooltip {
+  position: absolute;
+  z-index: 50;
+  min-width: 140px;
+  max-width: 240px;
+  padding: 6px 9px 7px;
+  background: var(--lcd-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 3px;
+  box-shadow:
+    0 6px 14px rgba(0,0,0,0.55),
+    inset 1px 1px 0 rgba(78,160,255,0.10),
+    0 0 0 1px var(--lcd-bg-edge);
+  pointer-events: none;       /* never blocks the underlying control */
+}
+.tooltip .tip-name {
+  font: 500 10px/1.1 'IBM Plex Mono', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcd-text-on);
+  text-shadow: 0 0 4px var(--lcd-text-glow), 0 0 1px var(--lcd-text-glow);
+  margin-bottom: 4px;
+}
+.tooltip .tip-desc {
+  font: 400 11px/1.35 'IBM Plex Mono', monospace;
+  letter-spacing: 0.02em;
+  color: var(--label-text);
+  opacity: 0.92;
+}
+```
+
+**Content data.** Each control declares its tooltip content via two
+data attributes on the control's host element:
+`data-tip-name="TOTAL LEVEL (TL)"` and
+`data-tip-desc="Per-operator output level — 0 is silent, max is loudest."`
+The hover handler reads those, populates a single shared `.tooltip`
+DOM node, and positions it near the cursor with a ~400 ms enter delay.
+See [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system* for the schema and
+the canonical name / description for each widget.
+
+**Suppression.** When `tooltips_enabled == false`, hover handlers
+early-return without showing the tooltip. The control's native
+`title` attribute (if any) is removed at mount time and substituted
+with the data-attribute pair, so disabling tooltips genuinely removes
+hover descriptors — there's no fallback OS-level tooltip behind it.
+
 ### Level meter — `level-meter-mini` modifier (header)
 
 The persistent header carries stacked L/R output meters using a thinner

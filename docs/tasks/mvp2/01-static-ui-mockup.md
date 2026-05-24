@@ -218,6 +218,10 @@ Plus the Vite multi-page entries in `ui/vite.config.js`.
          not a bare LCD.
    - [ ] **OP1 FB carries a short vertical connector line** beneath the
          knob, visually anchoring it to operator 1 in the grid below.
+   - [ ] **Header carries a `TIPS` toggle** (paired with a `TIPS`
+         caption, lit blue when on) between VOL and the gear icon.
+         Bound to `tooltips_enabled` apvts bool; mirrors the Settings
+         `TOOLTIPS` row. Default on.
    - [ ] **Envelope curve carries `AR`/`DR`/`SL`/`SR`/`RR` segment
          labels** and dashed `KEY ON` / `KEY OFF` vertical markers in
          the LCD.

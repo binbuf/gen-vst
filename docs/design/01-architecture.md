@@ -188,7 +188,10 @@ The v2 `apvts` holds:
   pan; noise type/rate.
 - **D params** — `prescaler` (0.0–1.0), `mono` (bool), `dry_wet` (0.0–1.0).
 - **Globals** — `output_filter` (bool), `ladder_effect` (bool),
-  `master_volume`.
+  `master_volume`, plus UI-only `tooltips_enabled` (bool, default true)
+  bound to the header `TIPS` toggle + the Settings `TOOLTIPS` row;
+  storing it in apvts gives state-save/restore for free and the audio
+  thread simply ignores it.
 
 All three modes' parameters coexist in the apvts even though only one mode is
 audible at a time. This is intentional — switching modes mid-session keeps

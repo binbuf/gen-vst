@@ -126,6 +126,17 @@ VOL knob, and a gear icon for settings.
   the header band; rest at unity, ~270° sweep. Bound to apvts param
   `master_volume`. Persistent across mode swaps so an instance's level
   rides through FM/SQ/D switches without surprises.
+- **`TIPS` toggle** — small `toggle` widget paired with a `TIPS` text
+  caption. Bound to apvts param `tooltips_enabled` (bool, default
+  **on**). When lit, hovering any interactive control on the chassis
+  shows a `.tooltip` LCD-style descriptor box carrying the control's
+  full name and a one-sentence description (see
+  [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip* and
+  [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system*). The same boolean is
+  also reachable from the Settings modal (view 6, `TOOLTIPS` row) for
+  users who want to set it once and forget — the header toggle is the
+  quick-access path for users who flip tooltips on while learning and
+  off once they know the layout.
 - **⚙ Gear** — opens the Settings modal (view 6).
 
 The header persists across mode swaps. The patch-name LCD updates to
@@ -535,7 +546,15 @@ Global plugin preferences. Opened from the header gear icon.
 - `VELOCITY → TL` — FM mode velocity → TL scaling toggle.
 - `AFTERTOUCH` — channel pressure routing: Off / LFO depth / Carrier TL.
   Default = **LFO depth (PMS)**.
-- `TOOLTIPS` — global hover-tooltip toggle.
+- `TOOLTIPS` — global hover-tooltip toggle bound to apvts param
+  `tooltips_enabled` (bool, default on). The header carries a quick-
+  access `TIPS` toggle bound to the same param (see view 1); this
+  Settings row exposes the same state for users who keep all
+  preferences in one place. When on, every interactive control on the
+  chassis shows a `.tooltip` descriptor on hover — see
+  [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip* for the visual
+  recipe and [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system* for the
+  content schema.
 - `ABOUT / CREDITS…` opens view 7.
 - `RESET ALL TO DEFAULTS` — destructive button (red label). After a
   confirmation modal, snaps every parameter to its `juce::AudioParameter`

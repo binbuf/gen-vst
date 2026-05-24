@@ -853,3 +853,57 @@ canvas {
   stroke: none;
   opacity: 0.7;
 }
+
+/* ============================================================== */
+/* CSS recipes — tooltip                                          */
+/* ============================================================== */
+/* A floating descriptor box that appears on hover when the global
+ * `tooltips_enabled` apvts param is true. Used by every interactive
+ * control on the FM / SQ / D / header surfaces. The widget reads the
+ * control's `data-tip-name` (a short display name) and `data-tip-desc`
+ * (a one-line description) attributes and renders the two as
+ * stacked rows inside an LCD-style dark box.
+ *
+ * The tooltip is a sibling of the control (not a child) so it can
+ * overflow the parent without clipping. The binding layer (Task 04)
+ * positions it relative to the hovered control. */
+
+.tooltip {
+  position: absolute;
+  z-index: 50;
+  min-width: 140px;
+  max-width: 240px;
+  padding: 6px 9px 7px;
+  background: var(--lcd-bg);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 3px;
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.55),
+    inset 1px 1px 0 rgba(78, 160, 255, 0.10),
+    0 0 0 1px var(--lcd-bg-edge);
+  pointer-events: none;
+  /* Slight phosphor-like bloom on the panel so it reads as an
+   * inset LCD readout rather than a generic OS tooltip. */
+  color: var(--label-text);
+}
+.tooltip .tip-name {
+  display: block;
+  font: 500 10px/1.1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lcd-text-on);
+  text-shadow:
+    0 0 4px var(--lcd-text-glow),
+    0 0 1px var(--lcd-text-glow);
+  margin-bottom: 4px;
+}
+.tooltip .tip-desc {
+  display: block;
+  font: 400 11px/1.35 "IBM Plex Mono", monospace;
+  letter-spacing: 0.02em;
+  color: var(--label-text);
+  opacity: 0.92;
+}
+.tooltip.is-hidden {
+  display: none;
+}

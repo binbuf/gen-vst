@@ -38,10 +38,10 @@ body {
   height: 88px;
   display: grid;
   /* note-on | wordmark | mode pill | patch LCD (1fr) | filter | ladder |
-   *   DAC PRESCALER | L/R meters | VOL | gear */
-  grid-template-columns: auto auto auto 1fr auto auto auto auto auto auto;
+   *   DAC PRESCALER | L/R meters | VOL | TIPS | gear */
+  grid-template-columns: auto auto auto 1fr auto auto auto auto auto auto auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 0 12px;
 }
 

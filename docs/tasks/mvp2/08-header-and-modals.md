@@ -73,6 +73,10 @@ attributions and the version string.
     panel has its own central prescaler bound to a separate `prescaler`
     param).
   - VOL knob bound to `master_volume` (small `knob`).
+  - **TIPS toggle** — small `toggle` with a `TIPS` text caption, bound
+    to `tooltips_enabled`. Mirrors the Settings `TOOLTIPS` row above
+    so users can flip tooltips on while learning the layout (and off
+    once they know it) without leaving the chassis. Default on.
   - ⚙ gear icon opens Settings (view 6).
 - **No bottom status bar.** The v2 first-pass status bar (view 5 in an
   earlier `08-ui-views.md` draft) was deleted during the post-mockup
@@ -106,6 +110,9 @@ attributions and the version string.
     **LFO depth (PMS)**. Bound to `aftertouch_target`.
   - `TOOLTIPS` — bound to `tooltips_enabled`. The widget library reads
     this to show/hide hover tooltips (`installTooltips()` from Task 04).
+    The **same** boolean is also exposed as a `TIPS` toggle in the
+    header (see view 1) for quick access; both control surfaces bind
+    to the same apvts param, so flipping either flips both.
   - `ABOUT / CREDITS…` — opens the About modal (view 7).
   - `RESET ALL TO DEFAULTS` — destructive red button. On click, opens
     a confirmation modal ("This will reset every parameter and clear

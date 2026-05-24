@@ -127,6 +127,7 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] Per-operator inline ADSR curve preview (FM mode)
 - [ ] `NOTE ON` indicator LED (single LED, not 16)
 - [ ] Modern hardware-VST aesthetic ([ADR-0022](adr/0022-modern-vst-aesthetic.md))
+- [ ] **Hover tooltips** for every interactive control (full name + one-sentence description). Gated by the global `tooltips_enabled` apvts param, surfaced as both a header `TIPS` toggle (quick access while learning the layout) and a Settings `TOOLTIPS` row (set-and-forget). Default **on**. Content schema + widget recipe per [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system* and [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip*.
 
 ### Microtuning
 - [x] Scala `.scl` import — 12-degree scales, MIDI 69 = 440 Hz root, FM + SQ share one table, path persisted in DAW project. (Shipped Task 30; retained in v2 — code is mode-agnostic.)

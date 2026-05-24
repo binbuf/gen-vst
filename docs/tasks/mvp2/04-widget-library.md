@@ -219,6 +219,23 @@ selects it; the placeholder editor from Task 02 is gone.
    - **`notification-toast.js`** — listens for the `notify` event
      `{ level, message }`; renders a toast that auto-dismisses after
      4 s; stacks up to 2 at a time, queues more.
+   - **`tooltip.js`** — global hover-descriptor system; recipe in
+     `09-visual-spec.md` § *Tooltip*, schema in `05-ui-ux.md` *Tooltip
+     system*. Exports `installTooltips(root)` which:
+     - mounts a single shared `.tooltip` DOM node beneath `root`;
+     - attaches one delegated `mouseover` / `mouseout` handler that
+       reads `data-tip-name` / `data-tip-desc` off the closest hovered
+       element with both attributes set;
+     - subscribes to `tooltips_enabled` (apvts bool) via `bindToggle`,
+       early-returning when off (and hiding any visible tooltip);
+     - positions the tooltip near the cursor with a 400 ms enter
+       delay (no delay on leave), clamping inside the 1200×560
+       viewport so it never clips off the chassis edge.
+     The per-widget content lives in
+     `ui/src/widgets/tooltip-content.js` (a flat object mapping widget
+     id / param name → `{ name, desc }`); each widget mount reads its
+     entry once and writes the two `data-tip-*` attributes onto the
+     control's host element.
 4. Implement the binding layer:
    - `bindSlider(name, opts)` — returns a `{ getNormalised(),
      setNormalised(v), beginGesture(), endGesture(), onChange(cb),
