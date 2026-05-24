@@ -7,6 +7,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "DACKit.h"
 #include "DACPlayer.h"
 #include "MidiRouter.h"
 #include "PartManager.h"
@@ -82,11 +83,17 @@ public:
     MidiRouter&           getMidiRouter()  noexcept        { return midiRouter; }
     const MidiRouter&     getMidiRouter()  const noexcept  { return midiRouter; }
 
-    // Exposed for the Task 13 D-section view (08-ui-views.md view 3): the
-    // editor's loadWavDialog / clearDac / getDacInfo native functions call
-    // into the DAC player.
+    // Exposed for telemetry / audio-thread trigger paths. The Task 31 D-view
+    // edits the DAC via DACKit; the player streams the active cell's bytes
+    // and owns the global enable / level / mode atomic state.
     DACPlayer&            getDacPlayer()   noexcept        { return dacPlayer;  }
     const DACPlayer&      getDacPlayer()   const noexcept  { return dacPlayer;  }
+
+    // Task 31 — Multi-sample DAC kit. The editor's per-cell load/clear/info
+    // native functions edit cells in the kit; the DAC player streams the
+    // active cell's bytes via the audio-thread cellForNote path.
+    DACKit&               getDacKit()      noexcept        { return dacKit;     }
+    const DACKit&         getDacKit()      const noexcept  { return dacKit;     }
 
     // Exposed for the editor's ~30 Hz telemetry timer (08-ui-views.md "Header
     // meter bay"). The audio thread writes lock-free; the editor reads
@@ -305,6 +312,7 @@ private:
     FmParamCache         paramCache;
     MidiRouter           midiRouter;
     SN76489Engine        psgEngine;
+    DACKit               dacKit;
     DACPlayer            dacPlayer;
     genvst::PatchBrowser patchBrowser;
     Telemetry            telemetry;

@@ -599,6 +599,7 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     cacheRack (dacRackParams, "_dac");
 
     buildCcParamLookup();
+    dacPlayer.setKit (&dacKit);
     loadDevDacSample();
 
     // Sync the cached rack midi-channel params into the existing routing
@@ -667,8 +668,15 @@ void GenVstAudioProcessor::loadDevDacSample()
 {
 #ifdef GENVST_DEV_DAC_WAV
     const juce::File wav { GENVST_DEV_DAC_WAV };
-    if (wav.existsAsFile())
-        dacPlayer.loadWav (wav);
+    if (! wav.existsAsFile()) return;
+
+    // Task 31 — drop the dev WAV into the C-4 cell (centre of the multi-
+    // sample grid) so the Genny-style note grid is immediately playable
+    // without per-cell loading from the UI. Default rate matches the
+    // legacy single-sample dev hook.
+    const int defaultRate = 22050;
+    const int cellIdx = DACKit::cellIndexForNote (60);
+    dacKit.loadCellWav (cellIdx, wav, defaultRate);
 #endif
 }
 
@@ -768,22 +776,16 @@ void GenVstAudioProcessor::pushPsgDacParameters()
                 psgDacParams.vel[(std::size_t) i]->load() > 0.5f ? 1.0f : 0.0f);
     }
 
-    // DAC: enable / level on every block; rate triggers a PCM regeneration
-    // (potential allocation), so only call setDacRate if the value actually
-    // changed. Audio-thread allocation in setDacRate is documented as a
-    // best-effort: changing the rate during active playback is a non-real-time
-    // user action in practice (a UI param toggle).
+    // DAC: enable / level / loop-mode are global to the kit (per Task 31 spec
+    // — "automation surfaces stay the global dac_enable / dac_mode / dac_level").
+    // The dac_rate apvts param is now repurposed as the *default rate for the
+    // next per-cell load*; per-cell rate lives in DACKit and is consumed
+    // inside DACPlayer's swap pickup, not here.
     dacPlayer.setEnabled (psgDacParams.dacEnable->load() > 0.5f);
     dacPlayer.setLevel   (psgDacParams.dacLevel->load());
     dacPlayer.setMode (psgDacParams.dacMode->load() > 0.5f
                        ? DACPlayer::Mode::Loop
                        : DACPlayer::Mode::OneShot);
-
-    static constexpr int kRates[] { 8000, 11025, 22050 };
-    const int rateIdx = juce::jlimit (0, 2, juce::roundToInt (psgDacParams.dacRate->load()));
-    const int desiredRate = kRates[rateIdx];
-    if (desiredRate != dacPlayer.getDacRate())
-        dacPlayer.setDacRate (desiredRate);
 }
 
 void GenVstAudioProcessor::pushPolyphonyParameters() noexcept

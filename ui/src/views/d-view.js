@@ -1,19 +1,16 @@
 /*
- * D (DAC) section view — 08-ui-views.md view 3, Genny-restyled in Task 26.
+ * D (DAC) section view — 08-ui-views.md view 3.
  *
- * The panel still drives the single-sample DAC engine (one WAV, three rates,
- * one-shot / loop, level), but the LAYOUT is restyled to look like Genny's
- * multi-sample DAC: a 4x5 read-only note-grid backdrop dominates the body
- * with a "CLICK NOTE TO LOAD SAMPLE" prompt overlay, and the engine
- * controls collapse to a compact bottom strip with a HZ knob, LEV slider,
- * LOAD WAV / CLEAR buttons + the active filename. Clicking any note cell
- * emits a "multi-sample DAC coming soon" toast — the deferral is tracked in
- * docs/tasks/31-dac-multisample.md.
+ * Task 31 multi-sample upgrade: the 4 x 5 note grid is now a functional kit.
+ * Each cell binds to its own loaded WAV; clicking a cell opens a native
+ * file chooser that loads into that cell only. Triggering a MIDI note in
+ * the grid range (C-3..G-4) plays the matched cell's sample at the cell's
+ * stored rate. Empty cells stay silent.
  *
- * Native functions (`loadWavDialog`, `clearDac`, `getDacInfo`) and apvts
- * params (`dac_enable`, `dac_rate`, `dac_mode`, `dac_level`) are unchanged.
- * The HZ knob wraps the existing `dac_rate` AudioParameterChoice in a
- * three-step adapter so the knob snaps to 8000 / 11025 / 22050.
+ * The bottom playback strip keeps the HZ + LEV controls. HZ is now the
+ * default rate the *next* per-cell load resamples to (per Task 31 spec);
+ * LEV is the global DAC gain. The single LOAD WAV / CLEAR / filename
+ * triplet from the Task 26 preview is gone — per-cell loading replaces it.
  */
 
 import {
@@ -24,15 +21,16 @@ import {
 import * as Juce from "../juce/index.js";
 import { routingStepField } from "./routing-controls.js";
 
-const loadWavDialogFn = Juce.getNativeFunction("loadWavDialog");
-const clearDacFn      = Juce.getNativeFunction("clearDac");
-const getDacInfoFn    = Juce.getNativeFunction("getDacInfo");
+const loadDacCellWavFn = Juce.getNativeFunction("loadDacCellWav");
+const clearDacCellFn   = Juce.getNativeFunction("clearDacCell");
+const getDacKitFn      = Juce.getNativeFunction("getDacKit");
 
 const RATE_LABELS = ["8000", "11025", "22050"];
 
 // Note grid — 4 rows x 5 cols, starting at C-3 and walking up chromatically
 // (per Genny screenshot 094629). Labels include the sharp marker so cells
-// stay visually distinct in a glance.
+// stay visually distinct in a glance. The cellIndex for row r, col c is
+// r * 5 + c, mapping to MIDI note 48 + cellIndex.
 const NOTE_GRID = [
   ["C-3",  "C#-3", "D-3",  "D#-3", "E-3"],
   ["F-3",  "F#-3", "G-3",  "G#-3", "A-3"],
@@ -40,13 +38,19 @@ const NOTE_GRID = [
   ["D#-4", "E-4",  "F-4",  "F#-4", "G-4"],
 ];
 
-// The deferral message + level used for every note-grid click, kept as a
-// const so the toast wording stays consistent if the message changes.
-const DEFERRED_MSG = "MULTI-SAMPLE DAC COMING SOON — SEE TASK 31";
+const GRID_ROWS = 4;
+const GRID_COLS = 5;
+const GRID_CELLS = GRID_ROWS * GRID_COLS;
+
+// Strip a WAV's file extension and uppercase-truncate so a long file name
+// fits the small cell label (e.g. "KICK_FAT_01.wav" -> "KICK_FAT").
+function shortenSampleName(raw) {
+  if (!raw) return "";
+  const noExt = raw.replace(/\.[^.]+$/, "");
+  return noExt.toUpperCase().slice(0, 8);
+}
 
 function pushNotify(level, message) {
-  // Same path the rest of the UI uses (fm-view.js showToast). Defer to the
-  // standard notify event so the toast pipeline is the single source of truth.
   try {
     window.__JUCE__.backend.emitEvent("notify", { level, message });
   } catch { /* dev harness */ }
@@ -65,9 +69,6 @@ export function mountDView(host) {
   title.textContent = "DAC · PCM SAMPLE CHANNEL";
   header.appendChild(title);
 
-  // "DAC" branding label — printed on the section header strip per
-  // genny-ui.md (Genny's DAC panel has a chunky branded label flanking the
-  // header controls).
   const brand = document.createElement("span");
   brand.className = "label d-brand";
   brand.textContent = "DAC";
@@ -99,7 +100,7 @@ export function mountDView(host) {
 
   host.appendChild(header);
 
-  /* ---- Body: note-grid backdrop + bottom playback strip --------------- */
+  /* ---- Body: interactive note grid + bottom HZ/LEV strip -------------- */
   const body = document.createElement("div");
   body.className = "d-body";
   host.appendChild(body);
@@ -110,13 +111,13 @@ export function mountDView(host) {
   const strip = makePlaybackStrip();
   body.appendChild(strip.root);
 
-  // Refresh once on mount to pick up any preloaded WAV (dev builds).
-  refreshDacInfo(strip);
-  strip.refresh = () => refreshDacInfo(strip);
+  // Refresh once on mount to pick up any preloaded cells (state-restored
+  // projects, dev WAV in cell 12, etc.).
+  refreshDacKit(grid);
 }
 
 /* -------------------------------------------------------------------- */
-/* Note-grid backdrop                                                    */
+/* Note-grid — interactive (Task 31)                                    */
 /* -------------------------------------------------------------------- */
 
 function makeNoteGrid() {
@@ -127,7 +128,7 @@ function makeNoteGrid() {
   canvas.width = 540;
   canvas.height = 150;
   canvas.className = "d-note-grid-canvas";
-  canvas.dataset.tip = "MULTI-SAMPLE DAC GRID (PREVIEW — TASK 31)";
+  canvas.dataset.tip = "CLICK A NOTE CELL TO LOAD A WAV";
   root.appendChild(canvas);
 
   const setup = setupPixelCanvas(canvas);
@@ -135,72 +136,113 @@ function makeNoteGrid() {
   const w = setup.width;
   const h = setup.height;
 
+  // Per-cell loaded label cache. Index 0..19; null = empty cell.
+  const cellLabels = new Array(GRID_CELLS).fill(null);
+
+  function cellMetrics() {
+    return {
+      cellW: Math.floor((w - 2) / GRID_COLS),
+      cellH: Math.floor((h - 2) / GRID_ROWS),
+    };
+  }
+
   function render() {
     const pal = palette();
 
-    // LCD-green base + recessed inset, same vocabulary as the Instruments
-    // list so the grid reads as the same family of surfaces.
     ctx.fillStyle = pal["lcd-base"];
     ctx.fillRect(0, 0, w, h);
     drawBevel(ctx, 0, 0, w, h, false);
 
-    // Grid cells. 5 cols x 4 rows, all the same size, divided by thin
-    // dark-olive separators (one pixel of --lcd-text-dark so the cells
-    // visually subdivide without overwhelming the prompt overlay).
-    const cols = 5, rows = 4;
-    const cellW = Math.floor((w - 2) / cols);
-    const cellH = Math.floor((h - 2) / rows);
+    const { cellW, cellH } = cellMetrics();
     ctx.fillStyle = pal["lcd-text-dark"];
-    for (let c = 1; c < cols; ++c) ctx.fillRect(snap(1 + c * cellW), 1, 1, h - 2);
-    for (let r = 1; r < rows; ++r) ctx.fillRect(1, snap(1 + r * cellH), w - 2, 1);
+    for (let c = 1; c < GRID_COLS; ++c) ctx.fillRect(snap(1 + c * cellW), 1, 1, h - 2);
+    for (let r = 1; r < GRID_ROWS; ++r) ctx.fillRect(1, snap(1 + r * cellH), w - 2, 1);
 
-    // Note labels — dark olive ink in the top-left of each cell so the
-    // grid reads like a populated key map even though the panel is
-    // currently a backdrop.
-    for (let r = 0; r < rows; ++r) {
-      for (let c = 0; c < cols; ++c) {
-        const label = NOTE_GRID[r][c];
-        const tx = 1 + c * cellW + 4;
-        const ty = 1 + r * cellH + 4;
-        drawLabel(ctx, tx, ty, label, 8, pal["lcd-text-dark"]);
+    // Each cell has two lines: the note name (top-left, dim olive) and, when
+    // a sample is loaded, the short-form sample name (centre, bright pixel).
+    // Empty cells show only the note name so the grid still reads as a
+    // populated keymap.
+    for (let r = 0; r < GRID_ROWS; ++r) {
+      for (let c = 0; c < GRID_COLS; ++c) {
+        const idx = r * GRID_COLS + c;
+        const noteLabel = NOTE_GRID[r][c];
+        const cx = 1 + c * cellW;
+        const cy = 1 + r * cellH;
+
+        drawLabel(ctx, cx + 4, cy + 4, noteLabel, 8, pal["lcd-text-dark"]);
+
+        const sample = cellLabels[idx];
+        if (sample) {
+          const pxPerChar = 8;
+          const labelW = sample.length * pxPerChar;
+          const lx = cx + Math.floor((cellW - labelW) / 2);
+          const ly = cy + Math.floor((cellH - 8) / 2);
+          drawLabel(ctx, lx, ly, sample, 8, pal["lcd-pixel-hi"]);
+        }
       }
     }
-
-    // Prompt overlay — centered "CLICK NOTE TO LOAD SAMPLE" in bright
-    // phosphor green so it floats over the grid labels.
-    const prompt = "CLICK NOTE TO LOAD SAMPLE";
-    const pxPerChar = 8;
-    const promptW = prompt.length * pxPerChar;
-    const promptX = Math.floor((w - promptW) / 2);
-    const promptY = Math.floor((h - 8) / 2);
-    drawLabel(ctx, promptX, promptY, prompt, 8, pal["lcd-pixel-hi"]);
   }
 
-  // Every cell click emits the deferral toast — the grid is read-only in
-  // this revision. The toast pipeline routes through the standard notify
-  // event so the user sees the same toast styling as any other status
-  // message.
-  canvas.addEventListener("click", () => {
-    pushNotify("info", DEFERRED_MSG);
+  function applyKit(kit) {
+    if (!kit || !Array.isArray(kit.cells)) return;
+    for (const cell of kit.cells) {
+      if (typeof cell?.index !== "number") continue;
+      if (cell.empty) {
+        cellLabels[cell.index] = null;
+      } else {
+        cellLabels[cell.index] = shortenSampleName(cell.name) || "LOADED";
+      }
+    }
+    render();
+  }
+
+  // Hit-test the click against the cell grid and pass the cell index to
+  // the native chooser. The grid is 5 cols x 4 rows of equal-sized cells
+  // inset by 1px (the bevel border).
+  canvas.addEventListener("click", async (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) * (canvas.width  / rect.width);
+    const y = (ev.clientY - rect.top)  * (canvas.height / rect.height);
+
+    const { cellW, cellH } = cellMetrics();
+    const col = Math.floor((x - 1) / cellW);
+    const row = Math.floor((y - 1) / cellH);
+    if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return;
+    const cellIdx = row * GRID_COLS + col;
+
+    // Shift-click clears the cell instead of loading; the toast acknowledges
+    // the action so the user has feedback even when the cell was empty.
+    if (ev.shiftKey) {
+      await clearDacCellFn(cellIdx);
+      cellLabels[cellIdx] = null;
+      render();
+      pushNotify("info", `Cleared ${NOTE_GRID[row][col]}`);
+      return;
+    }
+
+    try {
+      const r = await loadDacCellWavFn(cellIdx);
+      if (r && r.ok) applyKit(r.kit);
+    } catch { /* dev harness */ }
   });
   canvas.style.cursor = "pointer";
 
   render();
 
-  return { root, canvas };
+  return { root, canvas, render, applyKit };
 }
 
 /* -------------------------------------------------------------------- */
-/* Playback strip — HZ knob + LEV slider + LOAD WAV / CLEAR + filename   */
+/* Playback strip — HZ knob + LEV slider                                 */
 /* -------------------------------------------------------------------- */
 
 function makePlaybackStrip() {
   const root = document.createElement("div");
   root.className = "d-playback-strip bevel-raised";
 
-  // HZ knob — wraps the dac_rate AudioParameterChoice in a 3-step adapter
-  // so the knob snaps to one of three rate indices. The readout shows the
-  // selected rate label so the user always knows what the snap landed on.
+  // HZ knob — Task 31 repurpose: this is the *default rate the next per-cell
+  // load resamples to*, not the global playback rate. Per-cell rates are
+  // stored alongside each cell's PCM and survive state save/restore.
   const hzCell = document.createElement("div");
   hzCell.className = "d-strip-cell d-hz-cell";
   const hzLbl = document.createElement("span");
@@ -224,9 +266,8 @@ function makePlaybackStrip() {
     format: () => RATE_LABELS[rateCombo.getIndex()] || "----",
   });
 
-  // LEV slider — replaces the prior LEVEL knob with a horizontal slider so
-  // the layout matches Genny's "LEV" horizontal control. Bound to the
-  // existing dac_level apvts param without engine change.
+  // LEV slider — bound to the existing dac_level apvts param without engine
+  // change. Drives the kit-wide playback level (matches Genny).
   const levCell = document.createElement("div");
   levCell.className = "d-strip-cell d-lev-cell";
   const levLbl = document.createElement("span");
@@ -248,40 +289,15 @@ function makePlaybackStrip() {
     format: (s) => Math.round(s * 100).toString(),
   });
 
-  // Compact LOAD WAV / CLEAR / filename strip. These stay functional so the
-  // single-sample DAC engine remains usable while the multi-sample grid is
-  // a preview backdrop.
-  const wavCell = document.createElement("div");
-  wavCell.className = "d-strip-cell d-wav-cell";
-  const loadBtn = document.createElement("button");
-  loadBtn.type = "button";
-  loadBtn.className = "d-button d-strip-button bevel-raised label";
-  loadBtn.textContent = "LOAD WAV…";
-  wavCell.appendChild(loadBtn);
-  const clearBtn = document.createElement("button");
-  clearBtn.type = "button";
-  clearBtn.className = "d-button d-strip-button bevel-raised label";
-  clearBtn.textContent = "CLEAR";
-  clearBtn.disabled = true;
-  wavCell.appendChild(clearBtn);
-  const fname = document.createElement("span");
-  fname.className = "label sample-name d-strip-name";
-  fname.textContent = "— no sample —";
-  wavCell.appendChild(fname);
-  root.appendChild(wavCell);
+  // Hint text on the right edge of the strip — reminds the user that the
+  // grid is interactive. Fills the remaining flex space so the strip layout
+  // matches Genny's bezel-strip wording column.
+  const hint = document.createElement("span");
+  hint.className = "label d-strip-hint";
+  hint.textContent = "CLICK CELL: LOAD • SHIFT-CLICK: CLEAR";
+  root.appendChild(hint);
 
-  const group = { root, loadBtn, clearBtn, fname, refresh: null };
-
-  loadBtn.addEventListener("click", async () => {
-    const r = await loadWavDialogFn();
-    if (r && r.ok) applyDacInfo(group, r.info);
-  });
-  clearBtn.addEventListener("click", async () => {
-    await clearDacFn();
-    applyDacInfo(group, null);
-  });
-
-  return group;
+  return { root };
 }
 
 /* -------------------------------------------------------------------- */
@@ -303,9 +319,6 @@ function comboAsKnobBinding(combo) {
     getScaled() {
       return combo.getIndex();
     },
-    // The Knob widget calls these around drag gestures; the combo backend
-    // has no drag-gesture concept, so they are intentional no-ops. A combo
-    // index change is a discrete write per snap.
     beginGesture() {},
     endGesture() {},
     onChange(cb)     { return combo.onChange(cb); },
@@ -314,24 +327,14 @@ function comboAsKnobBinding(combo) {
 }
 
 /* -------------------------------------------------------------------- */
-/* DAC-info refresh                                                      */
+/* DAC-kit refresh                                                       */
 /* -------------------------------------------------------------------- */
 
-function applyDacInfo(group, info) {
-  if (!info || info.empty) {
-    group.fname.textContent = "— no sample —";
-    group.clearBtn.disabled = true;
-  } else {
-    group.fname.textContent = info.name || "(unnamed)";
-    group.clearBtn.disabled = false;
-  }
-}
-
-export async function refreshDacInfo(group) {
+export async function refreshDacKit(grid) {
   try {
-    const info = await getDacInfoFn(0);
-    applyDacInfo(group, info);
+    const kit = await getDacKitFn();
+    grid.applyKit(kit);
   } catch {
-    applyDacInfo(group, null);
+    /* dev harness — no native fn registered */
   }
 }

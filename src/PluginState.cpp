@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <vector>
 
-#include "DACPlayer.h"
+#include "DACKit.h"
 #include "MidiRouter.h"
 #include "PartManager.h"
 #include "PatchBrowser.h"
@@ -119,36 +119,45 @@ namespace
         }
     }
 
-    // Restore DAC PCM (and the rate / display name) from the <dac> tag's pcm
-    // attribute. Missing pcm = nothing to restore (the rate / enable / mode /
-    // level scalars all live in the apvts and are restored elsewhere).
-    void restoreDacPcm (DACPlayer& dac, const juce::XmlElement& root)
+    // Restore the DAC kit from the <dac> tag (Task 31). Two formats accepted:
+    //
+    //   * Legacy single-sample (Task 16):
+    //       <dac midiChannel pcm rate name/>
+    //     The PCM is loaded into the C-4 cell (index 12, the centre of the
+    //     multi-sample grid) so old projects play their single sample on the
+    //     same MIDI note the new layout uses as its default-tonic cell.
+    //
+    //   * Multi-sample (Task 31):
+    //       <dac midiChannel><cell index rate name pcm/>...</dac>
+    //     Each cell is restored via DACKit::restoreFromXml.
+    void restoreDacKit (DACKit& kit, const juce::XmlElement& root)
     {
         auto* dacEl = root.getChildByName (kDacTag);
-        if (dacEl == nullptr) return;
-
-        const auto pcmString = dacEl->getStringAttribute ("pcm");
-        if (pcmString.isEmpty())
+        if (dacEl == nullptr)
         {
-            dac.clearPcm();
+            kit.clearAll();
             return;
         }
 
-        auto bytes = decodeBase64 (pcmString);
-        if (bytes.empty())
+        // Legacy single-sample format detection: a `pcm` attribute on <dac>
+        // (the Task 16 schema) with no <cell> children.
+        const bool hasCellChildren = dacEl->getNumChildElements() > 0
+            && dacEl->getChildByName ("cell") != nullptr;
+        const auto legacyPcm = dacEl->getStringAttribute ("pcm");
+
+        if (! hasCellChildren && legacyPcm.isNotEmpty())
         {
-            dac.clearPcm();
+            kit.clearAll();
+            const auto bytes = decodeBase64 (legacyPcm);
+            if (bytes.empty()) return;
+            const int rate  = dacEl->getIntAttribute ("rate", 22050);
+            const auto name = dacEl->getStringAttribute ("name");
+            const int idx   = DACKit::cellIndexForNote (60);   // C-4 centre
+            kit.loadCellRawPcm (idx, bytes.data(), bytes.size(), rate, name);
             return;
         }
 
-        // The rate stored alongside the PCM is the rate the bytes were
-        // resampled to; the DAC must match so playback timing is correct. The
-        // apvts dac_rate is restored separately by apvts.replaceState and
-        // would re-trigger a resample on the next processBlock if they
-        // disagreed — saving them together keeps them in lockstep.
-        const int rate = dacEl->getIntAttribute ("rate", 22050);
-        const auto name = dacEl->getStringAttribute ("name");
-        dac.loadRawPcm (bytes.data(), bytes.size(), rate, name);
+        kit.restoreFromXml (*dacEl);
     }
 
     // Returns the list of custom-root paths from the <customRoots> tag.
@@ -260,7 +269,7 @@ std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
 
     auto& router  = proc.getMidiRouter();
     auto& browser = proc.getPatchBrowser();
-    auto& dac     = proc.getDacPlayer();
+    auto& kit     = proc.getDacKit();
 
     auto* partsEl = root->createNewChildElement (kPartsTag);
     for (int part = 0; part < PartManager::kNumParts; ++part)
@@ -279,12 +288,9 @@ std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
 
     auto* dacEl = root->createNewChildElement (kDacTag);
     dacEl->setAttribute ("midiChannel", dacChannel (router));
-    dacEl->setAttribute ("rate",        dac.getDacRate());
-    if (dac.getSampleName().isNotEmpty())
-        dacEl->setAttribute ("name", dac.getSampleName());
-    if (dac.hasPcm())
-        dacEl->setAttribute ("pcm",
-            encodeBase64 (dac.getRawPcmData(), dac.getRawPcmSize()));
+    // Task 31 — emit one <cell ...> child per loaded grid cell. The per-cell
+    // rate / name / pcm replace the legacy single-sample triplet on <dac>.
+    kit.saveToXml (*dacEl);
 
     auto* rootsEl = root->createNewChildElement (kCustomRootsTag);
     for (const auto& r : browser.roots())
@@ -374,7 +380,7 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
         return;   // legacy state — nothing more to restore
 
     restoreRouting (proc.getMidiRouter(), *wrapper);
-    restoreDacPcm  (proc.getDacPlayer(),  *wrapper);
+    restoreDacKit  (proc.getDacKit(),     *wrapper);
 
     // Task 22 — Restore rack active-slot state. Default-reset every slot,
     // then re-enable those listed in <rack>. Missing tag = no rack history;

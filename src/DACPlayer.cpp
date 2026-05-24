@@ -1,9 +1,9 @@
 #include "DACPlayer.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <thread>
+
+#include "DACKit.h"
 
 namespace
 {
@@ -17,10 +17,7 @@ namespace
 DACPlayer::DACPlayer()
 {
     samplesPerWrite = static_cast<double> (nativeSampleRate())
-                      / static_cast<double> (dacRate);
-    stagingDacRate         = dacRate;
-    stagingSamplesPerWrite = samplesPerWrite;
-    mtDacRate              = dacRate;
+                      / static_cast<double> (kDefaultDacRate);
 }
 
 void DACPlayer::prepare (double hostSampleRate, int maxBlockSize)
@@ -38,6 +35,9 @@ void DACPlayer::reset()
 {
     chip.reset();
     playing.store (false, std::memory_order_release);
+    activeCellIdx    = -1;
+    pendingCellIdx   = -1;
+    pendingCellSet   = false;
     playPos          = 0;
     writeAccumulator = 0.0;
 
@@ -55,227 +55,37 @@ void DACPlayer::writeReg (std::uint8_t addr, std::uint8_t value)
     chip.write (1, value);
 }
 
-// --- WAV loading -----------------------------------------------------------
-
-bool DACPlayer::loadWav (const juce::File& file)
+void DACPlayer::recomputeSamplesPerWrite (int cellRate) noexcept
 {
-    if (! file.existsAsFile())
-        return false;
-
-    juce::AudioFormatManager mgr;
-    mgr.registerBasicFormats();
-
-    std::unique_ptr<juce::AudioFormatReader> reader (mgr.createReaderFor (file));
-    if (reader == nullptr)
-        return false;
-
-    const auto numSamples = static_cast<int> (reader->lengthInSamples);
-    const auto numChans   = static_cast<int> (reader->numChannels);
-    if (numSamples <= 0 || numChans <= 0)
-        return false;
-
-    // Read the WAV into a stereo (or mono) float buffer, then mix to mono by
-    // averaging channels.
-    juce::AudioBuffer<float> raw (numChans, numSamples);
-    if (! reader->read (&raw, 0, numSamples, 0, true, numChans > 1))
-        return false;
-
-    srcRate = reader->sampleRate;
-    srcFloat.assign (static_cast<std::size_t> (numSamples), 0.0f);
-
-    const float invChans = 1.0f / static_cast<float> (numChans);
-    for (int c = 0; c < numChans; ++c)
-    {
-        const float* src = raw.getReadPointer (c);
-        for (int i = 0; i < numSamples; ++i)
-            srcFloat[static_cast<std::size_t> (i)] += src[i] * invChans;
-    }
-
-    sampleName = file.getFileName();
-
-    // Resample to the current dacRate, store the resulting bytes both as the
-    // message-thread mirror (for state save / UI peaks) and as the staged
-    // buffer the audio thread will swap in at the next renderAdd.
-    auto newPcm = regenerateBytes (srcFloat, srcRate, mtDacRate);
-    mtPcm = newPcm;
-    stageSwap (std::move (newPcm), mtDacRate);
-    return ! mtPcm.empty();
-}
-
-void DACPlayer::loadRawPcm (const std::uint8_t* bytes, std::size_t numBytes,
-                            int dacRateHz, const juce::String& name)
-{
-    if (bytes == nullptr || numBytes == 0)
-    {
-        clearPcm();
-        return;
-    }
-
-    mtDacRate = normaliseDacRate (dacRateHz);
-
-    // Reconstruct a mono float source from the 8-bit PCM so the D-view's
-    // waveform peaks render and a later DAC-rate change can resample without
-    // needing the original WAV. The reconstruction is exact-ish to the 8-bit
-    // granularity the chip actually plays — good enough for both purposes.
-    srcRate = static_cast<double> (mtDacRate);
-    srcFloat.assign (numBytes, 0.0f);
-    for (std::size_t i = 0; i < numBytes; ++i)
-        srcFloat[i] = (static_cast<int> (bytes[i]) - 128) / 127.0f;
-
-    sampleName = name;
-
-    // Mirror + stage. The audio thread will pick up the new buffer + reset
-    // playPos/writeAccumulator on the next renderAdd.
-    mtPcm.assign (bytes, bytes + numBytes);
-    stageSwap (mtPcm, mtDacRate);
-
-    writeReg (0x2A, 0x80);   // park the chip at silence
-}
-
-void DACPlayer::clearPcm()
-{
-    // 1) Park the player so any concurrent audio-thread fetchNextSampleByte
-    //    returns silence instead of indexing the (about-to-be-swapped) buffer.
-    playing.store (false, std::memory_order_release);
-
-    // 2) Clear the message-thread mirror + source data.
-    mtPcm.clear();
-    srcFloat.clear();
-    srcRate = 0.0;
-    sampleName = juce::String();
-
-    // 3) Stage an empty buffer at the current dacRate so the audio thread
-    //    swaps in an empty pcm on the next renderAdd, allocator activity
-    //    stays on the message thread.
-    stageSwap ({}, mtDacRate);
-}
-
-double DACPlayer::getSampleLengthSeconds() const noexcept
-{
-    if (mtPcm.empty() || mtDacRate <= 0) return 0.0;
-    return static_cast<double> (mtPcm.size()) / static_cast<double> (mtDacRate);
-}
-
-std::vector<float> DACPlayer::computePeaks (int numBuckets) const
-{
-    std::vector<float> out;
-    if (srcFloat.empty() || numBuckets <= 0) return out;
-
-    out.assign (static_cast<std::size_t> (numBuckets), 0.0f);
-
-    const std::size_t total = srcFloat.size();
-    // Bucket the source samples into `numBuckets` columns and record the
-    // absolute peak in each. Using the original float source (not the 8-bit
-    // PCM) gives a sharper visualisation that isn't affected by dacRate
-    // changes; the strip is informational only, not what the chip plays.
-    for (int b = 0; b < numBuckets; ++b)
-    {
-        const std::size_t lo = (static_cast<std::size_t> (b)     * total) /
-                                static_cast<std::size_t> (numBuckets);
-        const std::size_t hi = (static_cast<std::size_t> (b + 1) * total) /
-                                static_cast<std::size_t> (numBuckets);
-        float peak = 0.0f;
-        for (std::size_t i = lo; i < hi; ++i)
-            peak = std::max (peak, std::fabs (srcFloat[i]));
-        out[static_cast<std::size_t> (b)] = std::min (1.0f, peak);
-    }
-    return out;
-}
-
-bool DACPlayer::hasPcm() const noexcept
-{
-    return ! mtPcm.empty();
-}
-
-void DACPlayer::setDacRate (int hz)
-{
-    const int newRate = normaliseDacRate (hz);
-    if (newRate == mtDacRate)
-        return;
-
-    mtDacRate = newRate;
-    auto newPcm = regenerateBytes (srcFloat, srcRate, mtDacRate);
-    mtPcm = newPcm;
-    stageSwap (std::move (newPcm), mtDacRate);
-}
-
-std::vector<std::uint8_t>
-DACPlayer::regenerateBytes (const std::vector<float>& src,
-                            double sourceRate, int destDacRate) const
-{
-    std::vector<std::uint8_t> out;
-    if (src.empty() || sourceRate <= 0.0 || destDacRate <= 0)
-        return out;
-
-    const int srcCount = static_cast<int> (src.size());
-    const double ratio = sourceRate / static_cast<double> (destDacRate);
-    const int dstCount = std::max (1, static_cast<int> (std::ceil (srcCount / ratio)));
-
-    out.assign (static_cast<std::size_t> (dstCount), 0x80);
-
-    // Nearest-sample resampling — adequate for 8-bit DAC playback (the
-    // chip already imposes severe quantisation and bandwidth limits). A
-    // higher-quality resampler would be wasted on this output path.
-    for (int i = 0; i < dstCount; ++i)
-    {
-        const double srcPos = i * ratio;
-        const int    idx    = std::clamp (static_cast<int> (std::round (srcPos)),
-                                          0, srcCount - 1);
-        out[static_cast<std::size_t> (i)] =
-            floatTo8BitUnsigned (src[static_cast<std::size_t> (idx)]);
-    }
-    return out;
-}
-
-void DACPlayer::stageSwap (std::vector<std::uint8_t> newBytes, int newDacRate)
-{
-    // Wait for the audio thread to consume any previous pending swap before
-    // we overwrite the staging area. In normal playback this returns within
-    // a single audio block (~10 ms). Cap the wait at 1 second so a host that
-    // has stopped calling processBlock (or pluginval's threaded state-restore
-    // stress test) cannot deadlock the message thread; after the timeout we
-    // proceed and write staging directly. The race window is narrow (the
-    // audio thread's swap is three pointer exchanges) and bounded to one
-    // block, after which subsequent swaps stabilise.
-    const auto t0 = std::chrono::steady_clock::now();
-    while (pendingSwap.load (std::memory_order_acquire))
-    {
-        if (std::chrono::steady_clock::now() - t0
-              > std::chrono::milliseconds (1000))
-            break;
-        std::this_thread::yield();
-    }
-
-    stagingPcm = std::move (newBytes);
-    stagingDacRate = normaliseDacRate (newDacRate);
-    stagingSamplesPerWrite = static_cast<double> (nativeSampleRate())
-                              / static_cast<double> (stagingDacRate);
-    pendingSwap.store (true, std::memory_order_release);
+    const int safeRate = DACKit::normaliseDacRate (cellRate);
+    samplesPerWrite = static_cast<double> (nativeSampleRate())
+                      / static_cast<double> (safeRate);
 }
 
 // --- MIDI triggers ---------------------------------------------------------
 
 void DACPlayer::trigger (int midiNote, int velocity)
 {
-    juce::ignoreUnused (midiNote, velocity);
+    juce::ignoreUnused (velocity);
 
-    // trigger() runs on the message thread (or wherever MIDI events are
-    // delivered to the editor's note path). Reading mtPcm here, not the
-    // audio-thread live pcm, is the safe choice — the two only differ for
-    // one block at most, and arming a playback on a buffer that's about to
-    // become non-empty is harmless (the audio thread will see it next block).
-    if (! enabled.load (std::memory_order_acquire) || mtPcm.empty())
+    // Audio thread. Look the cell up by note via the kit. Out-of-grid notes
+    // and empty cells short-circuit to silence (per task spec: notes outside
+    // C-3..G-4 are dropped, empty cells stay silent).
+    if (! enabled.load (std::memory_order_acquire) || dacKit == nullptr)
         return;
 
-    // Setting playing AFTER playPos/writeAccumulator ensures the audio thread
-    // never observes "playing == true" with a stale cursor. The audio thread
-    // owns playPos/writeAccumulator and resets them on swap, so the message
-    // thread shouldn't write them at all in normal operation — but trigger
-    // wants playback to start at 0. We rely on the pendingSwap path having
-    // run already (or the buffer being empty) so playPos == 0 is current.
-    playPos          = 0;
-    writeAccumulator = 0.0;
-    playing.store (true, std::memory_order_release);
+    const int idx = DACKit::cellIndexForNote (midiNote);
+    if (idx < 0) return;
+
+    // Delegate the "is this cell armable" check to DACKit::cellForNote so
+    // both sides use the same pendingSwap-aware predicate (a cell whose
+    // stagingPcm holds residual bytes from a prior audio-thread swap looks
+    // non-empty but is inert until restaged — only pendingSwap=true bytes
+    // count as armable).
+    if (dacKit->cellForNote (midiNote) == nullptr) return;
+
+    pendingCellIdx = idx;
+    pendingCellSet = true;
 }
 
 void DACPlayer::release()
@@ -291,19 +101,51 @@ void DACPlayer::renderAdd (float* nativeL, float* nativeR, int numNativeSamples)
     if (numNativeSamples <= 0)
         return;
 
-    // Pick up any pending buffer swap published by the message thread before
-    // we read pcm in this block. The swap exchanges the staging vector with
-    // the live pcm vector — allocator activity stays on the message thread
-    // (the OLD pcm ends up in stagingPcm, where the next message-thread
-    // stageSwap call deallocates it).
-    if (pendingSwap.load (std::memory_order_acquire))
+    // Step 1 — pick up trigger arming. The audio thread set
+    // pendingCellSet=true in trigger(); switching to a new cell resets the
+    // play cursor (hardware-authentic: no crossfade, the bytestream restarts).
+    if (pendingCellSet)
     {
-        pcm.swap (stagingPcm);
-        dacRate         = stagingDacRate;
-        samplesPerWrite = stagingSamplesPerWrite;
+        activeCellIdx    = pendingCellIdx;
         playPos          = 0;
         writeAccumulator = 0.0;
-        pendingSwap.store (false, std::memory_order_release);
+        pendingCellSet   = false;
+        if (dacKit != nullptr && activeCellIdx >= 0)
+        {
+            if (auto* c = dacKit->cellPtr (activeCellIdx))
+                recomputeSamplesPerWrite (c->rate);
+        }
+        playing.store (true, std::memory_order_release);
+    }
+
+    // Step 2 — drain pendingSwap on every cell. Non-active cells get a swap
+    // too so a load-without-trigger doesn't leave pendingSwap stuck (which
+    // would cost a 1 s wait on the next message-thread mutation of that
+    // cell). Each non-active swap is two vector::swap + a rate copy — cheap
+    // enough to do per block. The OLD pcm ends up in stagingPcm and is
+    // freed by the next message-thread mutation (allocator activity stays
+    // off the audio thread).
+    if (dacKit != nullptr)
+    {
+        for (int i = 0; i < DACKit::kNumCells; ++i)
+        {
+            auto* c = dacKit->cellPtr (i);
+            if (c == nullptr) continue;
+            if (! c->pendingSwap.load (std::memory_order_acquire)) continue;
+
+            c->pcm.swap (c->stagingPcm);
+            c->rate = c->stagingRate;
+            if (i == activeCellIdx)
+            {
+                // Mid-playback reload of the active cell restarts the
+                // bytestream — same "switching samples mid-playback
+                // restarts" semantics the spec calls out for cell changes.
+                recomputeSamplesPerWrite (c->rate);
+                playPos          = 0;
+                writeAccumulator = 0.0;
+            }
+            c->pendingSwap.store (false, std::memory_order_release);
+        }
     }
 
     ymfm::ym2612::output_data sample;
@@ -312,10 +154,6 @@ void DACPlayer::renderAdd (float* nativeL, float* nativeR, int numNativeSamples)
 
     for (int i = 0; i < numNativeSamples; ++i)
     {
-        // Phase-accurate write timing (07-feature-spec.md): write a fresh PCM
-        // byte every `samplesPerWrite` native samples. The accumulator can
-        // exceed `samplesPerWrite` by more than one when very low DAC rates
-        // are selected, but the inner while-loop catches catch-up writes.
         if (playing.load (std::memory_order_acquire))
         {
             writeAccumulator += 1.0;
@@ -341,19 +179,18 @@ void DACPlayer::renderAdd (float* nativeL, float* nativeR, int numNativeSamples)
 
 std::uint8_t DACPlayer::fetchNextSampleByte()
 {
-    // Belt-and-braces: if playing was cleared between the renderAdd top-level
-    // check and this call, return silence. Also covers the (rare) case of
-    // entering this function with playing=true but pcm just having been
-    // swapped to empty by clearPcm — pendingSwap is consumed at top of
-    // renderAdd, so by the time we get here pcm is the post-swap content.
     if (! playing.load (std::memory_order_acquire))
         return 0x80;
-    if (pcm.empty())
+    if (dacKit == nullptr || activeCellIdx < 0)
         return 0x80;
 
-    const std::uint8_t byte = pcm[playPos];
+    auto* c = dacKit->cellPtr (activeCellIdx);
+    if (c == nullptr || c->pcm.empty())
+        return 0x80;
 
-    if (++playPos >= pcm.size())
+    const std::uint8_t byte = c->pcm[playPos];
+
+    if (++playPos >= c->pcm.size())
     {
         if ((Mode) modeInt.load (std::memory_order_acquire) == Mode::Loop)
             playPos = 0;
@@ -372,14 +209,10 @@ std::uint32_t DACPlayer::nativeSampleRate()
 
 std::uint8_t DACPlayer::floatTo8BitUnsigned (float s) noexcept
 {
-    const float clamped = juce::jlimit (-1.0f, 1.0f, s);
-    const int   signed8 = static_cast<int> (std::lround (clamped * 127.0f));
-    return static_cast<std::uint8_t> (std::clamp (signed8 + 128, 0, 255));
+    return DACKit::floatTo8BitUnsigned (s);
 }
 
 int DACPlayer::normaliseDacRate (int hz) noexcept
 {
-    if (hz == 8000 || hz == 11025 || hz == 22050)
-        return hz;
-    return kDefaultDacRate;
+    return DACKit::normaliseDacRate (hz);
 }

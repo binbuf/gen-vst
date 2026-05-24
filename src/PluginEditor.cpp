@@ -146,27 +146,40 @@ namespace
         return juce::var (obj);
     }
 
-    // Build the JS-side DAC info object consumed by the D-section view
-    // (08-ui-views.md view 3) — name, length, bit-depth and a peaks array.
-    // The `empty` flag is set when no sample is loaded so the JS can render
-    // the empty-state placeholder.
-    juce::var buildDacInfoVar (const DACPlayer& dac, int numPeakBuckets)
+    // Task 31 — build a `{ cells: [...] }` snapshot of the DAC kit for the JS
+    // D-section view. Each cell holds either { empty: true } or { name,
+    // lengthSec, rate, bitDepth, midiNote }. Peaks are omitted from the
+    // per-cell snapshot (no per-cell waveform display yet) but the API is
+    // shaped to allow them in later work.
+    juce::var buildDacKitVar (const DACKit& kit)
     {
-        auto* obj = new juce::DynamicObject();
-        if (! dac.hasPcm())
+        juce::Array<juce::var> cells;
+        for (int i = 0; i < DACKit::kNumCells; ++i)
         {
-            obj->setProperty ("empty", true);
-            return juce::var (obj);
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("index",    i);
+            obj->setProperty ("midiNote", DACKit::noteForCellIndex (i));
+            if (! kit.hasCell (i))
+            {
+                obj->setProperty ("empty", true);
+            }
+            else
+            {
+                const auto* c = kit.cellPtr (i);
+                if (c != nullptr)
+                {
+                    obj->setProperty ("name",      c->name);
+                    obj->setProperty ("lengthSec", kit.getSampleLengthSeconds (i));
+                    obj->setProperty ("rate",      c->mtRate);
+                    obj->setProperty ("bitDepth",  8);
+                }
+            }
+            cells.add (juce::var (obj));
         }
-        obj->setProperty ("name",      dac.getSampleName());
-        obj->setProperty ("lengthSec", dac.getSampleLengthSeconds());
-        obj->setProperty ("bitDepth",  dac.getSampleBitDepth());
 
-        juce::Array<juce::var> peaks;
-        for (float p : dac.computePeaks (numPeakBuckets))
-            peaks.add (juce::var (p));
-        obj->setProperty ("peaks", juce::var (peaks));
-        return juce::var (obj);
+        auto* out = new juce::DynamicObject();
+        out->setProperty ("cells", juce::var (cells));
+        return juce::var (out);
     }
 }
 
@@ -1298,7 +1311,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             auto& apvts   = processor.getValueTreeState();
             auto& parts   = processor.getPartManager();
             auto& browser = processor.getPatchBrowser();
-            auto& dac     = processor.getDacPlayer();
+            auto& kit     = processor.getDacKit();
 
             auto readInt = [&apvts] (const juce::String& id, int dflt) -> int
             {
@@ -1371,9 +1384,16 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                     case PartManager::InstrumentType::D:
                     {
                         if (slot.index < 0 || slot.index >= PartManager::kNumRackDSlots) continue;
-                        const juce::String name = dac.hasPcm()
-                            ? dac.getSampleName()
-                            : juce::String ("— no sample —");
+                        // Task 31 — the rack row's display name now summarises
+                        // how many cells of the kit are loaded; no single
+                        // sample name applies to the kit as a whole.
+                        int loaded = 0;
+                        for (int i = 0; i < DACKit::kNumCells; ++i)
+                            if (kit.hasCell (i)) ++loaded;
+                        const juce::String name = loaded == 0
+                            ? juce::String ("— no samples —")
+                            : (juce::String ("Kit (") + juce::String (loaded)
+                                  + (loaded == 1 ? " sample)" : " samples)"));
                         pushRow (slot, "_dac", name, 16);
                         break;
                     }
@@ -1459,7 +1479,10 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                     // settings (Genny parity).
                     break;
                 case PartManager::InstrumentType::D:
-                    processor.getDacPlayer().clearPcm();
+                    // Task 31 — wipe every cell in the kit when the user
+                    // removes the DAC rack row. Re-adding the row brings a
+                    // fresh empty grid.
+                    processor.getDacKit().clearAll();
                     break;
             }
             parts.setSlotActive (slot, false);
@@ -1704,9 +1727,9 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             resetParam ("dac_mode");
             resetParam ("dac_level");
 
-            // Routing + DAC sample + active patch paths.
+            // Routing + DAC kit + active patch paths.
             processor.getMidiRouter().resetRouting();
-            processor.getDacPlayer().clearPcm();
+            processor.getDacKit().clearAll();
             for (int p = 0; p < PartManager::kNumParts; ++p)
                 processor.getPatchBrowser().clearActivePatchPath (p);
 
@@ -1732,14 +1755,20 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             completion (juce::var (obj));
         });
 
-    // --- DAC (Task 13 D view) ------------------------------------------------
-    // LOAD WAV… uses the native juce::FileChooser (08-ui-views.md view 11)
-    // and feeds the result into DACPlayer::loadWav. Failure surfaces through
-    // emitNotify, then resolves to {ok:false}. The chooser is launched
-    // asynchronously, so completion is captured by the lambda.
-    options = options.withNativeFunction ("loadWavDialog",
-        [this] (const juce::Array<juce::var>&, Completion completion)
+    // --- DAC kit (Task 31 D view) -------------------------------------------
+    // Per-cell load: the JS grid click passes the cell index; the chooser
+    // result feeds DACKit::loadCellWav. Failure surfaces through emitNotify
+    // and resolves to {ok:false}. The cell's stored rate defaults to the
+    // current dac_rate apvts value at load time.
+    options = options.withNativeFunction ("loadDacCellWav",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
         {
+            if (args.isEmpty() || ! args[0].isInt())
+            { completion (makeStatusVar ("cell index required")); return; }
+            const int cellIdx = (int) args[0];
+            if (cellIdx < 0 || cellIdx >= DACKit::kNumCells)
+            { completion (makeStatusVar ("cell index out of range")); return; }
+
             wavChooser = std::make_unique<juce::FileChooser> (
                 "Load WAV", juce::File{}, "*.wav");
 
@@ -1747,16 +1776,28 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                              | juce::FileBrowserComponent::canSelectFiles;
 
             wavChooser->launchAsync (flags,
-                [this, completion = std::move (completion)] (const juce::FileChooser& fc) mutable
+                [this, cellIdx, completion = std::move (completion)]
+                (const juce::FileChooser& fc) mutable
                 {
                     const juce::File file = fc.getResult();
                     if (file == juce::File{})
                     {
-                        // User cancelled — silent.
-                        completion (makeStatusVar ({}));
+                        completion (makeStatusVar ({}));   // cancelled
                         return;
                     }
-                    if (! processor.getDacPlayer().loadWav (file))
+
+                    // Default rate for this load: current dac_rate apvts
+                    // value mapped through the 8000/11025/22050 table. Per
+                    // Task 31 spec, dac_rate now means "default rate for the
+                    // next load", not the global playback rate.
+                    static constexpr int kRates[] { 8000, 11025, 22050 };
+                    int rateIdx = 2;
+                    if (auto* p = processor.getValueTreeState()
+                                       .getRawParameterValue ("dac_rate"))
+                        rateIdx = juce::jlimit (0, 2, juce::roundToInt (p->load()));
+                    const int defaultRate = kRates[rateIdx];
+
+                    if (! processor.getDacKit().loadCellWav (cellIdx, file, defaultRate))
                     {
                         emitNotify ("error", "Failed to load WAV: " + file.getFileName());
                         completion (makeStatusVar ("WAV load failed"));
@@ -1764,26 +1805,29 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                     }
 
                     auto* obj = new juce::DynamicObject();
-                    obj->setProperty ("ok",   true);
-                    obj->setProperty ("info", buildDacInfoVar (processor.getDacPlayer(), 220));
+                    obj->setProperty ("ok",  true);
+                    obj->setProperty ("cellIndex", cellIdx);
+                    obj->setProperty ("kit", buildDacKitVar (processor.getDacKit()));
                     completion (juce::var (obj));
                 });
         });
 
-    options = options.withNativeFunction ("clearDac",
-        [this] (const juce::Array<juce::var>&, Completion completion)
+    options = options.withNativeFunction ("clearDacCell",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
         {
-            processor.getDacPlayer().clearPcm();
+            if (args.isEmpty() || ! args[0].isInt())
+            { completion (makeStatusVar ("cell index required")); return; }
+            const int cellIdx = (int) args[0];
+            if (cellIdx < 0 || cellIdx >= DACKit::kNumCells)
+            { completion (makeStatusVar ("cell index out of range")); return; }
+            processor.getDacKit().clearCell (cellIdx);
             completion (makeStatusVar ({}));
         });
 
-    options = options.withNativeFunction ("getDacInfo",
-        [this] (const juce::Array<juce::var>& args, Completion completion)
+    options = options.withNativeFunction ("getDacKit",
+        [this] (const juce::Array<juce::var>&, Completion completion)
         {
-            int numBuckets = 220;
-            if (! args.isEmpty() && args[0].isInt())
-                numBuckets = juce::jlimit (16, 1024, (int) args[0]);
-            completion (buildDacInfoVar (processor.getDacPlayer(), numBuckets));
+            completion (buildDacKitVar (processor.getDacKit()));
         });
 
    #if ! GENVST_DEV_SERVER

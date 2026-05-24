@@ -126,6 +126,7 @@ target_sources(GenVst PRIVATE
     SN76489Wrapper.cpp    SN76489Wrapper.h
     SN76489Engine.cpp     SN76489Engine.h
     DACPlayer.cpp         DACPlayer.h
+    DACKit.cpp            DACKit.h
     Telemetry.cpp         Telemetry.h
     Tuning.cpp            Tuning.h
     GenVstYmfmInterface.h)

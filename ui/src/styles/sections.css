@@ -261,3 +261,17 @@ body[data-section="D"]  #bottom-d  { display: flex; flex-direction: column; }
 .d-strip-name {
   min-width: 0;
 }
+
+/* Right-aligned hint inside the playback strip — reminds the user that the
+ * note grid is the loader (Task 31). Flex-grows to push the HZ + LEV cells
+ * to the left edge. */
+.d-strip-hint {
+  flex: 1 1 auto;
+  text-align: right;
+  color: var(--bevel-light);
+  font-size: 8px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

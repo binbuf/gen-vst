@@ -26,6 +26,7 @@ add_executable(GenVstTests
     BankIOTests.cpp
     AlgoMappingTests.cpp
     TuningTests.cpp
+    DACKitTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
@@ -40,6 +41,7 @@ add_executable(GenVstTests
     "${CMAKE_SOURCE_DIR}/src/SN76489Wrapper.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Engine.cpp"
     "${CMAKE_SOURCE_DIR}/src/DACPlayer.cpp"
+    "${CMAKE_SOURCE_DIR}/src/DACKit.cpp"
     "${CMAKE_SOURCE_DIR}/src/Tuning.cpp")
 
 # The ymfm OPN2 core — VoiceAllocatorTests drives real ymfm::ym2612 instances
