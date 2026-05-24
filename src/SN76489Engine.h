@@ -8,6 +8,8 @@
 
 #include "SN76489Wrapper.h"
 
+class VgmLogger;
+
 // SN76489 PSG voice engine — 3 tone channels + 1 noise channel
 // (03-psg-synthesis.md "SN76489Engine Class Sketch", ADR-0009).
 //
@@ -95,6 +97,12 @@ public:
 
     void prepare (double hostSampleRate, int maxBlockSize);
     void reset();
+
+    // Task 29 — install a VGM logger pointer so every chip-broadcast write
+    // (writeAllChips) mirrors one entry into the on-disk capture. The four
+    // shadow chips share one logical write, so we log once per logical write
+    // here rather than four times at the wrapper level. nullptr disables.
+    void setVgmLogger (VgmLogger* logger) noexcept { vgmLogger = logger; }
 
     // --- MIDI events ---------------------------------------------------------
 
@@ -224,4 +232,8 @@ private:
     std::uint64_t nextTimestamp = 0;
 
     double hostSampleRate = 44100.0;
+
+    // Task 29 — VGM logger pointer (owned by PluginProcessor). Set once at
+    // prepare time; read by writeAllChips on every PSG register write.
+    VgmLogger* vgmLogger = nullptr;
 };

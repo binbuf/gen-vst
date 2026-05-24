@@ -15,6 +15,7 @@ add_executable(GenVstTests
     Y12LoaderTests.cpp
     OpmLoaderTests.cpp
     VgmExtractTests.cpp
+    VgmLoggerTests.cpp
     PatchBrowserTests.cpp
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
@@ -28,6 +29,7 @@ add_executable(GenVstTests
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
+    "${CMAKE_SOURCE_DIR}/src/VgmLogger.cpp"
     "${CMAKE_SOURCE_DIR}/src/BankIO.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
     "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"

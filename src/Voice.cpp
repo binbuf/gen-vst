@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "FmRegisterMap.h"
+#include "VgmLogger.h"
 
 namespace
 {
@@ -49,6 +50,12 @@ void Voice::writeReg (std::uint8_t reg, std::uint8_t value)
     // Channel 0 lives in Bank 0: address port 0, data port 1.
     chip.write (0, reg);
     chip.write (1, value);
+
+    // Task 29 — mirror every chip write into the VGM logger when active. The
+    // logger remaps chip-channel-0 to the VGM channel matching partIndex so
+    // the captured file produces the same channel layout the listener heard.
+    if (vgmLogger != nullptr && vgmLogger->isActive())
+        vgmLogger->recordYm2612VoiceWrite (partIndex, reg, value);
 }
 
 void Voice::noteOn (int part, int note, int velocity, double bend,

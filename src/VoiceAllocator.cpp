@@ -6,6 +6,12 @@
 
 #include "DACPlayer.h"
 
+void VoiceAllocator::setVgmLogger (VgmLogger* logger) noexcept
+{
+    for (auto& v : voices)
+        v.setVgmLogger (logger);
+}
+
 void VoiceAllocator::prepare (double hostSampleRate, int maxBlockSize)
 {
     hostRate   = hostSampleRate;

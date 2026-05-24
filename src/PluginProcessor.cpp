@@ -682,6 +682,13 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     telemetry.prepare (sampleRate);
     monoScratch.allocate ((size_t) juce::jmax (1, samplesPerBlock), true);
 
+    // Task 29 — propagate VGM logger pointer into the chip-write hooks (idempotent
+    // on subsequent prepareToPlay calls) and cache the host sample rate so the
+    // logger can convert per-block sample counts to 44 100 Hz VGM ticks.
+    voiceAllocator.setVgmLogger (&vgmLogger);
+    psgEngine.setVgmLogger      (&vgmLogger);
+    vgmLogger.prepare           (sampleRate);
+
     // The patch browser needs the plugin's wrapperType to find the factory
     // root (the bundle's Resources/patches/ vs the standalone data dir —
     // ADR-0005). wrapperType isn't valid in the constructor (the JUCE plugin
@@ -881,6 +888,11 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Cheap (11 atomic loads + ≤11 atomic stores) and only triggers the
     // rebuildChannelMask path when an apvts value actually changed.
     syncRackRoutingToTable();
+
+    // Task 29 — emit one VGM wait command per block, representing the time
+    // elapsed before this block's register writes. No-op when the logger is
+    // inactive; lock-free single-event push when active.
+    vgmLogger.recordWaitSamples (numSamples);
 
     // Sample-accurate iteration (01-architecture.md "MIDI Pipeline"): for each
     // gap between consecutive MIDI events, render that exact sub-block, then

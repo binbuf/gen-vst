@@ -121,6 +121,7 @@ target_sources(GenVst PRIVATE
     PatchSystem.cpp       PatchSystem.h
     PatchBrowser.cpp      PatchBrowser.h
     VgmExtract.cpp        VgmExtract.h
+    VgmLogger.cpp         VgmLogger.h
     BankIO.cpp            BankIO.h
     SN76489Wrapper.cpp    SN76489Wrapper.h
     SN76489Engine.cpp     SN76489Engine.h

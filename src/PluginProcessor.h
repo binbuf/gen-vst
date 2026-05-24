@@ -14,6 +14,7 @@
 #include "PatchSystem.h"
 #include "SN76489Engine.h"
 #include "Telemetry.h"
+#include "VgmLogger.h"
 #include "VoiceAllocator.h"
 
 // Raw std::atomic<float>* views of every per-part FM parameter, cached so the
@@ -91,6 +92,12 @@ public:
     // meter bay"). The audio thread writes lock-free; the editor reads
     // snapshots and emits a combined "meterData" event.
     Telemetry&            getTelemetry()    noexcept       { return telemetry;    }
+
+    // Task 29 — Exposed for the editor's LOG VGM button. Toggling the logger
+    // opens / closes a .vgm capture under <userAppData>/GenVst/logs/ and
+    // mirrors every chip write through the audio-thread record* hooks
+    // installed in Voice + SN76489Engine at prepareToPlay.
+    VgmLogger&            getVgmLogger()    noexcept       { return vgmLogger;    }
 
     // Snapshot a part's live patch from the apvts (the audio-thread source of
     // truth — kept fresher than PartManager's stored copy, which only updates
@@ -301,6 +308,7 @@ private:
     DACPlayer            dacPlayer;
     genvst::PatchBrowser patchBrowser;
     Telemetry            telemetry;
+    VgmLogger            vgmLogger;
 
     // Per-block PSG / DAC parameter snapshot — apvts pointers cached at
     // prepareToPlay so the audio thread reads with no map lookup. Pushed

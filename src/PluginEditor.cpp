@@ -1036,16 +1036,45 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 });
         });
 
-    // Log VGM + Import Tuning (Task 24) — stubbed for MVP per the task
-    // spec's "If implementation runs long" branch. Follow-up tasks are
-    // stamped at docs/tasks/29-vgm-logging.md and 30-scala-tuning.md.
+    // Log VGM (Task 29). Toggle starts / stops a .vgm capture under
+    // <userAppData>/GenVst/logs/. On start the file path goes back to JS so
+    // the IMPORT-tab button can flip its label to "STOP LOG"; on stop the
+    // file path is surfaced via toast and returned so the JS can flip back to
+    // "LOG VGM". The audio thread is hooked at Voice / SN76489Engine, so
+    // every chip register write reaches the open file via the SPSC ring + the
+    // logger's 10 Hz flush timer.
     options = options.withNativeFunction ("toggleVgmLogging",
         [this] (const juce::Array<juce::var>&, Completion completion)
         {
-            emitNotify ("info", "VGM logging coming soon — see Task 29.");
-            completion (makeStatusVar ({}));
+            juce::String pathOrError;
+            const bool nowActive = processor.getVgmLogger().toggle (pathOrError);
+
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("ok",     true);
+            obj->setProperty ("active", nowActive);
+            obj->setProperty ("path",   pathOrError);
+
+            if (nowActive)
+            {
+                emitNotify ("info",
+                    "VGM logging started — " + pathOrError);
+            }
+            else if (pathOrError.isNotEmpty())
+            {
+                emitNotify ("info",
+                    "VGM logged to " + pathOrError);
+            }
+            else
+            {
+                emitNotify ("error",
+                    "VGM logging stopped (no file written).");
+            }
+            completion (juce::var (obj));
         });
 
+    // Import Tuning (Task 30) — stubbed for MVP per the task spec's
+    // "If implementation runs long" branch. Follow-up task is stamped at
+    // docs/tasks/30-scala-tuning.md.
     options = options.withNativeFunction ("importTuningDialog",
         [this] (const juce::Array<juce::var>&, Completion completion)
         {

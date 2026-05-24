@@ -9,6 +9,7 @@
 #include "Voice.h"
 
 class DACPlayer;
+class VgmLogger;
 
 // The shared 16-voice FM pool (ADR-0013).
 //
@@ -46,6 +47,11 @@ public:
 
     // Allocate working buffers and reset every voice. Call from prepareToPlay.
     void prepare (double hostSampleRate, int maxBlockSize);
+
+    // Task 29 — propagate a VGM logger pointer to every voice in the pool.
+    // Set once at prepare time by the PluginProcessor; nullptr disables VGM
+    // capture on every voice.
+    void setVgmLogger (VgmLogger* logger) noexcept;
 
     // --- Mode + voice-count configuration (Task 15) ---------------------------
 

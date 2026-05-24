@@ -7,6 +7,8 @@
 #include "PatchSystem.h"
 #include "ymfm_opn.h"
 
+class VgmLogger;
+
 // One FM voice in the shared 16-voice pool (ADR-0013).
 //
 // A voice owns a single ymfm::ym2612 instance driven on channel 0 only
@@ -95,6 +97,11 @@ public:
     // The chip's native output sample rate (~53267 Hz for the NTSC clock).
     std::uint32_t nativeSampleRate();
 
+    // Task 29 — install a VGM logger pointer so every register write from
+    // this voice gets mirrored into the on-disk capture (Voice::writeReg
+    // checks logger->isActive() before forwarding). nullptr disables logging.
+    void setVgmLogger (VgmLogger* logger) noexcept { vgmLogger = logger; }
+
     State         state()     const noexcept { return voiceState; }
     bool          isIdle()    const noexcept { return voiceState == State::Idle; }
     bool          isActive()  const noexcept { return voiceState == State::Active; }
@@ -145,4 +152,8 @@ private:
     // -1 means "never written". Diffed each block by updateRegisters so only
     // changed registers are re-sent (01-architecture.md "Parameter System").
     std::array<int, 256> shadow {};
+
+    // Task 29 — VGM logger pointer (owned by PluginProcessor). Set once at
+    // prepare time; read by writeReg on every chip write. nullptr-safe.
+    VgmLogger* vgmLogger = nullptr;
 };

@@ -913,7 +913,15 @@ function mountImportActions(panelBody) {
     btn.addEventListener("click", async () => {
       try {
         const fn = Juce.getNativeFunction(entry.fn);
-        await fn();
+        const r = await fn();
+        // Task 29 — LOG VGM is a toggle: flip the button label between
+        // "LOG VGM" and "STOP LOG" so the user can tell at a glance whether
+        // a capture is running. The C++ side returns {active: boolean} so
+        // the JS doesn't have to mirror toggle state.
+        if (entry.fn === "toggleVgmLogging"
+            && r && typeof r.active === "boolean") {
+          btn.textContent = r.active ? "STOP LOG" : "LOG VGM";
+        }
       } catch (e) { console.error(`${entry.fn} failed`, e); }
     });
     host.appendChild(btn);

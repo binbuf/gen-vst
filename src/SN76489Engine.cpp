@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "VgmLogger.h"
+
 namespace
 {
     constexpr double kNtscClock     = static_cast<double> (SN76489Wrapper::kClockHz);
@@ -561,6 +563,13 @@ void SN76489Engine::writeAllChips (std::uint8_t byte)
 {
     for (auto& c : chips)
         c.write (byte);
+
+    // Task 29 — mirror to the VGM logger once per logical write. The four
+    // shadow chips are an implementation detail of soft-pan and stay invisible
+    // here so the captured stream has the same single-chip event count a real
+    // SN76489 would produce.
+    if (vgmLogger != nullptr && vgmLogger->isActive())
+        vgmLogger->recordPsgWrite (byte);
 }
 
 void SN76489Engine::writeToneFreq (int toneChannel, double midiNoteWithBend)
