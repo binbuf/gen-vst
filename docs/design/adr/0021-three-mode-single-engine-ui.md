@@ -48,9 +48,12 @@ sound, native DAW workflow.
 
 **Voice model per mode:**
 
-- **FM mode** — single FM patch + 16-voice polyphony, drawn from the
-  shared `ymfm::ym2612` voice pool ([ADR-0010](0010-ymfm-instance-model.md)
-  retained). All 16 voices play the one active patch.
+- **FM mode** — single FM patch + up to 16-voice polyphony, drawn from
+  the shared `ymfm::ym2612` voice pool ([ADR-0010](0010-ymfm-instance-model.md)
+  retained). All active voices play the one active patch; the active
+  voice count is user-selectable via the `POLY` stepper on the FM panel
+  (1–16) with a `HARDWARE STRICT` Settings toggle that clamps to 6 to
+  match the real YM2612.
 - **SQ mode** — the SN76489 PSG ([ADR-0009](0009-sn76489-library.md))
   with its native 3 tone + 1 noise channels exposed as four envelope strips.
   Voice allocation is round-robin LRU across the three tone channels (as

@@ -63,12 +63,17 @@ prev/next/browse buttons, the two output-character toggles, and a gear
 icon for settings.
 
 ```
-┌─ HEADER ─────────────────────────────────────────────────────────────┐
-│  ░GEN VST░   [ FM ⋅ SQ ⋅ D ]   [ ◀  ▌GADGET BASS▐  ▶  📂 ]           │
-│                              [Output Filtering] [Ladder Effect]   ⚙  │
-└──────────────────────────────────────────────────────────────────────┘
+┌─ HEADER ──────────────────────────────────────────────────────────────────────────┐
+│ ◉ ░GEN VST░  [ FM ⋅ SQ ⋅ D ]  [ ◀  ▌GADGET BASS▐  ▶  📂 ]                          │
+│                              [Output Filtering] [Ladder Effect]   VOL [○]    ⚙   │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+- **`◉` NOTE ON LED** (`note-on-led`) — sits at the far left of the
+  header, immediately before the wordmark. Lit while any voice is keyed
+  on (FM/SQ) or while the audio input exceeds a tiny threshold (D).
+  Mirrors the prominent top-left NOTE ON indicator on the RYM2612
+  reference panel; the v2 status bar no longer carries it.
 - **Wordmark** — `GEN VST` in the v2 brand style (see
   [`09-visual-spec.md`](09-visual-spec.md)). Clicking opens the About
   modal (view 8).
@@ -90,6 +95,10 @@ icon for settings.
   bypassed); the labelling mirrors the RYM2612 and PCM2612 panels. The
   Ladder toggle is a single on/off LED rocker. **Ladder is greyed out
   in SQ mode** (it has no audible effect there).
+- **`VOL` knob** — master output gain. Small `knob` widget sized to fit
+  the header band; rest at unity, ~270° sweep. Bound to apvts param
+  `master_volume`. Persistent across mode swaps so an instance's level
+  rides through FM/SQ/D switches without surprises.
 - **⚙ Gear** — opens the Settings modal (view 7).
 
 The header persists across mode swaps. The patch-name LCD updates to
@@ -105,23 +114,24 @@ flanking it, an envelope curve overlay, and a frequency-control mode
 selector.
 
 ```
-┌─ FM MODE ──────────────────────────────────────────────────────────────────────────┐
-│ LFO  RATE  PMS  AMS  MW→PMS  ┌─ ENVELOPE CURVE ─┐  FREQ CTRL MODE   RETRIG  OP1 FB │
-│ [○] [○]  [○]  [○]    [○]     │                  │  [INT MUL]        ▌498▐          │
-│ POLY  LEGATO RANGE           │   ╱╲___          │  [FLOAT MUL]             [○]     │
-│ [⋅]   [⋅⋅]  [⋅⋅⋅]            │                  │  [AUTO RETRIG]                   │
-│ PB ▭▭▭                       └──────────────────┘                                  │
-│ MW ▭▭▭                                                                             │
-│                                                                                     │
-│  ┌─ OPERATOR GRID ────────────────────────────────────────────────┐  ┌ ALGO ─┐    │
-│  │       AM  AR  DR  SL  SR  RR  RS  SSG-EG  MUL  FREQ  FIXED  DT │  │  ┌──┐ │    │
-│  │  [1]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [3.00] ▢     ○  │  │  │ 4│ │    │
-│  │  [2]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [1.00] ▢     ○  │  │  └──┘ │    │
-│  │  [3]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │ ALG 4 │    │
-│  │  [4]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │       │    │
-│  │  TL: |▟| |▟| |▟| |▟|   VEL: ○ ○ ○ ○   MW: ○ ○ ○ ○              │  │       │    │
-│  └────────────────────────────────────────────────────────────────┘  └───────┘    │
-└────────────────────────────────────────────────────────────────────────────────────┘
+┌─ FM MODE ───────────────────────────────────────────────────────────────────────────────┐
+│ LFO RATE PMS AMS  MW→PMS  ┌─ ENVELOPE CURVE ─┐  FREQ CTRL MODE        RETRIG    OP1 FB  │
+│ [○] [○]  [○] [○]   [○]    │                  │  [INT MUL]            ▌  498 ▐    [○]    │
+│                           │   ╱╲___          │  [FLOAT MUL]                             │
+│ POLY    ▌ 11 ▐            │                  │  [AUTO RETRIG]                           │
+│ RANGE   ▌  2 ▐            └──────────────────┘                                          │
+│ [LEGATO ⋅ RETRIG]                                                                       │
+│ PB ▭▭▭                                                                                  │
+│ MW ▭▭▭                                                                                  │
+│                                                                                          │
+│  ┌─ OPERATOR GRID ──────────────────────────────────────────────┐ ┌ TL VEL MW ┐ ┌ ALGO ┐│
+│  │      AM  AR  DR  SL  SR  RR  RS  SSG-EG  MUL  FREQ  FIXED  DT │ │           │ │ ┌──┐ ││
+│  │ [1]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [3.00] ▢     ○   │ │ ▟  ○   ○  │ │ │ 4│ ││
+│  │ [2]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [1.00] ▢     ○   │ │ ▟  ○   ○  │ │ └──┘ ││
+│  │ [3]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [0.50] ▢     ○   │ │ ▟  ○   ○  │ │ ALG 4││
+│  │ [4]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [0.50] ▢     ○   │ │ ▟  ○   ○  │ │      ││
+│  └──────────────────────────────────────────────────────────────┘ └───────────┘ └──────┘│
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Top-left block — LFO & global controls**
@@ -131,11 +141,28 @@ selector.
   describes this as the "MW knob which allows to modulate the LFO's PMS
   setting" for a performance-controlled vibrato. Default 1.0 (full
   effect). Bound to apvts param `mw_to_pms`.
-- `POLY` — three-position `toggle-switch`: `POLY / MONO / UNISON`.
-- `LEGATO` — only visible in Mono: `RETRIG / LEGATO`.
-- `RANGE` — only visible in Unison: spread (0–50¢).
+- `POLY` — numeric stepper with up/down buttons. Range 1–16, default 16.
+  Sets the active polyphony for the voice pool. Matches the RYM2612
+  panel's `POLY N` stepper layout. Bound to apvts param `poly_voices`.
+- `LEGATO / RETRIG` — always-visible 2-position `toggle-switch`. Mirrors
+  the RYM2612 panel toggle. With `poly_voices == 1` this gates mono
+  legato (no re-attack on overlapping notes) vs. retrigger; with
+  `poly_voices > 1` it gates whether an incoming note that hits an
+  already-sounding voice retriggers the envelope or rides through. See
+  [`02-fm-synthesis.md`](02-fm-synthesis.md) § *Voice handling — LEGATO
+  and RETRIG*. Bound to apvts param `note_mode` (enum:
+  `0 = RETRIG, 1 = LEGATO`).
+- `RANGE` — numeric stepper for **pitch-bend range in semitones**.
+  Range ±1..±12, default ±2. Matches the RYM2612 `RANGE N` stepper.
+  Bound to apvts param `pitch_bend_range`.
 - `PB`, `MW` — pitch bend + mod wheel level meters (read-only
   visualisation of incoming MIDI).
+
+The v2-only MONO and UNISON sub-modes that an earlier draft of this
+view exposed are not present on the RYM2612 reference and have been
+dropped from the FM panel. A standalone `UNISON DETUNE` knob in
+Settings (view 7) covers the unison-spread use case without cluttering
+the main panel.
 
 **Top-centre — envelope curve**
 
@@ -181,7 +208,7 @@ Columns:
 
 | Column | Type | Bound to (per op) |
 |---|---|---|
-| `[N]` | Numeric badge / select | Operator index (active-curve target) |
+| `[N]` | `op-badge` widget (blue-filled square per [`09-visual-spec.md`](09-visual-spec.md) § *Operator badge*) | Operator index — click to make this row the active target of the `envelope-curve` widget; carries an outer glow when active |
 | `AM` | Toggle | `amon[op]` |
 | `AR / DR / SL / SR / RR` | Knobs | Envelope rate values |
 | `RS` (Rate Scaling) | Knob | `ks[op]` |
@@ -292,6 +319,30 @@ No MIDI controls, no sample loader, no MIDI channel selector — D mode
 processes the audio input bus and only the audio input bus
 ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
 
+**Layout note (canvas shape).** PCM2612's hardware artwork is roughly
+portrait (9:16), while Gen VST's window is fixed landscape 1200×560
+([ADR-0023](adr/0023-fixed-window-1200x560.md)). The D mode controls
+are therefore centered horizontally and the wide bands on either side
+of the centered column carry the same brushed-metal chassis treatment
+defined in [`09-visual-spec.md`](09-visual-spec.md) so the panel reads
+as one continuous physical surface rather than a small unit floating
+on grey. The empty band above the `DAC PRESCALER` knob is the natural
+home for a stylised mode wordmark (e.g. `RETRO DECIMATOR` in IBM Plex
+Mono Bold) — implementation detail, tuned at render time.
+
+**Deliberate divergences from PCM2612** (recorded so they don't get
+re-litigated during implementation):
+
+1. **Output Filtering switch lives in the header**, not on the D
+   chassis. PCM2612 places its `CRYSTAL CLEAR / LEGACY` switch on the
+   unit itself; v2 promotes it to the header for cross-mode
+   consistency ([ADR-0024](adr/0024-hardware-filter-toggles.md)).
+2. **Ladder Effect toggle is added**, even though PCM2612 does not
+   expose a Ladder switch at all. The YM2612 ladder DAC nonlinearity
+   is part of the "Genesis sound" downstream of the same DAC path D
+   mode emulates, so the toggle stays useful here
+   ([ADR-0024](adr/0024-hardware-filter-toggles.md)).
+
 ---
 
 ## 5. Status bar (persistent)
@@ -300,14 +351,16 @@ A thin (~16 px) strip at the bottom of the window, always visible.
 
 ```
 ┌─ STATUS ─────────────────────────────────────────────────────────────┐
-│ ◉ NOTE ON    L ▮▮▮▮▮▮▮▮▮▮▮▮     R ▮▮▮▮▮▮▮▮▮▮▮▮            v0.2.0   │
+│              L ▮▮▮▮▮▮▮▮▮▮▮▮     R ▮▮▮▮▮▮▮▮▮▮▮▮            v0.2.0   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- `◉ NOTE ON` — `note-on-led`, lit while any voice is keyed on.
-  In D mode, lit while audio input exceeds a tiny threshold.
-- L / R level bars — output level meters.
+- L / R level bars — output level meters (`level-meter` widget).
 - Version string — read-only.
+
+The `NOTE ON` LED has moved to the header (view 1) to track the RYM2612
+reference, where the indicator sits next to the patch-name area at the
+top of the chassis rather than tucked under the status row.
 
 ---
 
@@ -382,8 +435,8 @@ Global plugin preferences. Opened from the header gear icon.
 
 ```
 ┌─ SETTINGS ──────────────────────────────────────────────────── [X] ┐
-│  VOICE COUNT (FM mode)  [ 8 · 12 ·(16)]                              │
-│  PITCH BEND RANGE       [±1 ·(±2)· ±7 · ±12]   semitones             │
+│  HARDWARE STRICT (FM)   [ off ]                                      │
+│  UNISON DETUNE (FM)     [▌  0 ¢ ▐]   0..50 cents                     │
 │  UI SCALE               [(1×)· 2× · 3×]                              │
 │  VELOCITY → TL (FM)     [ on ]                                       │
 │  AFTERTOUCH             [ Off ·(LFO depth)· Carrier TL ]             │
@@ -395,8 +448,20 @@ Global plugin preferences. Opened from the header gear icon.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- `VOICE COUNT` (FM mode) — 8 / 12 / 16; default 16.
-- `PITCH BEND RANGE` — ±1 / ±2 / ±7 / ±12 semitones; default ±2.
+- `HARDWARE STRICT` (FM mode) — opt-in authenticity toggle modelled on
+  the RYM2612 manual's *For the Purists* page (p. 13). When **on**:
+  clamps `poly_voices` to 6 (the YM2612's hardware channel count);
+  restricts `FLOAT_MUL` / `AUTO_RETRIG` to one voice at a time
+  (additional voices using those modes silently fall back to
+  `INT_MUL`); forces `output_filter` and `ladder_effect` on and locks
+  their header toggles. Off by default — Gen VST's extended polyphony
+  and free filter switches are the expected starting point. Bound to
+  apvts param `hardware_strict`.
+- `UNISON DETUNE` (FM mode) — small detune spread in cents applied to
+  voices triggered by the same MIDI note. 0 ¢ = off (default); up to
+  50 ¢ = pronounced unison. Bound to apvts param `unison_detune_cents`.
+  This replaces the v2-draft UNISON sub-mode on the FM panel; the
+  effect now layers freely with the numeric `POLY` count.
 - `UI SCALE` — integer presets ([ADR-0017](adr/0017-hidpi-display-scaling.md)).
 - `VELOCITY → TL` — FM mode velocity → TL scaling toggle.
 - `AFTERTOUCH` — channel pressure routing: Off / LFO depth / Carrier TL.
@@ -406,6 +471,12 @@ Global plugin preferences. Opened from the header gear icon.
 - `RESET ALL TO DEFAULTS` — destructive button (red label). After a
   confirmation modal, snaps every parameter to its `juce::AudioParameter`
   default and clears the active patch path.
+
+Voice count and pitch-bend range that previously lived here have been
+**promoted to the FM mode panel** — `POLY` is a numeric stepper next to
+the LFO block, `RANGE` is the pitch-bend semitones stepper beside it.
+The Settings surface is now reserved for global plugin preferences
+that don't belong on the performance chassis.
 
 The v1 `MIDI ROUTING…` button is **removed** (no routing matrix in v2).
 

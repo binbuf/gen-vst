@@ -555,3 +555,25 @@ chip.write(1, 0xF0 | ch_select);   // OPS=0xF0 (all operators), channel select
 
 `bankAddr`/`bankData` = 0/1 for channels 1–3, 2/3 for channels 4–6.
 `ch_select` encoding: ch1–3 → 0–2, ch4–6 → 4–6 (skip value 3).
+
+## Voice handling — LEGATO and RETRIG
+
+The FM panel surfaces an always-visible `LEGATO / RETRIG` toggle
+(apvts param `note_mode`) modelled on the RYM2612 reference. It
+controls what happens when an incoming MIDI note-on event lands on a
+voice that is already sounding:
+
+| `note_mode` | `poly_voices == 1` (mono) | `poly_voices > 1` (poly) |
+|---|---|---|
+| `RETRIG` | New note steals the voice and **re-runs the full key-on sequence** (key-off → operator/channel writes → key-on with `OPS=0xF0`), so the envelope restarts from attack. | Same — voice stealing always re-runs key-on. The toggle has no audible effect here; left in the unset state for documentation symmetry. |
+| `LEGATO` | New note **updates pitch only** (writes `0xA4`/`0xA0` for the active channel) and skips the key-off→key-on pair, so the envelope rides through into the new note's pitch. Velocity is not re-sampled. | Voice stealing for a *new* polyphonic voice still re-runs key-on; this mode only suppresses the retrigger when an existing voice is *re-keyed* with overlap. |
+
+The semantics match the RYM2612 manual's description on p. 11: in
+mono operation, LEGATO lets the user play a slur without re-attacking
+the envelope; in poly operation the toggle is effectively a no-op but
+remains visible per the reference panel.
+
+Implementation detail: `LEGATO` short-circuits steps 1 and 5 of the
+*Register Write Sequence for Note-On* above. Steps 2–4 (operator
+params, channel params, frequency) still run so a patch change between
+two legato'd notes still takes effect.

@@ -61,11 +61,22 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] Unified tagged preset browser with `All / FM / SQ / D` filter chips
 
 ### Polyphony (FM mode)
-- [ ] 16-voice FM polyphony — single-patch, beyond the YM2612's hardware 6
-- [ ] Configurable voice count (8, 12, 16)
-- [ ] Poly mode (default): LRU voice stealing
-- [ ] Mono mode: last-note priority, configurable legato vs. retrigger + glide
-- [ ] Unison mode: N voices playing same note with per-voice detune spread
+- [ ] FM polyphony beyond the YM2612's hardware 6 voices — single-patch,
+  16-voice pool
+- [ ] `poly_voices` apvts param — numeric voice count 1–16 (default 16);
+  surfaced as the `POLY` stepper on the FM mode panel, mirroring the
+  RYM2612 `POLY N` field
+- [ ] `note_mode` apvts param — `RETRIG` vs `LEGATO` always-visible
+  toggle on the FM panel; semantics in [`02-fm-synthesis.md`](02-fm-synthesis.md)
+  § *Voice handling — LEGATO and RETRIG*
+- [ ] `pitch_bend_range` apvts param — ±1..±12 semitones (default ±2);
+  surfaced as the `RANGE` stepper on the FM panel (promoted from
+  Settings)
+- [ ] `unison_detune_cents` apvts param — 0..50 ¢ unison spread applied
+  to voices triggered by the same note; lives in Settings (replaces the
+  earlier draft Unison sub-mode)
+- [ ] LRU voice stealing across the pool; release-phase voices preferred
+  for stealing
 
 ### FM Features
 - [ ] Channel 3 special mode (per-operator pitch as a top-level UI editor) — *post-MVP ([ADR-0014](adr/0014-special-channel-features.md))*
@@ -76,6 +87,12 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] **MW → PMS** global depth knob (`mw_to_pms`) — scales modwheel's effect on PMS vibrato depth; default 1.0. RYM2612 manual page 10.
 - [ ] **MW → TL per-operator** depth knob (`mw[op]`, 4 params) — per-op modwheel → operator-amplitude depth; default 0. RYM2612 manual page 10.
 - [ ] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*.
+- [ ] **HARDWARE STRICT** authenticity toggle — Settings-level opt-in
+  modelled on the RYM2612 manual's *For the Purists* page. When on:
+  clamps `poly_voices` to 6; restricts `FLOAT_MUL` / `AUTO_RETRIG` to a
+  single voice (extra voices fall back to `INT_MUL`); forces
+  `output_filter` and `ladder_effect` on and locks their header
+  toggles. Default off. Bound to apvts param `hardware_strict`.
 
 ### Output character (all modes, v2 additions per [ADR-0024](adr/0024-hardware-filter-toggles.md))
 - [ ] **Output Filtering** toggle — Model-1 RC lowpass + amp coloration on mix bus

@@ -84,6 +84,14 @@ for the `decimator-knob` variant.
 | `--btn-active-bg`    | `#2196f3` | Pressed / active button fill |
 | `--btn-text`         | `#e8eaee` | Button text |
 
+### Operator badges
+
+| Token | Hex | Use |
+|---|---|---|
+| `--op-badge-bg`        | `#2196f3` | Filled blue square background for op number badges 1..4 |
+| `--op-badge-text`      | `#ffffff` | Numeral on the badge |
+| `--op-badge-active-glow` | `rgba(33,150,243,0.55)` | Outer glow when this operator row owns the envelope-curve focus |
+
 ### Text
 
 | Token | Hex | Use |
@@ -142,12 +150,20 @@ them; any deviation needs to be justified and added to this doc.
 
 ```css
 .chassis {
-  background: linear-gradient(
-    180deg,
-    var(--chassis-bg-top)    0%,
-    var(--chassis-bg-mid)   50%,
-    var(--chassis-bg-bottom) 100%
-  );
+  background:
+    /* subtle vertical brushed-metal striations — RYM2612 / PCM2612 idiom */
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.025) 0 1px,
+      transparent 1px 3px
+    ),
+    /* main silver gradient */
+    linear-gradient(
+      180deg,
+      var(--chassis-bg-top)    0%,
+      var(--chassis-bg-mid)   50%,
+      var(--chassis-bg-bottom) 100%
+    );
   border: 1px solid var(--chassis-edge);
   box-shadow:
     /* outer drop shadow (light from top-left) */
@@ -159,6 +175,12 @@ them; any deviation needs to be justified and added to this doc.
   border-radius: 6px;
 }
 ```
+
+The brushed-metal striation layer is intentionally subtle (≈ 2 %
+opacity); it lifts the panel from "flat coloured gradient" to
+"physical surface" without competing with the controls on top. Both
+RYM2612 and PCM2612 reference panels carry a similar vertical-grain
+treatment.
 
 ### Recessed inset (the dark region holding controls)
 
@@ -348,6 +370,44 @@ ctx.beginPath();
 // ...compute (x, y) points across the curve...
 ctx.stroke();
 ```
+
+### Operator badge
+
+The `[1] [2] [3] [4]` numeric badges in the FM operator grid. Each badge
+is the click target that selects which operator the envelope curve
+tracks, so it needs a visibly "active" state in addition to its resting
+form.
+
+```css
+.op-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--op-badge-bg);
+  color: var(--op-badge-text);
+  font: 500 12px/1 'IBM Plex Mono', monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--knob-rim);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,0.18),
+    inset -1px -1px 0 rgba(0,0,0,0.35),
+    1px 1px 2px rgba(0,0,0,0.45);
+  cursor: pointer;
+  transition: box-shadow 120ms ease-out;
+}
+.op-badge.is-active {
+  /* envelope-curve is currently tracking this operator */
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,0.25),
+    inset -1px -1px 0 rgba(0,0,0,0.35),
+    0 0 8px var(--op-badge-active-glow);
+}
+```
+
+The blue-filled square matches the RYM2612 reference where the op
+badges read as prominent indicators rather than ambient labels.
 
 ### Algorithm mini diagram (canvas)
 

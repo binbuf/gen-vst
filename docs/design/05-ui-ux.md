@@ -91,16 +91,19 @@ Fixed window, **1200 × 560 px** ([ADR-0023](adr/0023-fixed-window-1200x560.md))
 Three top-level regions:
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│  Header (~64 px)                                                       │
-│  [logo] [mode: FM SQ D] [patch-name LCD ◀ ▶ 📂] [Filter] [Ladder] [⚙] │
-├───────────────────────────────────────────────────────────────────────┤
-│  Mode panel — main editing area (~480 px)                              │
-│  Contents depend on active mode (FM / SQ / D); see 08-ui-views.md     │
-├───────────────────────────────────────────────────────────────────────┤
-│  Status bar (~16 px) — note-on indicator, level meters                 │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│  Header (~64 px)                                                           │
+│  [◉][logo] [mode FM SQ D] [patch-LCD ◀ ▶ 📂] [Filter] [Ladder] [VOL] [⚙] │
+├───────────────────────────────────────────────────────────────────────────┤
+│  Mode panel — main editing area (~480 px)                                  │
+│  Contents depend on active mode (FM / SQ / D); see 08-ui-views.md         │
+├───────────────────────────────────────────────────────────────────────────┤
+│  Status bar (~16 px) — output level meters, version                        │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
+
+`◉` is the NOTE ON LED (moved to the header in v2 to mirror the RYM2612
+reference); `VOL` is the master-output knob bound to `master_volume`.
 
 The mode panel is the only region that swaps when the user changes mode;
 the header (and the mode selector inside it) and the status bar persist.
@@ -154,15 +157,17 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 |-----------|------|---|
 | `knob` | Skeuomorphic rotary; gradient body, white indicator line; ~270° sweep, rest at 7 o'clock; vertical click-drag (up = increase), shift = fine, double-click = reset | CSS body + Canvas indicator arc |
 | `button` | Pill / square buttons with depressed-on-click feedback; LED-illuminated when active | CSS only |
+| `stepper` | Compact LCD numeric readout flanked by ▲/▼ buttons; click-and-hold to repeat; scroll-wheel increment. Used for the `POLY` and `RANGE` fields on the FM panel and the `RETRIG RATE` field. | CSS + Canvas LCD readout |
 | `lcd-readout` | Patch-name LCD (header) and per-knob numeric readouts; flat dark base + glowing text | Canvas |
 | `toggle-switch` | Two- and three-position toggle (e.g., `CRYSTAL CLEAR / LEGACY`); physical-slider feel | CSS + a Canvas highlight |
 | `slider` | Horizontal slider with chunky cap, soft groove shadow | CSS only |
 | `algorithm-mini` | The 8 YM2612 algorithm topologies, drawn small; selected one highlighted | Canvas |
 | `envelope-curve` | Per-operator (FM) or per-channel (SQ) ADSR shape; computed live from envelope params | Canvas |
-| `note-on-led` | Single header LED that lights on key-on | CSS animation on apvts-bound state |
-| `level-meter` | Stereo LED-style level bars (header + D mode) | Canvas |
+| `note-on-led` | Single header LED that lights on key-on (FM/SQ) or input-audio-present (D) | CSS animation on apvts-bound state |
+| `level-meter` | Stereo LED-style level bars (status bar + D mode) | Canvas |
 | `decimator-knob` | Large central knob in D mode (PCM2612-style); identical mechanics to `knob` with larger body | CSS body + Canvas indicator arc |
 | `patch-name-lcd` | Larger LCD readout in the header showing the active patch | Canvas; uses LCD-style font |
+| `op-badge` | Blue-filled square showing the operator number `1..4`; click to make that operator the active target of the `envelope-curve` widget; carries an outer glow when active | CSS only |
 | `notification-toast` | Transient banner for errors / warnings; same role as v1 | CSS only |
 
 Live redraws (knob indicator, algorithm diagram, ADSR curve, level meter)
