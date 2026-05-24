@@ -1038,8 +1038,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
 
     // Log VGM + Import Tuning (Task 24) — stubbed for MVP per the task
     // spec's "If implementation runs long" branch. Follow-up tasks are
-    // stamped at docs/tasks/29-vgm-logging.md and 30-scala-tuning.md
-    // (tasks 27/28 are already taken by LFO waveform / glide time).
+    // stamped at docs/tasks/29-vgm-logging.md and 30-scala-tuning.md.
     options = options.withNativeFunction ("toggleVgmLogging",
         [this] (const juce::Array<juce::var>&, Completion completion)
         {

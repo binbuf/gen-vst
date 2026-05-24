@@ -114,12 +114,14 @@ real host. There is no long stretch of unverifiable work.
 | 24 | [IMPORT tab full action stack](24-import-tab-actions.md) | 8-button stack: Import/Export Bank+Instrument, Load/Save State, Log VGM, Import Tuning | 22 |
 | 25 | [Header polish: TRUE STEREO toggle](25-header-true-stereo.md) | TRUE STEREO toggle + mono-sum branch | 22 |
 | 26 | [Genny visual polish & algorithm-diagram audit](26-genny-visual-polish.md) | Algorithm correctness, palette, bracket glyphs, DAC restyle | 22, 23, 24, 25 |
-| 27 | [LFO waveform selector](27-lfo-waveform-selector.md) | Saw/Square/Triangle/Noise waveform per part; YM2612 reg 0x22 bits 0–1 | 22 |
-| 28 | [Glide time per-instrument routing (DEL)](28-glide-time-routing-param.md) | DEL slider in routing strip; linear pitch-slide for FM + PSG tone in Mono/Legato mode | 15, 22 |
+| 27 | [Drag-drop slot reorder (instrument rack)](27-rack-drag-drop-reorder.md) | Wire up the `:::` handle in the rack widget so rows can be reordered by drag | 22 |
+| 28 | [Glide-time slider (mono/legato)](28-glide-time-routing-param.md) | Glide-time slider in routing strip; linear pitch-slide for FM + PSG tone in Mono/Legato mode | 15, 22 |
 | 29 | [VGM logging (Log VGM button)](29-vgm-logging.md) | Capture every YM2612 + SN76489 register write to a `.vgm` file | 07, 24 |
 | 30 | [Scala tuning import (Import Tuning button)](30-scala-tuning.md) | `.scl` parser → per-MIDI-note frequency lookup for FM + PSG | 06, 24 |
 | 31 | [Multi-sample DAC (note-mapped sample kit)](31-dac-multisample.md) | Per-cell WAV load for the 4×5 note grid; one sample per cell | 07, 26 |
 | 32 | [Cosmetic cleanup (Genny-polish leftovers)](32-cosmetic-cleanup.md) | Palette-var moves for specular/bevel hex; algo-diagram line tweak | 26 |
+| 33 | [Per-slot copy/paste (instrument rack)](33-slot-copy-paste.md) | Copy/paste glyphs on each rack row; in-process slot clipboard | 22, 27 |
+| 34 | [Per-slot activity lights (instrument rack)](34-rack-activity-lights.md) | Per-channel LED strip on each row showing live key-on state | 22, 27, 33 |
 
 ## Task file structure
 
