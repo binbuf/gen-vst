@@ -84,8 +84,9 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] **FREQ CTRL MODE** — three-state selector (`INT_MUL` / `FLOAT_MUL` / `AUTO_RETRIG`); RYM2612 manual page 11. `FLOAT_MUL` and `AUTO_RETRIG` use Channel 3 Special / CSM internally — see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *FREQ Control Mode*.
 - [ ] **FIXED per-operator** toggle — when active in `FLOAT_MUL` / `AUTO_RETRIG`, the operator runs at an absolute Hz value (`freq_fixed_hz[op]`) instead of `note × mul_float[op]`. Greyed out in `INT_MUL`.
 - [ ] **RETRIG RATE** (TimerA value, 0–1023) — visible/editable only when `freq_ctrl_mode == AUTO_RETRIG`; writes YM2612 registers `0x24` / `0x25`.
-- [ ] **MW → PMS** global depth knob (`mw_to_pms`) — scales modwheel's effect on PMS vibrato depth; default 1.0. RYM2612 manual page 10. (Modwheel is the **only** instrument-level MW route in v2; the earlier per-operator `mw[op]` TL-modulation column was removed during the post-mockup review to match the RYM2612 reference, which keeps MW as a global meter only.)
-- [ ] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel.
+- [ ] **MW → PMS routing** — modwheel (CC 1) routes into the LFO `PMS` field at fixed full depth (no adjustable knob). RYM2612 manual page 10. (Modwheel is the **only** instrument-level MW route in v2; both the earlier per-operator `mw[op]` TL-modulation column and the global `mw_to_pms` depth knob were removed during the post-mockup review — the per-patch `PMS` knob already covers the "amount of vibrato" axis.)
+- [ ] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel. **Lives in the persistent header next to VOL** (per RYM2612 reference); active in FM mode, greyed in SQ (PSG bypasses DAC) and D (D-mode panel has its own loud central knob).
+- [ ] **CH VOL (channel TL master)** knob (`channel_tl`, 0.0–1.0) — UI-only convenience that multiplies into all 4 operator TLs on the register-write path. Sits above the operator grid with connector lines fanning down to each op's TL knob, mirroring the RYM2612 reference. Not a YM2612 hardware register; the multiplier is applied per-op before the `attenuation = 127 - level` flip. Default 1.0 (no master attenuation).
 - [ ] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*.
 - [ ] **HARDWARE STRICT** authenticity toggle — Settings-level opt-in
   modelled on the RYM2612 manual's *For the Purists* page. When on:
@@ -174,7 +175,6 @@ active mode are silently ignored.
 | 87 | Ladder Effect toggle | 0/127 | FM, D | New v2 ([ADR-0024](adr/0024-hardware-filter-toggles.md)) |
 | 88 | FREQ CTRL MODE | 0=INT_MUL, 64=FLOAT_MUL, 127=AUTO_RETRIG | FM | New v2 ([02-fm-synthesis.md](02-fm-synthesis.md) § *FREQ Control Mode*) |
 | 89 | RETRIG RATE (TimerA) | 0–127 → 0–1023 (×8 + 7) | FM | New v2; only audible when CC 88 = AUTO_RETRIG |
-| 90 | MW → PMS depth | 0–127 → 0.0–1.0 | FM | New v2 |
 | 120 | All Sound Off | — | FM, SQ | Standard (immediate silence) |
 | 121 | Reset All Controllers | — | FM, SQ | Standard |
 | 123 | All Notes Off | — | FM, SQ | Standard (with release) |

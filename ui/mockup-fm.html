@@ -55,6 +55,14 @@
           <span class="toggle is-on" title="Ladder effect on"></span>
         </div>
 
+        <!-- DAC Prescaler — FM mode active. Persistent across modes per
+             RYM2612 reference; greys out in SQ (PSG bypasses DAC) and D
+             (D-mode panel has its own larger central prescaler knob). -->
+        <div class="hdr-prescaler">
+          <span class="t-label">DAC&nbsp;PRESC</span>
+          <span class="knob knob-sm"></span>
+        </div>
+
         <!-- Persistent L/R output meters (formerly a separate status bar) -->
         <div class="hdr-meters">
           <div class="hdr-meter-row">
@@ -103,15 +111,16 @@
 
         <!-- ============ TOP ROW =================================== -->
         <div class="fm-top">
-          <!-- LFO + global controls block -->
+          <!-- LFO + global controls block.
+               (PB / MW moved out to their own dedicated section in the
+                mid-row, left of the operator grid — see .fm-pbmw below.) -->
           <div class="block">
-            <span class="block-title">LFO · MW · GLOBAL</span>
+            <span class="block-title">LFO · GLOBAL</span>
             <div class="fm-lfo">
               <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">LFO</span></div>
               <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">RATE</span></div>
               <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">PMS</span></div>
               <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">AMS</span></div>
-              <div class="knob-cell"><span class="knob knob-xs"></span><span class="knob-cell-label">MW→PMS</span></div>
             </div>
             <div class="fm-globals">
               <span>POLY</span>
@@ -131,31 +140,6 @@
                   <div class="switch-pos">LEGATO</div>
                   <div class="switch-pos is-active">RETRIG</div>
                 </div>
-              </div>
-            </div>
-            <!-- Global PB and MW visualisations — single horizontal meters
-                 spanning the block width, matching the RYM2612 reference. -->
-            <div class="fm-pbmw">
-              <span class="pbmw-label">PB</span>
-              <div class="level-meter">
-                <span class="seg is-on"></span><span class="seg is-on"></span>
-                <span class="seg is-on"></span><span class="seg is-on"></span>
-                <span class="seg is-on"></span><span class="seg is-on"></span>
-                <span class="seg is-on"></span><span class="seg is-on"></span>
-                <span class="seg"></span><span class="seg"></span>
-                <span class="seg"></span><span class="seg"></span>
-                <span class="seg"></span><span class="seg"></span>
-                <span class="seg"></span><span class="seg"></span>
-              </div>
-              <span class="pbmw-label">MW</span>
-              <div class="level-meter">
-                <span class="seg is-on"></span><span class="seg is-on"></span>
-                <span class="seg is-on"></span><span class="seg is-on"></span>
-                <span class="seg is-on"></span>
-                <span class="seg"></span><span class="seg"></span><span class="seg"></span>
-                <span class="seg"></span><span class="seg"></span><span class="seg"></span>
-                <span class="seg"></span><span class="seg"></span><span class="seg"></span>
-                <span class="seg"></span><span class="seg"></span>
               </div>
             </div>
           </div>
@@ -215,21 +199,24 @@
             <button type="button" class="btn">AUTO RETRIG</button>
           </div>
 
-          <!-- RETRIG / OP1 FB / DAC PRESCALER stacked -->
+          <!-- RETRIG (stepper-readout) + OP1 FB stacked. DAC PRESCALER
+               moved to the header (next to VOL, per RYM2612 reference). -->
           <div class="block fm-misc">
             <div class="misc-cell">
-              <span class="misc-label">RETRIG</span>
-              <div class="lcd lcd-readout">
-                <span class="t-knob-readout">498</span>
+              <span class="misc-label">RETRIG RATE</span>
+              <div class="stepper-readout">
+                <div class="lcd">
+                  <span class="t-knob-readout">498</span>
+                </div>
+                <div class="stepper-buttons">
+                  <button type="button" class="stepper-btn" aria-label="Increment">▲</button>
+                  <button type="button" class="stepper-btn" aria-label="Decrement">▼</button>
+                </div>
               </div>
             </div>
             <div class="misc-cell">
               <span class="misc-label">OP1 FB</span>
-              <span class="knob knob-sm"></span>
-            </div>
-            <div class="misc-cell">
-              <span class="misc-label">DAC PRESCALER</span>
-              <span class="knob knob-sm"></span>
+              <span class="knob knob-sm op1fb-knob"></span>
             </div>
           </div>
 
@@ -279,13 +266,50 @@
           </div>
         </div>
 
-        <!-- ============ OPERATOR GRID + VEL MARGIN ================ -->
+        <!-- ============ MID ROW: PB/MW | OPERATOR GRID | VEL ====== -->
         <div class="fm-mid">
-          <!-- Operator grid block. Columns: TL | [N] | AM | AR DR SL SR RR | RS | SSG | MUL | FREQ | FIX | DT -->
+          <!-- Global PB / MW input wheels (read-only visualisation of
+               incoming MIDI). Vertical wheel widgets render as analog
+               hardware controls rather than LED meters. -->
+          <div class="block fm-pbmw">
+            <span class="block-title">GLOBAL IN</span>
+            <div class="wheels">
+              <div class="midi-wheel-cell">
+                <div class="midi-wheel midi-wheel-pb">
+                  <span class="wheel-thumb" style="bottom: 50%;"></span>
+                </div>
+                <span class="wheel-label">PB</span>
+              </div>
+              <div class="midi-wheel-cell">
+                <div class="midi-wheel midi-wheel-mw">
+                  <span class="wheel-thumb" style="bottom: 32%;"></span>
+                </div>
+                <span class="wheel-label">MW</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Operator grid block. Columns:
+               TL | [N] | AM | AR DR SL SR RR | RS | SSG | MUL | FREQ | FIX | DT
+               A 'CH VOL' master TL knob sits above the leftmost column,
+               with connector lines fanning down to each operator's TL. -->
           <div class="block fm-opgrid">
             <span class="block-title">OPERATOR GRID</span>
 
-            <!-- Column heads -->
+            <!-- Row 0 — CH VOL master TL knob above the TL column, plus
+                 connector overlay drawing the fan-out lines to ops 1..4
+                 (lines absolutely positioned over the grid). -->
+            <div class="ch-vol-cell">
+              <span class="knob"></span>
+              <span class="ch-vol-label">CH VOL</span>
+            </div>
+            <!-- Fill the remaining 13 row-0 cells so the grid stays
+                 aligned; they're empty. -->
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+
+            <!-- Column heads (row 1) -->
             <span class="col-head">TL</span>
             <span></span>
             <span class="col-head">AM</span>
@@ -364,12 +388,39 @@
             <span class="lcd lcd-mini"><span class="t-knob-readout">0.50</span></span>
             <span class="toggle toggle-sm is-on"></span>
             <span class="knob"></span>
+
+            <!-- Connector overlay — CH VOL fan-out lines that visualise
+                 the routing from the master TL knob down into each
+                 operator's TL slot. The spine runs in the .fm-opgrid's
+                 extra-wide LEFT padding so it never crosses the operator
+                 knobs it's describing; horizontal stubs reach from the
+                 spine across to each TL knob's left edge. -->
+            <svg class="connector-overlay" viewBox="0 0 1000 270" preserveAspectRatio="none">
+              <!-- Vertical spine — sits ~10 px from the left edge of the
+                   grid, inside the 18 px left padding. -->
+              <line x1="10" y1="50"  x2="10" y2="226" />
+              <!-- Horizontal stubs from the spine into each operator
+                   row's TL knob. y values approximate the per-row
+                   vertical centers given the 22 px top padding + ~5 px
+                   row gap + ~28 px TL-knob height. -->
+              <line x1="10" y1="90"  x2="24" y2="90"  />
+              <line x1="10" y1="133" x2="24" y2="133" />
+              <line x1="10" y1="180" x2="24" y2="180" />
+              <line x1="10" y1="226" x2="24" y2="226" />
+              <circle class="connector-junction" cx="10" cy="90"  r="2" />
+              <circle class="connector-junction" cx="10" cy="133" r="2" />
+              <circle class="connector-junction" cx="10" cy="180" r="2" />
+              <circle class="connector-junction" cx="10" cy="226" r="2" />
+            </svg>
           </div>
 
-          <!-- VEL right margin block — per-op velocity → TL depth -->
+          <!-- VEL right margin block — per-op velocity → TL depth.
+               A spacer at the top matches the CH VOL row height in the
+               operator grid so the column-head and operator rows align.
+               The block carries only the column header (no separate
+               block-title — the col-head is itself the only label). -->
           <div class="block fm-velblock">
-            <span class="block-title">VEL</span>
-
+            <span class="vel-spacer"></span>
             <span class="col-head">VEL</span>
             <span class="knob knob-xs"></span>
             <span class="knob knob-xs"></span>

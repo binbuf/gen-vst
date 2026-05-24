@@ -1,27 +1,30 @@
 /*
  * Throwaway CSS for mockup-fm.html.
  *
- * FM mode panel — top row (LFO/global | envelope | freq-ctrl | retrig |
- * OP1 FB | DAC prescaler | algorithm picker+diagram) above the dense 4×
- * 13 operator grid (TL knob on left, then [N] AM AR DR SL SR RR RS SSG
- * MUL FREQ FIX DT) + per-op VEL right margin.
+ * FM mode panel — top row (LFO/global | envelope | freq-ctrl | RETRIG
+ * stepper + OP1 FB | 8-button algo picker | larger topology diagram)
+ * above the dense 4×13 operator grid (TL knob as the leftmost anchor,
+ * then [N] AM AR DR SL SR RR RS SSG MUL FREQ FIX DT), with the global
+ * PB / MW wheel block to the LEFT of the grid and a single per-op VEL
+ * column on the right. A "CH VOL" master knob sits above the TL column
+ * with fan-out connector lines down to each operator's TL.
  *
  * Deleted in Task 04.
  */
 
 .fm-panel {
   display: grid;
-  grid-template-rows: 168px 1fr;
-  gap: 8px;
-  padding: 18px 12px 10px;
+  grid-template-rows: 154px 1fr;
+  gap: 6px;
+  padding: 16px 10px 8px;
 }
 
 /* ---- Top row ----------------------------------------------------- */
-/* Six columns: LFO/global | envelope | freq-ctrl | retrig+OP1FB+presc | algo picker | algo diagram */
+/* Six columns: LFO/global | envelope | freq-ctrl | retrig+OP1FB | algo picker | algo diagram */
 
 .fm-top {
   display: grid;
-  grid-template-columns: 260px 1fr 130px 90px 92px 142px;
+  grid-template-columns: 234px 1fr 130px 96px 86px 132px;
   gap: 6px;
 }
 
@@ -31,11 +34,11 @@
   border-radius: 3px;
 }
 
-/* LFO / MW block */
+/* LFO / global block */
 .fm-lfo {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px 4px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px 4px;
   padding-top: 16px;
 }
 .fm-lfo .knob-cell {
@@ -47,7 +50,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px 8px 8px;
+  padding: 16px 6px 6px;
 }
 .fm-env-lcd {
   width: 100%;
@@ -83,26 +86,46 @@
   align-items: stretch;
   justify-content: center;
   gap: 4px;
-  padding-top: 12px;
+  padding-top: 14px;
 }
 .fm-freqctrl .btn {
   text-align: center;
   padding: 5px 8px;
 }
 
-/* RETRIG / OP1 FB / DAC PRESCALER stacked column */
+/* RETRIG (with stepper) + OP1 FB stacked. OP1 FB has a short connector
+ * line extending below it (CSS pseudo-element) to visually anchor it
+ * to operator 1 in the grid below — the YM2612 FB field only affects
+ * operator 1's self-feedback. */
 .fm-misc {
   display: grid;
-  grid-template-rows: 1fr 1fr 1fr;
-  gap: 4px;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
   padding-top: 14px;
+  position: relative;
+}
+.fm-misc .op1fb-knob {
+  position: relative;
+}
+.fm-misc .op1fb-knob::after {
+  /* short vertical line + small junction dot beneath the OP1 FB knob,
+   * pointing down toward operator 1 in the grid below. */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1.2px;
+  height: 18px;
+  background: var(--lcd-text-on);
+  opacity: 0.5;
+  transform: translateX(-50%);
 }
 .fm-misc .misc-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   position: relative;
   padding-top: 12px;
 }
@@ -116,18 +139,21 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--label-text);
-  opacity: 0.78;
+  opacity: 0.8;
 }
-.fm-misc .lcd-readout {
-  min-width: 52px;
-  padding: 2px 6px;
+.fm-misc .stepper-readout {
+  /* Make the stepper compact enough to fit this narrow column. */
+  gap: 2px;
 }
-.fm-misc .lcd-readout .t-knob-readout {
-  font-size: 10px;
+.fm-misc .stepper-readout .lcd {
+  min-width: 44px;
+  padding: 2px 5px;
+}
+.fm-misc .stepper-readout .lcd .t-knob-readout {
+  font-size: 11px;
 }
 
-/* Algorithm picker block — 8 buttons + larger diagram in fm-mid right column.
- * The picker lives in fm-top so it sits next to the misc column. */
+/* Algorithm picker block — 8 buttons in a 2×4 grid. */
 .fm-algo-picker {
   display: flex;
   flex-direction: column;
@@ -147,16 +173,16 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--label-text);
-  opacity: 0.78;
+  opacity: 0.8;
 }
 
-/* Algorithm diagram tile — ~2× the prior 56px size. */
+/* Algorithm diagram tile — ~2× the picker buttons. */
 .fm-algo-diagram {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 4px;
+  gap: 3px;
   padding: 14px 4px 4px;
   position: relative;
 }
@@ -170,11 +196,11 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--label-text);
-  opacity: 0.78;
+  opacity: 0.8;
 }
 .fm-algo-diagram .algo-diagram {
-  width: 112px;
-  height: 112px;
+  width: 104px;
+  height: 104px;
   background: var(--lcd-bg);
   border: 1px solid var(--inset-edge-dark);
   border-radius: 2px;
@@ -200,31 +226,93 @@
   z-index: 1;
 }
 .fm-algo-diagram .algo-label {
-  font: 500 11px/1 "IBM Plex Mono", monospace;
+  font: 500 10px/1 "IBM Plex Mono", monospace;
   letter-spacing: 0.16em;
   color: var(--label-text);
 }
 
-/* ---- Operator grid + side blocks ---- */
+/* ---- Mid row: PB/MW | operator grid | VEL ----------------------- */
 
 .fm-mid {
   display: grid;
-  grid-template-columns: 1fr 56px;
+  grid-template-columns: 88px 1fr 52px;
   gap: 6px;
 }
 
-/* 14 columns: TL [N] AM AR DR SL SR RR RS SSG MUL FREQ FIX DT */
+/* PB / MW global inputs block — vertical wheel widgets in a dedicated
+ * section to the left of the operator grid. */
+.fm-pbmw {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 4px 8px;
+  position: relative;
+}
+.fm-pbmw .block-title { /* overrides the default block-title placement to span the block */ }
+.fm-pbmw .wheels {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Operator grid block — has 14 columns + a header row above the column
+ * labels for the CH VOL master TL knob (centered above the TL column).
+ * The left padding (18 px, vs. the right side's 6 px) hosts the CH VOL
+ * connector-overlay spine so the routing lines never overlap the
+ * operator knobs they're describing. */
 .fm-opgrid {
   display: grid;
   grid-template-columns: 32px 28px repeat(12, 1fr);
-  grid-auto-rows: 1fr;
+  grid-auto-rows: auto;
   align-items: center;
   justify-items: center;
-  row-gap: 6px;
+  row-gap: 5px;
   column-gap: 3px;
-  padding: 22px 8px 6px;
+  padding: 22px 6px 6px 18px;
   position: relative;
 }
+
+/* Slight per-cell offset so the column labels sit a touch right of
+ * centre and the operator-row controls sit a touch left of centre —
+ * gives the connector overlay extra horizontal breathing room without
+ * misaligning columns. The shift is subtle (~3 px each way). */
+.fm-opgrid .col-head {
+  transform: translateX(3px);
+}
+.fm-opgrid > .knob,
+.fm-opgrid > .toggle,
+.fm-opgrid > .combo,
+.fm-opgrid > .op-badge,
+.fm-opgrid > .lcd-mini {
+  transform: translateX(-3px);
+}
+
+/* CH VOL (master TL) row — sits at the top of the operator grid,
+ * above the column-head row. Spans the leftmost two cells so the knob
+ * is centered over the TL column with the connector lines fanning down
+ * to each operator-row TL. */
+.fm-opgrid .ch-vol-cell {
+  grid-column: 1 / span 1;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  position: relative;
+}
+.fm-opgrid .ch-vol-cell .ch-vol-label {
+  font: 500 7px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.85;
+}
+.fm-opgrid .ch-vol-cell .knob {
+  width: 26px;
+  height: 26px;
+}
+
 .fm-opgrid .col-head {
   font: 500 8px/1 "IBM Plex Mono", monospace;
   letter-spacing: 0.18em;
@@ -245,11 +333,10 @@
 .fm-opgrid .knob {
   width: 24px;
   height: 24px;
+  position: relative;
+  z-index: 1;
 }
 .fm-opgrid .knob.tl-knob {
-  /* The leftmost-column TL knob — slightly larger, darker body so it
-   * reads as the row's "anchor" control, matching the RYM2612 reference
-   * where TL is the visually loudest knob in each operator row. */
   width: 28px;
   height: 28px;
   background:
@@ -278,16 +365,14 @@
   cursor: pointer;
 }
 
-/* VEL right margin block — single per-op column (MW removed; TL moved
- * to the leftmost operator-grid column). */
+/* VEL right margin block — single per-op column. */
 .fm-velblock {
   display: grid;
   grid-template-columns: 1fr;
-  grid-auto-rows: 1fr;
+  grid-auto-rows: auto;
   align-items: center;
   justify-items: center;
-  row-gap: 6px;
-  column-gap: 4px;
+  row-gap: 5px;
   padding: 22px 4px 6px;
 }
 .fm-velblock .col-head {
@@ -295,6 +380,9 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--label-text-dim);
+}
+.fm-velblock .vel-spacer {
+  height: 26px;        /* matches the CH VOL row height in the opgrid */
 }
 
 /* Global controls under LFO block */
@@ -338,32 +426,4 @@
   font: 500 8px/1 "IBM Plex Mono", monospace;
   padding: 2px 4px;
   cursor: pointer;
-}
-
-/* Global PB / MW meters — prominent horizontal level bars under the
- * POLY/RANGE/LEGATO row. The reference panel shows these as full-width
- * meters with the PB/MW label at left. */
-.fm-pbmw {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  align-items: center;
-  gap: 3px 6px;
-  margin-top: 6px;
-  padding: 0 2px;
-}
-.fm-pbmw .pbmw-label {
-  font: 500 8px/1 "IBM Plex Mono", monospace;
-  letter-spacing: 0.20em;
-  color: var(--label-text);
-  text-align: left;
-  opacity: 0.85;
-}
-.fm-pbmw .level-meter {
-  display: flex;
-  width: 100%;
-}
-.fm-pbmw .level-meter .seg {
-  flex: 1;
-  height: 6px;
-  width: auto;
 }

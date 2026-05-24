@@ -23,15 +23,24 @@ top of the existing FM voice pool:
 - **FREQ CTRL MODE** — implement the three register-write paths
   (INT_MUL on the existing channel-0 model; FLOAT_MUL on Channel 3
   Special; AUTO_RETRIG on Channel 3 CSM + TimerA).
-- **Per-op VEL → TL** modulation depth (`vel[op]`) and the global
-  **MW → PMS** depth (`mw_to_pms`) — routed through the CC /
-  pitch-bend / aftertouch dispatch. (The earlier per-op `mw[op]` route
-  was removed during the post-mockup review — modwheel is a global-only
-  input now; per-op modulation goes via velocity.)
+- **Per-op VEL → TL** modulation depth (`vel[op]`) — routed through
+  the CC / pitch-bend / aftertouch dispatch. The earlier per-op
+  `mw[op]` route was removed during the post-mockup review — modwheel
+  is a global-only input now; per-op modulation goes via velocity.
+  Modwheel (CC 1) routes into the LFO `PMS` field at fixed full depth
+  (the earlier `mw_to_pms` depth scaler was also dropped).
 - **FM DAC PRESCALER** knob (`fm_dac_prescaler`, 0.0–1.0) wired
   through the FM voice-render path (see `02-fm-synthesis.md`
   § *DAC Prescaler (FM mode)*). Shares the `DspDecimator` code path
-  with the D-mode `prescaler` param.
+  with the D-mode `prescaler` param. **The control widget lives in the
+  header** (see `08-ui-views.md` view 1) — Task 08 mounts it there;
+  this task wires it to the FM-mode DSP. In SQ and D mode the same
+  header knob is greyed out (no effect on PSG; D mode uses its own
+  panel-resident prescaler).
+- **CH VOL (channel TL master)** knob (`channel_tl`, 0.0–1.0). Above
+  the operator grid with fan-out connector lines to each op's TL knob.
+  UI-only convenience — folded into the per-op TL on the register-write
+  path. Default 1.0.
 - **Note-mode LEGATO / RETRIG** — LEGATO skips the key-off/key-on pair
   and only updates the frequency registers on a re-keyed voice.
 - **UI level vs HW attenuation** — `tl[op]` / `sl[op]` apvts values are
@@ -57,18 +66,24 @@ LCD on the panel is bound and audible.
   apparatus is already gone (Task 02). All 16 voices play the one active
   patch.
 - **Layout** (`08-ui-views.md` view 2): the top of the panel carries the
-  LFO / RATE / PMS / AMS + MW→PMS knobs, the POLY/RANGE steppers, the
-  LEGATO/RETRIG toggle, the **global** PB / MW horizontal level meters,
-  the envelope-curve widget (with `AR`/`DR`/`SL`/`SR`/`RR` segment
-  labels + `KEY ON` / `KEY OFF` markers), the FREQ CTRL MODE pill, the
-  RETRIG RATE LCD (visible only when AUTO_RETRIG is selected), the OP1
-  FB knob, and the **DAC PRESCALER** knob (FM YM2612 prescaler).
-  The body is the 4-row operator grid; **`TL` is the leftmost column**
-  (knob, anchor), then `[N]` AM AR DR SL SR RR RS SSG-EG MUL FREQ FIX
-  DT. The right margin carries one column only — per-op `VEL` knobs.
-  The top-right area carries the **8-button `algo-grid` picker**
-  (visible all the time) plus a separate larger `algorithm-mini`
-  topology diagram tile next to it.
+  LFO / RATE / PMS / AMS knobs, the POLY/RANGE steppers, the
+  LEGATO/RETRIG toggle, the envelope-curve widget (with
+  `AR`/`DR`/`SL`/`SR`/`RR` segment labels + `KEY ON` / `KEY OFF`
+  markers), the FREQ CTRL MODE pill, the RETRIG RATE **stepper-readout**
+  (LCD + ▲/▼; visible only when AUTO_RETRIG is selected), and the OP1
+  FB knob (with a short connector line to op 1 below it). The DAC
+  PRESCALER knob now lives in the persistent **header** (view 1), not
+  in this panel.
+  The mid-row is split into three blocks: the **`GLOBAL IN`** block
+  (left) holds the global PB and MW `midi-wheel` widgets (vertical
+  hardware-style wheels, not LED meters); the **operator grid** holds
+  the 4-row main body with a **`CH VOL` master knob above the TL
+  column** (with fan-out connector lines down to each op's TL); and
+  the **right margin** carries one column only — per-op `VEL` knobs.
+  `TL` is the leftmost column in each operator row (knob, anchor),
+  then `[N]` AM AR DR SL SR RR RS SSG-EG MUL FREQ FIX DT. The top-right
+  area carries the **8-button `algo-grid` picker** (visible all the
+  time) plus a separate larger `algorithm-mini` topology diagram tile.
 - **FREQ CTRL MODE register paths** (`02-fm-synthesis.md`
   *FREQ Control Mode*):
 
@@ -109,9 +124,10 @@ LCD on the panel is bound and audible.
   match the RYM2612 reference. Recompute on velocity changes during
   voice retrigger; no need to rewrite on CC 1 changes (modwheel
   doesn't affect per-op TL anymore).
-- **Global MW → PMS** — modwheel CC scaled by `mw_to_pms` writes to the
-  `PMS` field in `0xB4` per channel. The base PMS apvts param is the
-  patch's value; MW adds on top, clamped to 7.
+- **Global MW → PMS** — modwheel CC writes to the `PMS` field in
+  `0xB4` per channel at fixed full depth (no `mw_to_pms` scaler in
+  v2). The base PMS apvts param is the patch's value; MW adds on top,
+  clamped to 7.
 - **POLY stepper** binds `poly_voices` (1..16). Voice allocator caps
   the active pool size each block. When HARDWARE STRICT is on
   (Task 08), this clamps to 6 — but that lives in Task 08; this task
@@ -136,8 +152,9 @@ LCD on the panel is bound and audible.
 - C++:
   - `Voice` and / or `VoiceAllocator` gain a per-voice
     `freq_ctrl_mode` snapshot + per-voice `mul_float[4]`, `fixed[4]`,
-    `freq_fixed_hz[4]`, `vel[4]`, `mw_to_pms`, and `fm_dac_prescaler`
-    snapshots. (No per-op `mw[4]` — modwheel is global-only in v2.)
+    `freq_fixed_hz[4]`, `vel[4]`, and `fm_dac_prescaler` snapshots.
+    (No per-op `mw[4]` — modwheel is global-only in v2. No `mw_to_pms`
+    scaler — modwheel routes to LFO PMS at fixed full depth.)
   - New `FmRegisterMap` helpers for: writing channel-3 special mode
     + per-op F-numbers; writing CSM mode + TimerA; resolving an
     operator's pitch (in Hz, then to F-number+BLK) under each mode.
@@ -148,8 +165,8 @@ LCD on the panel is bound and audible.
   - `Voice::updateModulation(midi cc, velocity)` recomputes TL
     register writes for any operator whose `vel[op]` is non-zero
     (velocity → TL depth). Called from the CC dispatch + key-on path.
-    Modwheel still influences the LFO PMS depth via the global
-    `mw_to_pms` route but is no longer per-op.
+    Modwheel still influences the LFO PMS depth at fixed full depth
+    but is no longer per-op and no longer has an adjustable scaler.
   - `DspDecimator` is invoked on the FM voice-sum bus when
     `fm_dac_prescaler > 0`, mirroring its D-mode call site. Same
     implementation, separate param value.
@@ -242,18 +259,19 @@ LCD on the panel is bound and audible.
    - On key-on, after writing operator params, call `recomputeTL` for
      every op whose `vel[op] != 0`.
    - CC dispatch: on CC 1 change (modwheel), the active voices each
-     recompute the PMS depth (via `mw_to_pms`) only; per-op TL no
+     recompute the PMS depth at full depth (no scaler); per-op TL no
      longer depends on MW.
 6. **MW → PMS dispatch**:
    - On CC 1 change, the active engine recomputes the effective PMS
-     per voice as `pms_register = clamp(pms_param + 7 × mw_to_pms ×
-     mwCC/127, 0, 7)` and writes `0xB4` for each active channel.
+     per voice as `pms_register = clamp(pms_param + 7 × mwCC/127, 0,
+     7)` and writes `0xB4` for each active channel. No `mw_to_pms`
+     scaler in v2.
 7. **CC table refresh** — bring `handleControlChange` to the v2 map
    from `07-feature-spec.md`. CC 84 / 85 are removed. CC 86 / 87
-   target `output_filter` / `ladder_effect`. CC 88 / 89 / 90 target
-   `freq_ctrl_mode`, `retrig_rate`, `mw_to_pms`. The per-op TL /
-   MUL / DT / AR / DR / SR / RR / SL / KS / AMON CCs already exist —
-   ensure they don't carry `_part<n>` lookups (Task 02 removed those).
+   target `output_filter` / `ladder_effect`. CC 88 / 89 target
+   `freq_ctrl_mode`, `retrig_rate`. The per-op TL / MUL / DT / AR /
+   DR / SR / RR / SL / KS / AMON CCs already exist — ensure they
+   don't carry `_part<n>` lookups (Task 02 removed those).
 8. **`fm-view.js`** — build the panel HTML following view 2 verbatim.
    Mount and bind every widget. Wire the op-badge active-row selection
    to the `envelope-curve` widget. Wire FREQ-CTRL-MODE-dependent

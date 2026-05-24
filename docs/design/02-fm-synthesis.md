@@ -456,6 +456,43 @@ The LFO is triangular waveform only (hardware fixed). PMS controls vibrato depth
 
 ---
 
+## Channel TL (UI master-level convenience)
+
+The FM panel exposes a `CH VOL` knob above the operator grid that acts
+as a **master multiplier across all four operator TL values for the
+active patch**. This is a v2 UI-level convenience — the YM2612 has no
+per-channel master TL register, so the multiplier is folded into the
+per-op TL on the apvts → register write path:
+
+```cpp
+// Stored in apvts as a level (0.0 = silence, 1.0 = full).
+const float channel_tl  = apvts.getRawParameterValue("channel_tl")->load();
+for (int op = 0; op < 4; ++op) {
+    const float op_level     = static_cast<float>(tl_level[op]) / 127.0f;
+    const float scaled_level = op_level * channel_tl;
+    const int tl_register    = std::clamp(
+        127 - static_cast<int>(std::round(scaled_level * 127.0f)),
+        0, 127);
+    chip.write(0, 0x40 + op_reg_offset(op));
+    chip.write(1, static_cast<uint8_t>(tl_register));
+}
+```
+
+The apvts param `channel_tl` defaults to **1.0** (no attenuation —
+patches load with their per-op TLs heard verbatim). Sweeping it down
+pulls all four operators' levels together; the per-op `TL` knobs
+retain their relative balance.
+
+This mirrors the RYM2612 reference panel's master TL knob that fans
+out via routing lines to each operator row (the
+[`08-ui-views.md`](08-ui-views.md) view 2 connector overlay
+visualises that relationship). It is **not** part of any TFI / VGI /
+DMP / Y12 / OPM patch format on disk; legacy formats default it to
+1.0 on load, and the v2-native bank format (Task 09's `.gnpat`)
+stores it explicitly.
+
+---
+
 ## DAC Prescaler (FM mode)
 
 The YM2612's nine-bit DAC is fed by an internal **clock prescaler** that

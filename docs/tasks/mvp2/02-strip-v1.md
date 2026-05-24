@@ -89,7 +89,7 @@ A single source of truth, no `_part<n>` suffix:
   (choice, default INT_MUL), `retrig_rate` (int 0..1023, default 500),
   `mul_float[0..3]` (float 0.5..15.99), `fixed[0..3]` (bool),
   `freq_fixed_hz[0..3]` (float 20..20000), `mw[0..3]` (float 0..1),
-  `vel[0..3]` (float 0..1), `mw_to_pms` (float 0..1, default 1.0),
+  `vel[0..3]` (float 0..1),
   `note_mode` (choice 0=RETRIG/1=LEGATO, default RETRIG),
   `poly_voices` (int 1..16, default 16), `pitch_bend_range`
   (int 1..12, default 2), `unison_detune_cents` (float 0..50,

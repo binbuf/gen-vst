@@ -101,6 +101,19 @@ VOL knob, and a gear icon for settings.
   bypassed); the labelling mirrors the RYM2612 and PCM2612 panels. The
   Ladder toggle is a single on/off LED rocker. **Ladder is greyed out
   in SQ mode** (it has no audible effect there).
+- **`DAC PRESCALER` knob** — a `knob-sm` paired with a small `DAC PRESC`
+  caption. Bound to apvts param `fm_dac_prescaler` (see
+  [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM
+  mode)*). The control is **persistent** in the header — mirroring the
+  RYM2612 reference, which places `DAC PRESCALER` next to `VOL` rather
+  than inside the operator grid — but its semantics are mode-specific:
+  - **FM mode** — active; sweeps the YM2612 DAC clock divider, colouring
+    the FM voice rendering with characteristic aliasing / quantization.
+  - **SQ mode** — greyed (`.is-disabled`); the SN76489 PSG bypasses the
+    YM2612 DAC on real hardware so the prescaler has no audible effect.
+  - **D mode** — greyed; the D-mode panel exposes its own larger central
+    `DAC PRESCALER` knob (bound to a separate apvts param `prescaler`
+    for the audio-FX use case — see view 4).
 - **L / R output meters** (`level-meter` widget, `level-meter-mini`
   variant) — two thin horizontal level bars stacked vertically (L on
   top, R below) inside a single recessed cell. Read post-master-gain
@@ -130,34 +143,42 @@ knob, an envelope-curve overlay with parameter-segment labels, an
 mode selector, the YM2612 DAC prescaler, and operator-1 feedback.
 
 ```
-┌─ FM MODE ─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ┌ LFO·MW·GLOBAL ─┐ ┌ ENVELOPE · OP 1 ─────────┐ ┌ FREQ CTRL ─┐ ┌ MISC ──┐ ┌ ALGORITHM ┐ ┌ TOPOLOGY ─┐ │
-│ │ LFO RATE PMS …  │ │      AR  DR              │ │ [INT MUL]  │ │ RETRIG │ │ [1] [2]   │ │ ┌────────┐│ │
-│ │ [○] [○]  [○]    │ │   ╱╲────╲___SL_____SR    │ │ [FLOAT MUL]│ │  498   │ │ [3] [4✓]  │ │ │ 1 ─┐    ││ │
-│ │ POLY 11 RANGE 2 │ │  ║              ╲___     │ │ [AUTO RTR] │ │ OP1 FB │ │ [5] [6]   │ │ │ 2 →[4]→ ││ │
-│ │ [LEGATO·RETRIG] │ │  ║                   ╲RR │ │            │ │  [○]   │ │ [7] [8]   │ │ │ 3 ─┘    ││ │
-│ │ PB ▮▮▮          │ │  ║                       │ │            │ │ DAC    │ │           │ │ └────────┘│ │
-│ │ MW ▮▮           │ │ KEY ON           KEY OFF │ │            │ │ PRESC  │ │           │ │   ALG 4   │ │
-│ │                 │ └──────────────────────────┘ │            │ │  [○]   │ │           │ │           │ │
-│ └─────────────────┘                              └────────────┘ └────────┘ └───────────┘ └───────────┘ │
-│                                                                                                         │
-│ ┌─ OPERATOR GRID ─────────────────────────────────────────────────────────────────────┐ ┌ VEL ────┐    │
-│ │  TL    AM  AR  DR  SL  SR  RR  RS  SSG-EG  MUL  FREQ  FIX  DT                       │ │         │    │
-│ │ [●][1] ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [3.00] ▢   ○                          │ │   ○     │    │
-│ │ [●][2] ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [1.00] ▢   ○                          │ │   ○     │    │
-│ │ [●][3] ▢   ○   ○   ○   ○   ○   ○   [REP]   ○  [0.50] ▢   ○                          │ │   ○     │    │
-│ │ [●][4] ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○  [0.50] ▢   ○                          │ │   ○     │    │
-│ └─────────────────────────────────────────────────────────────────────────────────────┘ └─────────┘    │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ FM MODE ───────────────────────────────────────────────────────────────────────────────────────────┐
+│ ┌ LFO · GLOBAL ──┐ ┌ ENVELOPE · OP 1 ─────────┐ ┌ FREQ CTRL ─┐ ┌ MISC ─┐ ┌ ALGORITHM ┐ ┌ TOPOLOGY ─┐│
+│ │ LFO RATE PMS …  │ │      AR  DR              │ │ [INT MUL]  │ │RETRIG │ │ [1] [2]   │ │ ┌────────┐│
+│ │ [○] [○]  [○]    │ │   ╱╲────╲___SL_____SR    │ │ [FLOAT MUL]│ │ 498 ▲▼│ │ [3] [4✓]  │ │ │ 1 ─┐   ││
+│ │ POLY 11 RANGE 2 │ │  ║              ╲___     │ │ [AUTO RTR] │ │OP1 FB │ │ [5] [6]   │ │ │ 2 →[4]→││
+│ │ [LEGATO·RETRIG] │ │  ║                   ╲RR │ │            │ │  [○]  │ │ [7] [8]   │ │ │ 3 ─┘   ││
+│ │                 │ │ KEY ON           KEY OFF │ │            │ │   │   │ │           │ │ └────────┘│
+│ └─────────────────┘ └──────────────────────────┘ └────────────┘ └───┼───┘ └───────────┘ │   ALG 4   ││
+│                                                                     │                   └───────────┘│
+│ ┌ GLOBAL IN ─┐ ┌─ OPERATOR GRID ─────────────────────────────────────│──────────────────┐ ┌ VEL ───┐ │
+│ │            │ │  ┌─CH VOL─┐                                         │                  │ │        │ │
+│ │  ▌PB▐      │ │  │ [● ]   │  AM  AR  DR  SL  SR  RR  RS  SSG  MUL FREQ FIX  DT          │ │        │ │
+│ │   ─        │ │  │        │                                         │                  │ │        │ │
+│ │            │ │  │   TL   │  ←  fan-out connectors fan to ops 1..4  │                  │ │        │ │
+│ │  ▌MW▐      │ │  │ [●][1] ▢   ○   ○   ○   ○   ○   ○   [OFF]  ○  [3.00] ▢   ○           │ │  ○     │ │
+│ │            │ │  │ [●][2] ▢   ○   ○   ○   ○   ○   ○   [OFF]  ○  [1.00] ▢   ○           │ │  ○     │ │
+│ │            │ │  │ [●][3] ▢   ○   ○   ○   ○   ○   ○   [REP]  ○  [0.50] ▢   ○           │ │  ○     │ │
+│ │            │ │  │ [●][4] ▢   ○   ○   ○   ○   ○   ○   [OFF]  ○  [0.50] ▢   ○           │ │  ○     │ │
+│ └────────────┘ └──┴────────┴────────────────────────────────────────────────────────────┘ └────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The thin vertical line drawn from `OP1 FB`'s knob downward into the
+operator grid is a **routing connector** (decoration only). It mirrors
+the RYM2612 reference's visual cue that the YM2612 `FB` field affects
+operator 1's self-feedback specifically — no other operator carries an
+`FB` value. The connector is purely visual; no apvts param.
 
 **Top-left block — LFO & global controls**
 
-- `LFO`, `RATE`, `PMS`, `AMS` — four small `knob`s.
-- `MW→PMS` — `knob`. Modwheel (CC 1) → PMS depth scaling. RYM2612 manual
-  describes this as the "MW knob which allows to modulate the LFO's PMS
-  setting" for a performance-controlled vibrato. Default 1.0 (full
-  effect). Bound to apvts param `mw_to_pms`.
+- `LFO`, `RATE`, `PMS`, `AMS` — four small `knob`s. Modwheel (CC 1) is
+  routed to the `PMS` field at full depth (no adjustable depth knob);
+  the v2 first-pass had an `MW→PMS` knob bound to `mw_to_pms`, but it
+  was removed during the post-mockup review — modwheel either affects
+  PMS or it doesn't, and the per-patch `PMS` knob already covers the
+  "amount of vibrato" axis.
 - `POLY` — numeric stepper with up/down buttons. Range 1–16, default 16.
   Sets the active polyphony for the voice pool. Matches the RYM2612
   panel's `POLY N` stepper layout. Bound to apvts param `poly_voices`.
@@ -172,15 +193,26 @@ mode selector, the YM2612 DAC prescaler, and operator-1 feedback.
 - `RANGE` — numeric stepper for **pitch-bend range in semitones**.
   Range ±1..±12, default ±2. Matches the RYM2612 `RANGE N` stepper.
   Bound to apvts param `pitch_bend_range`.
-- `PB`, `MW` — **global** pitch-bend + mod-wheel `level-meter`s (one
-  meter per row), read-only visualisations of incoming MIDI. These
-  are *not* per-operator; the RYM2612 reference shows MW as a single
-  modwheel level for the whole instrument, and Gen VST follows. The
-  per-operator MW modulation that an earlier draft routed through a
-  `mw[op]` column has been folded into the per-op `vel[op]` row only —
-  modwheel still influences operator TL globally via the LFO PMS / AMS
-  paths (see `mw_to_pms` above) but doesn't carry an independent per-op
-  depth knob.
+**Global inputs block (`GLOBAL IN`, mid-row, left of the operator grid)**
+
+- `PB`, `MW` — **global** pitch-bend + mod-wheel visualisations, read-only.
+  Implemented as `midi-wheel` widgets (vertical wheel/slider shape with
+  a thumb showing the current MIDI value) — they read as hardware
+  pitch-bend / mod-wheel controls rather than LED meters, matching the
+  RYM2612 reference's bottom-left PB/MW block. The PB wheel uses the
+  `midi-wheel-pb` variant (center-detent, thin centerline drawn at the
+  zero position); the MW wheel uses `midi-wheel-mw` (full-range, thumb
+  at 0 = bottom). The dedicated `GLOBAL IN` block lives in the mid-row
+  to the **left** of the operator grid (not buried in the LFO/global
+  block any more).
+
+These are *not* per-operator; the RYM2612 reference shows MW as a single
+modwheel level for the whole instrument, and Gen VST follows. The
+per-operator MW modulation that an earlier draft routed through a
+`mw[op]` column has been folded into the per-op `vel[op]` row only —
+modwheel still influences operator amplitude globally via the LFO
+`PMS` field (at fixed full depth — the v2 first-pass `mw_to_pms` knob
+was removed), but doesn't carry an independent per-op depth knob.
 
 The v2-only MONO and UNISON sub-modes that an earlier draft of this
 view exposed are not present on the RYM2612 reference and have been
@@ -219,13 +251,17 @@ inside each:
   table below, and
   [`02-fm-synthesis.md`](02-fm-synthesis.md) § *FREQ Control Mode* for
   the register semantics.
-- **Misc** — three small cells stacked: `RETRIG` (`lcd-readout` +
-  stepper bound to `retrig_rate`; visible only when
-  `freq_ctrl_mode == AUTO_RETRIG`, greyed out otherwise; the RYM2612
-  reference shows `498`), `OP1 FB` (`knob` bound to `op1_fb`, the
-  YM2612 `FB` field), and `DAC PRESCALER` (`knob` bound to
-  `fm_dac_prescaler`; see § *DAC Prescaler (FM mode)* in
-  [`02-fm-synthesis.md`](02-fm-synthesis.md)).
+- **Misc** — two small cells stacked: `RETRIG RATE` (a
+  `stepper-readout` — LCD value flanked by ▲/▼ buttons — bound to
+  `retrig_rate`; visible only when `freq_ctrl_mode == AUTO_RETRIG`,
+  greyed out otherwise; the RYM2612 reference shows `498`), and
+  `OP1 FB` (`knob` bound to `op1_fb`, the YM2612 `FB` field). The OP1
+  FB knob carries a short vertical connector line drawn beneath it
+  (CSS pseudo-element, decoration only) pointing toward operator 1 in
+  the grid below — the `FB` field affects op 1's self-feedback only,
+  and the connector visualises that binding. The `DAC PRESCALER` knob
+  that an earlier draft placed in this Misc column has moved to the
+  **header** (see view 1) per the RYM2612 reference.
 - **`ALGORITHM`** — an `algo-grid` of 8 visible numbered buttons (2
   columns × 4 rows), each one selecting an algorithm index 1..8. The
   selected algorithm carries `.is-active` (blue fill + outer glow). All
@@ -240,6 +276,20 @@ inside each:
 
 The bulk of the panel. Four rows, one per operator (S1..S4 — see note
 about hardware swap order in [`02-fm-synthesis.md`](02-fm-synthesis.md)).
+
+**Master `CH VOL` knob (channel TL) above the operator grid.** A small
+knob sits centered above the leftmost operator-grid column (the TL
+column), with thin connector lines fanning down into each of the four
+operator rows' TL knobs. The control multiplies into each per-op TL
+on the register-write path — `effective_tl_level[op] = tl[op] ×
+channel_tl` — and lets the user ride the whole channel's level without
+touching all 4 per-op knobs. This is a **UI-only convenience** (the
+YM2612 has no per-channel master TL register); the apvts param
+`channel_tl` (0.0–1.0, default 1.0) stores it. The fan-out connector
+lines are decoration drawn behind the knobs (the `.connector-overlay`
+recipe in `09-visual-spec.md`); they reinforce the "this knob touches
+every operator's TL" mental model without competing visually with the
+actual controls.
 
 Columns (left → right):
 
@@ -262,8 +312,8 @@ All controls in the grid are `apvts`-bound through the standard relays.
 RYM2612 reference, where the per-op output level is the visually loudest
 knob in each row); `VEL` is the only per-op modulation column in the
 right margin. The earlier `MW (right margin)` per-op column is removed
-— modwheel is a global instrument-level input only (PB / MW meters
-above, plus the `mw_to_pms` knob in the LFO block).
+— modwheel is a global instrument-level input only (PB / MW meters in
+the `GLOBAL IN` block).
 
 ---
 

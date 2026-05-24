@@ -69,10 +69,15 @@ struct Patch {
     // post-mockup review — modwheel is global-only in v2; per-op
     // modulation goes via velocity only.
     float    vel[4];         // 0.0–1.0: per-op velocity → TL depth; default 0.0
-    // Global modulation + hardware emulation depth
-    float    mw_to_pms;        // 0.0–1.0: modwheel → PMS depth; default 1.0
+    // Hardware emulation + UI master controls
+    // (The v2 first-pass `mw_to_pms` modwheel-to-PMS depth scaler was
+    //  removed during the post-mockup review — modwheel routes to the
+    //  LFO PMS field at full depth, no adjustable scaler.)
     float    fm_dac_prescaler; // 0.0–1.0: YM2612 DAC prescaler depth; default 0.0
                                //   (see 02-fm-synthesis.md § DAC Prescaler (FM mode))
+    float    channel_tl;       // 0.0–1.0: UI-only master multiplier across
+                               //   all 4 operator TLs; default 1.0
+                               //   (see 02-fm-synthesis.md § Channel TL)
 
     std::string name;     // display name (from filename or DMP internal)
 };
@@ -90,8 +95,8 @@ defaults that preserve legacy-faithful playback:
 | `fixed[op]` | `0` (off) |
 | `freq_fixed_hz[op]` | `440.0` |
 | `vel[op]` | `0.0` (no velocity→TL effect; ADR-0023 / Settings toggle controls a global enable) |
-| `mw_to_pms` | `1.0` (modwheel scales PMS at full depth) |
 | `fm_dac_prescaler` | `0.0` (no DAC prescaling; clean rendering) |
+| `channel_tl` | `1.0` (no master attenuation; per-op TLs heard verbatim) |
 
 These defaults make a legacy patch sound identical to the v1 behaviour
 once loaded.

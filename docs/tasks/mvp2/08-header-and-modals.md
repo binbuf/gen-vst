@@ -67,6 +67,11 @@ attributions and the version string.
     `level-meter-mini` variant (two thin horizontal rows, L on top, R
     below; ~24 px tall together). Subscribed to `peakL` / `peakR`
     telemetry. Replaces the v2 first-pass bottom status bar.
+  - **DAC PRESCALER** knob — a `knob-sm` bound to `fm_dac_prescaler`.
+    Sits next to VOL per the RYM2612 reference. Active in FM mode;
+    greyed (`.is-disabled`) in SQ (PSG bypasses DAC) and D (D-mode
+    panel has its own central prescaler bound to a separate `prescaler`
+    param).
   - VOL knob bound to `master_volume` (small `knob`).
   - ⚙ gear icon opens Settings (view 6).
 - **No bottom status bar.** The v2 first-pass status bar (view 5 in an

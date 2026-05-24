@@ -34,7 +34,7 @@ master clock) is out of scope.
 GenVstAudioProcessor
 ├── juce::AudioProcessorValueTreeState (apvts)
 │   ├── mode_select  (FM | SQ | D)
-│   ├── FM params  (single patch — ~50 params + fm_dac_prescaler)
+│   ├── FM params  (single patch — ~50 params + fm_dac_prescaler + channel_tl)
 │   ├── SQ params  (per-channel envelope + tuning)
 │   ├── D params   (prescaler, mono, dry_wet)
 │   └── globals    (output_filter, ladder_effect, master_volume)
@@ -172,12 +172,15 @@ The v2 `apvts` holds:
   (TL/MUL/DT/AR/DR/SR/RR/SL/KS/SSG-EG/AMON), per-channel (ALG/FB/AMS/PMS),
   global LFO; plus the v2 RYM2612-modelled additions
   (`freq_ctrl_mode`, `retrig_rate`, per-op `mul_float` / `fixed` /
-  `freq_fixed_hz`, per-op `vel` TL-modulation depth, global `mw_to_pms`,
-  and the FM DAC prescaler `fm_dac_prescaler` — see
-  [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*).
-  The earlier per-op `mw[op]` TL-modulation column was removed during
-  the post-mockup review (modwheel is now a global-only input via
-  `mw_to_pms`, matching the RYM2612 reference). See
+  `freq_fixed_hz`, per-op `vel` TL-modulation depth, the FM DAC prescaler
+  `fm_dac_prescaler`, and the UI-only channel-TL master `channel_tl` —
+  see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM
+  mode)* and § *Channel TL (UI master-level convenience)*). Two earlier
+  draft params were removed during the post-mockup review: the per-op
+  `mw[op]` TL-modulation column (modwheel is now a global-only input,
+  matching the RYM2612 reference) and the global `mw_to_pms` depth knob
+  (modwheel routes to the LFO `PMS` field at full depth, no adjustable
+  scaler). See
   [`04-patch-system.md`](04-patch-system.md) § *FM Patch Data Model* for
   the full field list. **No `_part<n>` suffix** — v1's multi-part naming
   is retired.

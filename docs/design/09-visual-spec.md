@@ -537,6 +537,115 @@ header. The 16 px LED is large enough to read across the panel; the
 text label avoids the "what does the red dot mean?" ambiguity of an
 unlabelled indicator. Mirrors the RYM2612 reference.
 
+### MIDI wheel (`midi-wheel`) — PB / MW visualisation
+
+The FM panel's `GLOBAL IN` block surfaces incoming pitch-bend and
+modwheel MIDI values as **read-only vertical wheel widgets** rather
+than LED meters, matching the RYM2612 reference's bottom-left PB / MW
+block (which reads as hardware pitch-bend / mod-wheel controls).
+
+```css
+.midi-wheel {
+  position: relative;
+  width: 22px;
+  height: 80px;
+  background:
+    linear-gradient(180deg, #1a1d22 0%, #2a2d32 50%, #1a1d22 100%);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 3px;
+  box-shadow:
+    inset 2px 2px 4px rgba(0,0,0,0.7),
+    inset -1px -1px 0 var(--inset-edge-light);
+  overflow: hidden;
+}
+.midi-wheel .wheel-thumb {
+  position: absolute;
+  left: 1px; right: 1px;
+  height: 6px;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.25) 0%, rgba(120,130,145,0.95) 35%,
+    rgba(60,70,85,0.95) 65%, rgba(0,0,0,0.4) 100%);
+  /* `bottom: N%` is set inline by the binding layer based on the
+   * current MIDI value (50% = center for PB; 0% = bottom for MW). */
+}
+.midi-wheel.midi-wheel-pb::before {
+  /* PB variant draws a faint centerline so the user reads
+   * "centered = 0 bend." */
+  content: "";
+  position: absolute; left: 2px; right: 2px; top: 50%;
+  height: 1px;
+  background: rgba(78,160,255,0.4);
+}
+```
+
+The MW variant has no centerline (modwheel rests at 0 = bottom, not
+center). Both widgets share the recess + thumb chrome.
+
+### Stepper readout (`stepper-readout`) — LCD + ▲/▼ buttons
+
+A horizontal cluster: LCD readout flanked by a small vertical pair of
+▲/▼ buttons. Used for the `RETRIG RATE` value on the FM panel (where
+the value is an integer 0–1023 better edited by stepping than by
+dragging a continuous knob) and for the `POLY` / `RANGE` global
+steppers in the LFO block.
+
+```css
+.stepper-readout {
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.stepper-readout .lcd { min-width: 52px; padding: 3px 6px; }
+.stepper-readout .stepper-buttons {
+  display: inline-flex; flex-direction: column; gap: 1px;
+}
+.stepper-readout .stepper-btn {
+  width: 16px; height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  border: 1px solid var(--knob-rim);
+  color: var(--btn-text);
+  font: 500 8px/1 'IBM Plex Mono', monospace;
+}
+```
+
+### Connector overlay (`connector-overlay`) — routing decoration
+
+The FM panel uses subtle blue connector lines to communicate fixed
+routing relationships between controls — `OP1 FB` is wired to operator
+1 only (a short vertical line beneath the knob); the `CH VOL` master
+TL knob fans out to all 4 operator TL knobs (a vertical spine through
+the TL column plus short horizontal stubs into each operator row). The
+overlay is decoration only — no apvts param, no click handling — but
+it earns its keep by making the hardware-emulation relationships read
+at a glance, as on the RYM2612 reference panel.
+
+```css
+.connector-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  width: 100%; height: 100%;
+}
+.connector-overlay line,
+.connector-overlay path {
+  stroke: var(--lcd-text-on);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;  /* lines don't fatten with viewBox */
+  fill: none;
+  opacity: 0.5;
+}
+.connector-overlay .connector-junction {
+  fill: var(--lcd-text-on);
+  opacity: 0.7;
+}
+```
+
+Inside the FM panel, the SVG uses a pixel-coordinate viewBox sized to
+match the parent block's natural width × height (e.g.
+`viewBox="0 0 1000 270"`), so line endpoints can be specified at the
+column / row centers that the operator grid produces. The `OP1 FB`
+short connector is implemented as a CSS `::after` pseudo-element on
+the OP1 FB knob (no SVG needed — single short vertical line).
+
 ### Level meter — `level-meter-mini` modifier (header)
 
 The persistent header carries stacked L/R output meters using a thinner

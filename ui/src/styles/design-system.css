@@ -701,3 +701,155 @@ canvas {
     inset 2px 2px 4px rgba(0, 0, 0, 0.45),
     inset -1px -1px 0 rgba(255, 255, 255, 0.08);
 }
+
+/* ============================================================== */
+/* CSS recipes — MIDI wheel (PB / MW visualisation)                */
+/* ============================================================== */
+/* A read-only vertical wheel widget — taller-than-it-is-wide, with a
+ * dark recessed track and a lighter horizontal "thumb" band that
+ * shows the current MIDI value. Two variants:
+ *   - .midi-wheel.midi-wheel-pb  — center-detent (pitch bend, springs
+ *                                  back to 0). Centerline drawn across
+ *                                  the middle of the track.
+ *   - .midi-wheel.midi-wheel-mw  — full-range (mod wheel; held
+ *                                  position, 0 at bottom).
+ * The widget reads as a hardware pitch-bend / mod wheel rather than an
+ * LED meter; matches the RYM2612 reference's PB/MW visualisation. */
+
+.midi-wheel {
+  position: relative;
+  width: 22px;
+  height: 80px;
+  background:
+    linear-gradient(180deg, #1a1d22 0%, #2a2d32 50%, #1a1d22 100%);
+  border: 1px solid var(--inset-edge-dark);
+  border-radius: 3px;
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.7),
+    inset -1px -1px 0 var(--inset-edge-light),
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+/* The thumb — a 4 px tall light band positioned to indicate the value.
+ * The mockup uses inline `style="bottom: 40%"` (or 50% for PB center).
+ * The real widget (Task 04) updates `bottom` from the bound MIDI value. */
+.midi-wheel .wheel-thumb {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  height: 6px;
+  background:
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.25) 0%,
+      rgba(120, 130, 145, 0.95) 35%,
+      rgba(60, 70, 85, 0.95) 65%,
+      rgba(0, 0, 0, 0.4) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+}
+/* PB variant draws a thin centerline so the user reads "centered = 0". */
+.midi-wheel.midi-wheel-pb::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 50%;
+  height: 1px;
+  background: rgba(78, 160, 255, 0.4);
+  pointer-events: none;
+}
+
+/* Label cluster that pairs with a midi-wheel — column with the wheel
+ * on top and a short PB/MW caption below it. */
+.midi-wheel-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.midi-wheel-cell .wheel-label {
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--label-text);
+  opacity: 0.85;
+}
+
+/* ============================================================== */
+/* CSS recipes — stepper readout (LCD + ▲/▼ buttons)               */
+/* ============================================================== */
+/* An LCD readout flanked by a vertical pair of ▲/▼ buttons — used for
+ * the RETRIG RATE control on the FM panel, and (more compactly) the
+ * POLY / RANGE steppers in the LFO/global block. */
+
+.stepper-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.stepper-readout .lcd {
+  padding: 3px 6px;
+  min-width: 52px;
+  text-align: center;
+}
+.stepper-readout .stepper-buttons {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.stepper-readout .stepper-btn {
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--knob-rim);
+  background: linear-gradient(180deg, var(--btn-bg-top), var(--btn-bg-bottom));
+  color: var(--btn-text);
+  font: 500 8px/1 "IBM Plex Mono", monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    1px 1px 1px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 0;
+}
+.stepper-readout .stepper-btn:active {
+  transform: scale(0.95);
+  box-shadow:
+    inset 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================== */
+/* CSS recipes — connector line (visual routing decoration)        */
+/* ============================================================== */
+/* Subtle routing lines drawn behind controls to visualise signal
+ * flow — e.g. OP1 FB → operator 1's row, or CH VOL → all 4 operator
+ * TL knobs. Implemented as absolutely-positioned SVG overlays inside
+ * the parent grid (no clipping). The actual <line> / <path> elements
+ * use --lcd-text-on with low opacity so the lines read as engraved
+ * hardware traces rather than active signals. */
+
+.connector-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+}
+.connector-overlay line,
+.connector-overlay path {
+  stroke: var(--lcd-text-on);
+  stroke-width: 1.2;
+  /* vector-effect on the elements themselves keeps the stroke width
+   * stable regardless of how the SVG is scaled by preserveAspectRatio. */
+  vector-effect: non-scaling-stroke;
+  fill: none;
+  opacity: 0.5;
+}
+.connector-overlay .connector-junction {
+  fill: var(--lcd-text-on);
+  stroke: none;
+  opacity: 0.7;
+}

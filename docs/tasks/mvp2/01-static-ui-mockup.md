@@ -72,7 +72,7 @@ keep the mockup honest by repeating markup):
    patch name. Operator grid (4 rows × 14 columns: `TL` knob as
    leftmost-column anchor, then `[N]` AM AR DR SL SR RR RS SSG-EG MUL
    FREQ FIX DT, then a single per-op `VEL` knob in the right-margin
-   block). LFO/MW/global block (LFO/RATE/PMS/AMS/MW→PMS knobs + POLY/
+   block). LFO/global block (LFO/RATE/PMS/AMS knobs + POLY/
    RANGE steppers + LEGATO/RETRIG switch + **global** PB and MW
    horizontal `level-meter`s). Envelope-curve LCD with segment labels
    (`AR / DR / SL / SR / RR`) and `KEY ON` / `KEY OFF` dashed-line
@@ -202,9 +202,22 @@ Plus the Vite multi-page entries in `ui/vite.config.js`.
    - [ ] **8-button algorithm picker** (visible all the time, 2 × 4
          grid). No popover. A separate ~112 px topology diagram tile
          sits next to it.
-   - [ ] **DAC PRESCALER knob is present on the FM panel** (in the misc
-         column, below OP1 FB). It is in addition to the D-mode
-         prescaler, not a duplicate.
+   - [ ] **DAC PRESCALER knob lives in the persistent header** next to
+         VOL (per the RYM2612 reference). Active in FM mode, greyed in
+         SQ + D. The D-mode panel still has its own loud central
+         `DAC PRESCALER` knob (separate apvts param `prescaler` —
+         distinct from the header's `fm_dac_prescaler`).
+   - [ ] **`CH VOL` master TL knob** sits above the operator-grid TL
+         column with fan-out connector lines drawn down into each of
+         the 4 operator rows' TL knobs (decorative SVG overlay).
+   - [ ] **PB and MW are vertical `midi-wheel` widgets** (analog-style
+         hardware wheels with thumb position indicators) in a dedicated
+         `GLOBAL IN` block to the left of the operator grid — not LED
+         meters, not buried in the LFO block.
+   - [ ] **RETRIG RATE has a `stepper-readout`** (LCD + ▲/▼ buttons),
+         not a bare LCD.
+   - [ ] **OP1 FB carries a short vertical connector line** beneath the
+         knob, visually anchoring it to operator 1 in the grid below.
    - [ ] **Envelope curve carries `AR`/`DR`/`SL`/`SR`/`RR` segment
          labels** and dashed `KEY ON` / `KEY OFF` vertical markers in
          the LCD.
