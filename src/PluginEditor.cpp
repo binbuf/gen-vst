@@ -1267,44 +1267,50 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 rows.add (juce::var (obj));
             };
 
-            // FM slots — first 5 parts; part 5 stays out of the rack pool.
-            for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
-            {
-                const PartManager::SlotId slot { PartManager::InstrumentType::FM, i };
-                if (! parts.isSlotActive (slot)) continue;
-                const auto path = browser.activePatchPath (i);
-                juce::String name = path.isNotEmpty()
-                    ? juce::File (path).getFileNameWithoutExtension()
-                    : juce::String ("— empty —");
-                pushRow (slot, "_part" + juce::String (i + 1), name, i + 1);
-            }
-
-            // SQ slots — 3 PSG tones plus PSG noise as slot 3.
+            // Task 27 — enumerate in user-defined order (PartManager::rackOrder)
+            // rather than per-pool index. Selection + drag-drop reorder rides
+            // on this sequence.
             static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackIds
                 { "ch1", "ch2", "ch3", "noise" };
             static constexpr std::array<int, SN76489Engine::kNumChannels> kPsgDefaultCh
                 { 11, 12, 13, 14 };
             static const std::array<const char*, SN76489Engine::kNumChannels> kPsgRackLabel
                 { "PSG 1", "PSG 2", "PSG 3", "PSG Noise" };
-            for (int i = 0; i < PartManager::kNumRackSqSlots; ++i)
-            {
-                const PartManager::SlotId slot { PartManager::InstrumentType::SQ, i };
-                if (! parts.isSlotActive (slot)) continue;
-                pushRow (slot,
-                         juce::String ("_psg_") + kPsgRackIds[(std::size_t) i],
-                         juce::String (kPsgRackLabel[(std::size_t) i]),
-                         kPsgDefaultCh[(std::size_t) i]);
-            }
 
-            // DAC slot.
-            for (int i = 0; i < PartManager::kNumRackDSlots; ++i)
+            for (const auto& slot : parts.getRackOrder())
             {
-                const PartManager::SlotId slot { PartManager::InstrumentType::D, i };
-                if (! parts.isSlotActive (slot)) continue;
-                const juce::String name = dac.hasPcm()
-                    ? dac.getSampleName()
-                    : juce::String ("— no sample —");
-                pushRow (slot, "_dac", name, 16);
+                if (! parts.isSlotActive (slot)) continue;   // defensive
+                switch (slot.type)
+                {
+                    case PartManager::InstrumentType::FM:
+                    {
+                        if (slot.index < 0 || slot.index >= PartManager::kNumRackFmSlots) continue;
+                        const auto path = browser.activePatchPath (slot.index);
+                        const juce::String name = path.isNotEmpty()
+                            ? juce::File (path).getFileNameWithoutExtension()
+                            : juce::String ("— empty —");
+                        pushRow (slot, "_part" + juce::String (slot.index + 1), name, slot.index + 1);
+                        break;
+                    }
+                    case PartManager::InstrumentType::SQ:
+                    {
+                        if (slot.index < 0 || slot.index >= PartManager::kNumRackSqSlots) continue;
+                        pushRow (slot,
+                                 juce::String ("_psg_") + kPsgRackIds[(std::size_t) slot.index],
+                                 juce::String (kPsgRackLabel[(std::size_t) slot.index]),
+                                 kPsgDefaultCh[(std::size_t) slot.index]);
+                        break;
+                    }
+                    case PartManager::InstrumentType::D:
+                    {
+                        if (slot.index < 0 || slot.index >= PartManager::kNumRackDSlots) continue;
+                        const juce::String name = dac.hasPcm()
+                            ? dac.getSampleName()
+                            : juce::String ("— no sample —");
+                        pushRow (slot, "_dac", name, 16);
+                        break;
+                    }
+                }
             }
 
             auto* outObj = new juce::DynamicObject();
@@ -1431,6 +1437,22 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             obj->setProperty ("type",      args[0].toString());
             obj->setProperty ("slotIndex", free->index);
             completion (juce::var (obj));
+        });
+
+    // Task 27 — Move a rack row from one position to another within the
+    // user-defined ordering. Indices refer to rows in PartManager::rackOrder
+    // (i.e. visible row indices in the rack widget, ignoring the trailing
+    // "+ ADD INSTRUMENT" cell). JS calls this on pointerup of a drag, then
+    // re-runs getRackState to repaint from the new sequence.
+    options = options.withNativeFunction ("reorderRackRow",
+        [this] (const juce::Array<juce::var>& args, Completion completion)
+        {
+            if (args.size() < 2 || ! args[0].isInt() || ! args[1].isInt())
+            { completion (makeStatusVar ("fromIndex, toIndex required")); return; }
+            const int from = (int) args[0];
+            const int to   = (int) args[1];
+            processor.getPartManager().reorderSlot (from, to);
+            completion (makeStatusVar ({}));
         });
 
     // --- Editor UI state (persisted across DAW project save/load) ------------

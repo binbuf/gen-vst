@@ -11,10 +11,17 @@
  *   SQ a literal "PSG n / Noise" label, for D the loaded WAV name (or
  *   "— no sample —" if none)
  * - "+" / "-": add a row (opens the type popover) / remove the selected row
- * - drag-handle (:::): render-only this pass (post-MVP reorder per task)
+ * - drag-handle (:::): grab + drag to reorder rows (Task 27).
  *
  * Selection: clicking a row calls `onSelect({ type, slotIndex, paramSuffix })`
  * — the parent FM view rebinds the per-instrument routing strip + paging path.
+ *
+ * Drag-drop reorder (Task 27): pointerdown on the ::: column starts a drag.
+ * pointermove updates a virtual insertion index and renders a translucent
+ * ghost row at the cursor plus a 1-px insertion-line cue. pointerup commits
+ * the new order via `onReorder(fromIndex, toIndex)`. Auto-scroll fires when
+ * the cursor enters an 8-px zone at the top or bottom of the canvas. The
+ * trailing "+ ADD INSTRUMENT" row is rejected as a drop target.
  *
  * The widget is fully canvas-driven for visual parity with the existing
  * Instruments LCD list it replaces.
@@ -31,6 +38,17 @@ const FONT_PX      = 8;
 const REMOVE_W     = 14;        // width of the "-" cell at the right edge
 const SCROLLBAR_W  = 6;
 const ADD_ROW_LABEL = "+ ADD INSTRUMENT";
+// Drag-handle column (Task 27). Width matches the inline "::: " glyph and the
+// gap that follows it before the remove cell.
+const DRAG_HANDLE_W   = 14;
+// Pointer-movement threshold (px²) before a press becomes a real drag. Below
+// this, the press falls through to the normal click handler so a fingertap
+// on the handle still selects the row.
+const DRAG_THRESHOLD_SQ = 9;
+// Auto-scroll trigger zone (px) at the top + bottom of the canvas while drag
+// is active, and how often the rack steps by one row.
+const AUTOSCROLL_EDGE_PX = 8;
+const AUTOSCROLL_INTERVAL_MS = 200;
 
 export class InstrumentRack {
   constructor(canvas, options = {}) {
@@ -40,6 +58,7 @@ export class InstrumentRack {
     this.onSelect = options.onSelect ?? null;
     this.onAdd    = options.onAdd    ?? null;   // (clientX, clientY) -> opens popover
     this.onRemove = options.onRemove ?? null;   // (row) -> remove from rack
+    this.onReorder = options.onReorder ?? null; // (fromIndex, toIndex) -> reorder
 
     const setup = setupPixelCanvas(canvas);
     this.ctx = setup.ctx;
@@ -48,11 +67,20 @@ export class InstrumentRack {
 
     this.scrollY = 0;
 
+    // Task 27 drag state — populated on pointerdown over the ::: column, kept
+    // alive across pointermoves, cleared on pointerup. While null, the widget
+    // behaves identically to its pre-Task-27 self.
+    this._rowDrag = null;
+    this._autoScrollTimer = null;
+    this._autoScrollDir = 0;
+    this._suppressNextClick = false;
+
     canvas.addEventListener("click", e => this._onClick(e));
     canvas.addEventListener("wheel", e => this._onWheel(e), { passive: false });
-    canvas.addEventListener("pointerdown", e => this._onScrollDown(e));
-    canvas.addEventListener("pointermove", e => this._onScrollMove(e));
-    canvas.addEventListener("pointerup",   e => this._onScrollUp(e));
+    canvas.addEventListener("pointerdown", e => this._onPointerDown(e));
+    canvas.addEventListener("pointermove", e => this._onPointerMove(e));
+    canvas.addEventListener("pointerup",   e => this._onPointerUp(e));
+    canvas.addEventListener("pointercancel", e => this._onPointerUp(e));
 
     this.render();
   }
@@ -79,6 +107,14 @@ export class InstrumentRack {
   }
 
   _onClick(e) {
+    // Drag commits clear this flag on the synthetic click that browsers emit
+    // after pointerup — without the guard, a drag-drop would also fire row
+    // selection or row removal.
+    if (this._suppressNextClick) {
+      this._suppressNextClick = false;
+      return;
+    }
+
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -113,31 +149,170 @@ export class InstrumentRack {
     this.render();
   }
 
-  _onScrollDown(e) {
+  // Returns the X range of the drag-handle column (the ::: glyph). Used by
+  // _onPointerDown to decide between starting a row-drag and falling through
+  // to the normal scrollbar / row-select / remove behaviour.
+  _dragHandleRange() {
+    const removeX = this.w - SCROLLBAR_W - REMOVE_W;
+    const dragX   = removeX - DRAG_HANDLE_W;
+    return { lo: dragX, hi: dragX + DRAG_HANDLE_W };
+  }
+
+  _isOnDragHandle(x) {
+    const { lo, hi } = this._dragHandleRange();
+    return x >= lo && x < hi;
+  }
+
+  _onPointerDown(e) {
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    if (x < this.w - SCROLLBAR_W) return;
-    this._scrollDrag = { startY: e.clientY, startScroll: this.scrollY };
+    const y = e.clientY - rect.top;
+
+    // Scrollbar column takes precedence over everything else.
+    if (x >= this.w - SCROLLBAR_W) {
+      this._scrollDrag = { startY: e.clientY, startScroll: this.scrollY };
+      this.canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    // Drag-handle column starts a row drag — but only for real data rows. The
+    // trailing "+ ADD INSTRUMENT" cell stays sticky.
+    if (!this._isOnDragHandle(x)) return;
+    const idx = this._hitRowIndex(y);
+    if (idx < 0 || idx >= this.rows.length) return;
+
+    this._rowDrag = {
+      pointerId: e.pointerId,
+      fromIndex: idx,
+      startX: x,
+      startY: y,
+      currentY: y,
+      gapIdx: idx,
+      moved: false,
+    };
     this.canvas.setPointerCapture(e.pointerId);
   }
 
-  _onScrollMove(e) {
-    if (!this._scrollDrag) return;
-    const trackH = this.h - ROW_PAD_TOP * 2;
-    const max = this._maxScroll();
-    if (max <= 0) return;
-    const dy = e.clientY - this._scrollDrag.startY;
-    const scrollPerPx = max / Math.max(1, trackH - 16);
-    this.scrollY = Math.max(0, Math.min(max,
-      this._scrollDrag.startScroll + dy * scrollPerPx));
+  _onPointerMove(e) {
+    if (this._scrollDrag) {
+      const trackH = this.h - ROW_PAD_TOP * 2;
+      const max = this._maxScroll();
+      if (max <= 0) return;
+      const dy = e.clientY - this._scrollDrag.startY;
+      const scrollPerPx = max / Math.max(1, trackH - 16);
+      this.scrollY = Math.max(0, Math.min(max,
+        this._scrollDrag.startScroll + dy * scrollPerPx));
+      this.render();
+      return;
+    }
+
+    if (!this._rowDrag) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const dx = x - this._rowDrag.startX;
+    const dy = y - this._rowDrag.startY;
+    if (!this._rowDrag.moved && (dx * dx + dy * dy) >= DRAG_THRESHOLD_SQ)
+      this._rowDrag.moved = true;
+
+    this._rowDrag.currentY = y;
+    this._rowDrag.gapIdx   = this._computeGapIndex(y);
+
+    this._updateAutoScroll(y);
     this.render();
   }
 
-  _onScrollUp(e) {
-    if (!this._scrollDrag) return;
-    this._scrollDrag = null;
-    if (this.canvas.hasPointerCapture(e.pointerId))
-      this.canvas.releasePointerCapture(e.pointerId);
+  _onPointerUp(e) {
+    if (this._scrollDrag) {
+      this._scrollDrag = null;
+      if (this.canvas.hasPointerCapture(e.pointerId))
+        this.canvas.releasePointerCapture(e.pointerId);
+      return;
+    }
+
+    if (!this._rowDrag) return;
+    const drag = this._rowDrag;
+    this._rowDrag = null;
+    this._stopAutoScroll();
+    if (this.canvas.hasPointerCapture(drag.pointerId))
+      this.canvas.releasePointerCapture(drag.pointerId);
+
+    if (drag.moved) {
+      // A real drag — eat the synthetic click that follows pointerup so the
+      // row's normal click-to-select path doesn't fire on top of the reorder.
+      this._suppressNextClick = true;
+
+      const fromIdx = drag.fromIndex;
+      const gapIdx  = drag.gapIdx;
+      const toIdx   = gapIdx > fromIdx ? gapIdx - 1 : gapIdx;
+
+      if (toIdx !== fromIdx) {
+        // Selection follows the dragged row so the FM paging / routing-strip
+        // binding keeps focusing the same instrument after the move.
+        if (this.selected === fromIdx) {
+          this.selected = toIdx;
+        } else if (this.selected > fromIdx && this.selected <= toIdx) {
+          this.selected -= 1;
+        } else if (this.selected < fromIdx && this.selected >= toIdx) {
+          this.selected += 1;
+        }
+        // Optimistic local reorder so the rack repaints cleanly while the
+        // native fn round-trips. The parent re-fetches state via
+        // getRackState() afterwards and will overwrite this if the C++ side
+        // disagrees.
+        const moved = this.rows.splice(fromIdx, 1)[0];
+        this.rows.splice(toIdx, 0, moved);
+        this.onReorder?.(fromIdx, toIdx);
+      }
+    }
+
+    this.render();
+  }
+
+  // Compute the row insertion index ("gap") for a given Y. 0 means "before
+  // the first row", rows.length means "after the last data row". The "+ ADD
+  // INSTRUMENT" cell is rejected as a drop target by clamping at rows.length.
+  _computeGapIndex(y) {
+    const rawGap = Math.round((y + this.scrollY - ROW_PAD_TOP) / ROW_H);
+    return Math.max(0, Math.min(this.rows.length, rawGap));
+  }
+
+  _updateAutoScroll(y) {
+    let dir = 0;
+    if (y < ROW_PAD_TOP + AUTOSCROLL_EDGE_PX) dir = -1;
+    else if (y > this.h - ROW_PAD_TOP - AUTOSCROLL_EDGE_PX) dir = +1;
+
+    if (dir === 0) {
+      this._stopAutoScroll();
+      return;
+    }
+
+    if (this._autoScrollDir === dir && this._autoScrollTimer !== null) return;
+
+    this._stopAutoScroll();
+    this._autoScrollDir = dir;
+    this._autoScrollTimer = setInterval(() => {
+      const max = this._maxScroll();
+      const next = Math.max(0, Math.min(max, this.scrollY + dir * ROW_H));
+      if (next === this.scrollY) {
+        this._stopAutoScroll();
+        return;
+      }
+      this.scrollY = next;
+      if (this._rowDrag)
+        this._rowDrag.gapIdx = this._computeGapIndex(this._rowDrag.currentY);
+      this.render();
+    }, AUTOSCROLL_INTERVAL_MS);
+  }
+
+  _stopAutoScroll() {
+    if (this._autoScrollTimer !== null) {
+      clearInterval(this._autoScrollTimer);
+      this._autoScrollTimer = null;
+    }
+    this._autoScrollDir = 0;
   }
 
   _maxScroll() {
@@ -172,18 +347,27 @@ export class InstrumentRack {
     // popover is opened on click.
     this._renderAddRow(this.rows.length);
 
+    // Task 27 — ghost row + insertion-line cue overlayed on top of the
+    // already-drawn rows while a drag is in progress. Drawn last so they
+    // cover the source row's static position.
+    if (this._rowDrag && this._rowDrag.moved) {
+      this._renderDragOverlay();
+    }
+
     ctx.restore();
 
     this._drawScrollbar();
   }
 
   _renderDataRow(i) {
+    const y = ROW_PAD_TOP + i * ROW_H - this.scrollY;
+    this._renderRowAt(this.rows[i], y, i === this.selected);
+  }
+
+  _renderRowAt(row, y, isSel) {
     const ctx = this.ctx;
     const pal = palette();
     const W = this.w;
-    const y = ROW_PAD_TOP + i * ROW_H - this.scrollY;
-    const row = this.rows[i];
-    const isSel = i === this.selected;
 
     if (isSel) {
       ctx.fillStyle = pal["lcd-pixel"];
@@ -198,18 +382,42 @@ export class InstrumentRack {
 
     // Patch name — uppercase, trimmed to fit before the drag handle.
     const removeX = W - SCROLLBAR_W - REMOVE_W;
-    const dragX   = removeX - 14;
+    const dragX   = removeX - DRAG_HANDLE_W;
     const nameMaxPx = dragX - NAME_X - 2;
     const name = (row.patchName ?? "").toString().toUpperCase();
     ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-pixel"];
     this._drawClippedText(name, NAME_X, snap(y + (ROW_H - FONT_PX) / 2), nameMaxPx);
 
-    // Drag-handle glyph (render-only — reorder is post-MVP).
+    // Drag-handle glyph (live target for Task 27 drag).
     ctx.fillStyle = isSel ? pal["lcd-base"] : pal["lcd-text-dark"] || pal["lcd-pixel"];
     this._drawDragHandle(dragX, y + 3);
 
     // "-" remove button.
     this._drawRemoveCell(removeX, y, isSel);
+  }
+
+  _renderDragOverlay() {
+    const ctx = this.ctx;
+    const pal = palette();
+    const W = this.w;
+    const drag = this._rowDrag;
+
+    // 1-px insertion cue at the candidate gap, clamped inside the visible
+    // strip so it doesn't get lost in the top/bottom padding.
+    const gapY = ROW_PAD_TOP + drag.gapIdx * ROW_H - this.scrollY;
+    ctx.fillStyle = pal["lcd-pixel"];
+    ctx.fillRect(1, gapY, W - SCROLLBAR_W - 2, 1);
+
+    // Translucent ghost row centered on the cursor's Y. Re-rendering the row
+    // gives a faithful drag preview without re-implementing the glyph layout.
+    const ghostY = snap(drag.currentY - ROW_H / 2);
+    const row = this.rows[drag.fromIndex];
+    if (row) {
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      this._renderRowAt(row, ghostY, true);   // draw as selected for legibility
+      ctx.restore();
+    }
   }
 
   _renderAddRow(i) {

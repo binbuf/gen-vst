@@ -184,10 +184,11 @@ function mountCenter(col) {
 /* Task 22 — Instrument rack widget + add/remove plumbing                     */
 /* -------------------------------------------------------------------------- */
 
-const getRackStateFn  = Juce.getNativeFunction("getRackState");
-const selectPartFn    = Juce.getNativeFunction("selectPart");
-const clearPartFn     = Juce.getNativeFunction("clearPart");
-const addInstrumentFn = Juce.getNativeFunction("addInstrument");
+const getRackStateFn   = Juce.getNativeFunction("getRackState");
+const selectPartFn     = Juce.getNativeFunction("selectPart");
+const clearPartFn      = Juce.getNativeFunction("clearPart");
+const addInstrumentFn  = Juce.getNativeFunction("addInstrument");
+const reorderRackRowFn = Juce.getNativeFunction("reorderRackRow");
 
 function mountInstrumentRack(col) {
   const canvas = col.querySelector("#instrument-rack");
@@ -196,9 +197,10 @@ function mountInstrumentRack(col) {
   const rack = new InstrumentRack(canvas, {
     rows: [],
     selected: -1,
-    onSelect: (row) => onRackRowSelected(row),
-    onAdd:    (cx, cy) => openAddPopover(cx, cy),
-    onRemove: (row) => removeRow(row),
+    onSelect:  (row) => onRackRowSelected(row),
+    onAdd:     (cx, cy) => openAddPopover(cx, cy),
+    onRemove:  (row) => removeRow(row),
+    onReorder: (fromIdx, toIdx) => reorderRow(fromIdx, toIdx),
   });
   fmViewState.rack = rack;
 
@@ -282,6 +284,41 @@ function applyChannelsRowForType(row) {
 async function removeRow(row) {
   await clearPartFn(row.type, row.slotIndex).catch(() => {});
   await refreshRack();
+}
+
+// Task 27 — commit a drag-drop reorder. The widget already moved the row
+// locally (so the ghost lands cleanly); this just persists the new order
+// through the apvts/PartManager bridge and re-fetches the canonical state.
+async function reorderRow(fromIdx, toIdx) {
+  // Track the moved row's identity so the post-refresh selection lands on the
+  // same instrument the user dragged.
+  const rows = fmViewState.rackRows ?? [];
+  const moved = rows[fromIdx];
+  // refreshRack -> setRows resets scrollY to 0, which would jerk a scrolled
+  // rack back to the top after a drag inside it. Capture and restore.
+  const savedScroll = fmViewState.rack?.scrollY ?? 0;
+
+  try { await reorderRackRowFn(fromIdx, toIdx); }
+  catch (e) { console.error("reorderRackRow failed", e); }
+
+  // Re-fetch authoritative state from C++. setRows() inside refreshRack will
+  // restore selection by index; we then pin it to the moved row's slot.
+  await refreshRack();
+
+  if (moved && fmViewState.rackRows) {
+    const newIdx = fmViewState.rackRows.findIndex(
+      r => r.type === moved.type && r.slotIndex === moved.slotIndex);
+    if (newIdx >= 0) {
+      fmViewState.rackSelectedIndex = newIdx;
+      fmViewState.rack?.setSelected(newIdx);
+    }
+  }
+
+  if (fmViewState.rack) {
+    const max = fmViewState.rack._maxScroll();
+    fmViewState.rack.scrollY = Math.max(0, Math.min(max, savedScroll));
+    fmViewState.rack.render();
+  }
 }
 
 function openAddPopover(clientX, clientY) {

@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <optional>
+#include <vector>
 
 #include <juce_events/juce_events.h>
 
@@ -88,6 +89,18 @@ public:
     // Number of slots configured for a given instrument type (5 / 4 / 1).
     static int slotPoolSize (InstrumentType type) noexcept;
 
+    // Task 27 — Rack row ordering. `rackOrder` lists every active slot in the
+    // order the user wants them shown in the rack widget. setSlotActive
+    // appends a newly-activated slot to the end and removes a deactivated slot
+    // from the vector; reorderSlot moves an entry to a new position. State
+    // restore replaces the order wholesale via setRackOrder.
+    //
+    // Message-thread-only — the audio path still reads isSlotActive() via the
+    // per-pool atomic bitmaps, not this vector.
+    const std::vector<SlotId>& getRackOrder() const noexcept { return rackOrder; }
+    void reorderSlot (int fromIndex, int toIndex);
+    void setRackOrder (std::vector<SlotId> newOrder);
+
 private:
     std::array<Part, kNumParts> parts;
 
@@ -100,4 +113,8 @@ private:
     std::array<std::atomic<bool>, kNumRackFmSlots> fmActive {};
     std::array<std::atomic<bool>, kNumRackSqSlots> sqActive {};
     std::array<std::atomic<bool>, kNumRackDSlots>  dActive  {};
+
+    // User-defined row order (Task 27). Mirror of the active-bitmap union,
+    // sequenced as the rack widget shows them.
+    std::vector<SlotId> rackOrder;
 };

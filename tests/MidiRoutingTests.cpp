@@ -605,3 +605,130 @@ TEST (PartManagerRack, SlotPoolSizesMatchSpec)
     EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::SQ), 4);
     EXPECT_EQ (PartManager::slotPoolSize (PartManager::InstrumentType::D),  1);
 }
+
+// --- PartManager — Task 27 rack ordering -------------------------------------
+
+TEST (PartManagerRack, RackOrderStartsWithDefaultFmSlot)
+{
+    PartManager pm;
+    const auto& order = pm.getRackOrder();
+    ASSERT_EQ (order.size(), 1u);
+    EXPECT_EQ (order[0].type,  PartManager::InstrumentType::FM);
+    EXPECT_EQ (order[0].index, 0);
+}
+
+TEST (PartManagerRack, ActivatingSlotAppendsToRackOrder)
+{
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 2 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::D,  0 }, true);
+    const auto& order = pm.getRackOrder();
+    ASSERT_EQ (order.size(), 3u);
+    EXPECT_EQ (order[1].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[1].index, 2);
+    EXPECT_EQ (order[2].type,  PartManager::InstrumentType::D);
+    EXPECT_EQ (order[2].index, 0);
+}
+
+TEST (PartManagerRack, DeactivatingSlotRemovesFromRackOrder)
+{
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::D,  0 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, false);
+
+    const auto& order = pm.getRackOrder();
+    ASSERT_EQ (order.size(), 2u);
+    EXPECT_EQ (order[0].type,  PartManager::InstrumentType::FM);
+    EXPECT_EQ (order[1].type,  PartManager::InstrumentType::D);
+}
+
+TEST (PartManagerRack, ReorderSlotMovesEntryDown)
+{
+    PartManager pm;
+    // Build [FM 0, SQ 0, SQ 1, D 0]
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 1 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::D,  0 }, true);
+    ASSERT_EQ (pm.getRackOrder().size(), 4u);
+
+    // Move row 0 to row 2 -> [SQ 0, SQ 1, FM 0, D 0]
+    pm.reorderSlot (0, 2);
+    const auto& order = pm.getRackOrder();
+    EXPECT_EQ (order[0].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[0].index, 0);
+    EXPECT_EQ (order[1].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[1].index, 1);
+    EXPECT_EQ (order[2].type,  PartManager::InstrumentType::FM);
+    EXPECT_EQ (order[2].index, 0);
+    EXPECT_EQ (order[3].type,  PartManager::InstrumentType::D);
+    EXPECT_EQ (order[3].index, 0);
+}
+
+TEST (PartManagerRack, ReorderSlotMovesEntryUp)
+{
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 1 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::D,  0 }, true);
+    // [FM 0, SQ 0, SQ 1, D 0] -> move row 3 (D) to row 1 -> [FM 0, D 0, SQ 0, SQ 1]
+    pm.reorderSlot (3, 1);
+    const auto& order = pm.getRackOrder();
+    EXPECT_EQ (order[0].type,  PartManager::InstrumentType::FM);
+    EXPECT_EQ (order[1].type,  PartManager::InstrumentType::D);
+    EXPECT_EQ (order[2].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[2].index, 0);
+    EXPECT_EQ (order[3].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[3].index, 1);
+}
+
+TEST (PartManagerRack, ReorderSlotRejectsOutOfRangeIndices)
+{
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);
+    const auto snapshot = pm.getRackOrder();
+
+    pm.reorderSlot (-1, 0);    // no-op
+    pm.reorderSlot (0,  -1);   // no-op
+    pm.reorderSlot (0,  99);   // no-op
+    pm.reorderSlot (99, 0);    // no-op
+    pm.reorderSlot (1,  1);    // identical -> no-op
+
+    EXPECT_EQ (pm.getRackOrder(), snapshot);
+}
+
+TEST (PartManagerRack, ReorderSurvivesRoundTripWithDeactivation)
+{
+    // A more realistic flow: user adds three rows, drags one of them, then
+    // removes the dragged row. Ordering must remain consistent.
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 0 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::D,  0 }, true);
+    // [FM 0, SQ 0, D 0]
+    pm.reorderSlot (0, 2);
+    // [SQ 0, D 0, FM 0]
+    pm.setSlotActive ({ PartManager::InstrumentType::D, 0 }, false);
+    // [SQ 0, FM 0]
+    const auto& order = pm.getRackOrder();
+    ASSERT_EQ (order.size(), 2u);
+    EXPECT_EQ (order[0].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[1].type,  PartManager::InstrumentType::FM);
+}
+
+TEST (PartManagerRack, SetRackOrderReplacesWholeVector)
+{
+    PartManager pm;
+    pm.setSlotActive ({ PartManager::InstrumentType::SQ, 1 }, true);
+    pm.setSlotActive ({ PartManager::InstrumentType::D,  0 }, true);
+    pm.setRackOrder ({
+        { PartManager::InstrumentType::D,  0 },
+        { PartManager::InstrumentType::FM, 0 },
+        { PartManager::InstrumentType::SQ, 1 },
+    });
+    const auto& order = pm.getRackOrder();
+    ASSERT_EQ (order.size(), 3u);
+    EXPECT_EQ (order[0].type,  PartManager::InstrumentType::D);
+    EXPECT_EQ (order[1].type,  PartManager::InstrumentType::FM);
+    EXPECT_EQ (order[2].type,  PartManager::InstrumentType::SQ);
+    EXPECT_EQ (order[2].index, 1);
+}

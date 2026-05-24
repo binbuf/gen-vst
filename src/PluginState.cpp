@@ -301,26 +301,29 @@ std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
     uiEl->setAttribute ("selectedPart", proc.uiSelectedPart());
     uiEl->setAttribute ("presetTab",    proc.uiPresetTab());
 
-    // Task 22 — Rack active-slot snapshot. Iterate every rack slot type and
-    // emit a <slot type="fm" index="0"/> entry for each currently-active slot.
-    // The per-slot routing values themselves ride on the apvts.
+    // Task 22 — Rack active-slot snapshot. Emit one <slot type="…" index="…"/>
+    // per active slot. Order matches PartManager::rackOrder so a drag-drop
+    // reorder (Task 27) survives a project save/restore. The per-slot routing
+    // values themselves ride on the apvts.
     auto& parts = proc.getPartManager();
     auto* rackEl = root->createNewChildElement (kRackTag);
-    auto saveActiveSlots = [&] (PartManager::InstrumentType type, const char* label)
+    auto slotLabel = [] (PartManager::InstrumentType t) -> const char*
     {
-        const int n = PartManager::slotPoolSize (type);
-        for (int i = 0; i < n; ++i)
+        switch (t)
         {
-            const PartManager::SlotId slot { type, i };
-            if (! parts.isSlotActive (slot)) continue;
-            auto* el = rackEl->createNewChildElement (kRackSlotTag);
-            el->setAttribute ("type",  label);
-            el->setAttribute ("index", i);
+            case PartManager::InstrumentType::FM: return "fm";
+            case PartManager::InstrumentType::SQ: return "sq";
+            case PartManager::InstrumentType::D:  return "d";
         }
+        return "fm";
     };
-    saveActiveSlots (PartManager::InstrumentType::FM, "fm");
-    saveActiveSlots (PartManager::InstrumentType::SQ, "sq");
-    saveActiveSlots (PartManager::InstrumentType::D,  "d");
+    for (const auto& slot : parts.getRackOrder())
+    {
+        if (! parts.isSlotActive (slot)) continue;
+        auto* el = rackEl->createNewChildElement (kRackSlotTag);
+        el->setAttribute ("type",  slotLabel (slot.type));
+        el->setAttribute ("index", slot.index);
+    }
 
     return root;
 }
@@ -367,6 +370,9 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
     // then re-enable those listed in <rack>. Missing tag = no rack history;
     // legacy projects then surface with whichever slots had something loaded
     // (FM slot 0 is the constructor default — i.e. one row visible).
+    // Task 27 — The order in which the <slot> entries appear is the user's
+    // rack ordering; rebuild the order vector here so a saved drag-drop
+    // sequence is restored exactly.
     {
         auto& parts = proc.getPartManager();
         for (int i = 0; i < PartManager::kNumRackFmSlots; ++i)
@@ -378,6 +384,7 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
 
         if (auto* rackEl = wrapper->getChildByName (kRackTag))
         {
+            std::vector<PartManager::SlotId> order;
             for (auto* slotEl : rackEl->getChildWithTagNameIterator (kRackSlotTag))
             {
                 const auto typeStr = slotEl->getStringAttribute ("type");
@@ -390,12 +397,19 @@ void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
                 else continue;
                 if (idx >= PartManager::slotPoolSize (type)) continue;
                 parts.setSlotActive ({ type, idx }, true);
+                order.push_back ({ type, idx });
             }
+            // setSlotActive already appended each new slot to the order in
+            // load sequence; setRackOrder replaces it wholesale with the
+            // exact saved sequence (defensive in case future restores re-
+            // activate slots in non-saved order).
+            parts.setRackOrder (std::move (order));
         }
         else
         {
             // Legacy state — re-mark FM slot 0 so the UI shows the default row.
             parts.setSlotActive ({ PartManager::InstrumentType::FM, 0 }, true);
+            parts.setRackOrder ({ { PartManager::InstrumentType::FM, 0 } });
         }
     }
 
