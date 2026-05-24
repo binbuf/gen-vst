@@ -76,22 +76,29 @@ keep the mockup honest by repeating markup):
    RANGE steppers + LEGATO/RETRIG switch + **global** PB and MW
    horizontal `level-meter`s). Envelope-curve LCD with segment labels
    (`AR / DR / SL / SR / RR`) and `KEY ON` / `KEY OFF` dashed-line
-   markers. FREQ CTRL MODE pill, RETRIG RATE LCD, OP1 FB knob, **DAC
-   PRESCALER knob (new — FM mode YM2612 prescaler control)** stacked in
-   the misc column. **8-button algorithm picker (`algo-grid`, 2 × 4
-   visible buttons)** plus a separately-sized **~112 px topology
-   diagram tile** showing the selected algorithm. No bottom status bar.
+   markers. FREQ CTRL MODE pill, RETRIG RATE LCD, OP1 FB knob stacked
+   in the misc column (the DAC PRESCALER knob lives in the **header**
+   per view 1, not on the FM panel). **8-button algorithm picker
+   (`algo-grid`, 2 × 4 visible buttons)** plus a separately-sized
+   **~112 px topology diagram tile** showing the selected algorithm.
+   No bottom status bar.
 3. **`mockup-sq.html`** — full SQ mode panel per view 3. Three tone-channel
    strips + one noise strip. Envelope thumbnails are static SVG-free
    canvas-placeholder rectangles with a hand-drawn `<path>`-free curve in
    the LCD (just a flat dim background and a centered "ADSR" word is
    acceptable — the real curve is Task 04). Same header as the chassis
    page; no bottom status bar.
-4. **`mockup-d.html`** — full D mode panel per view 4. Centered large
-   decimator knob, stereo level meters band (drawn as a row of `<div>`
-   blocks, not live), MONO toggle, DRY/WET knob, optional centered
-   `RETRO DECIMATOR` wordmark in the empty band above the knob. Same
-   header as the chassis page; no bottom status bar.
+4. **`mockup-d.html`** — full D mode panel per view 4. Spartan layout:
+   centered large `DRY/WET` knob (uses the 96 px `decimator-knob`
+   visual variant) with a `MONO` toggle beneath it, optional centered
+   `RETRO DECIMATOR` wordmark in the empty band above the knob. **No**
+   panel-side prescaler knob (header-only, mode-aware), **no**
+   panel-side level meters (header L/R + DAW input meter cover it).
+   **Header patch cluster (patch-name LCD + ◀ + ▶ + 📂) is greyed**
+   via `.is-disabled` in D mode — D has no preset format per
+   [ADR-0025](../../design/adr/0025-tagged-preset-browser.md); LCD
+   shows the static `AUDIO FX` (or `—`) placeholder. Same header as
+   the chassis page otherwise; no bottom status bar.
 
 Plus the persistent design-system file:
 
@@ -203,10 +210,16 @@ Plus the Vite multi-page entries in `ui/vite.config.js`.
          grid). No popover. A separate ~112 px topology diagram tile
          sits next to it.
    - [ ] **DAC PRESCALER knob lives in the persistent header** next to
-         VOL (per the RYM2612 reference). Active in FM mode, greyed in
-         SQ + D. The D-mode panel still has its own loud central
-         `DAC PRESCALER` knob (separate apvts param `prescaler` —
-         distinct from the header's `fm_dac_prescaler`).
+         VOL (per the RYM2612 reference). **Mode-aware binding** — FM
+         mode targets `fm_dac_prescaler`, D mode targets `prescaler`,
+         SQ mode greys it (PSG bypasses the DAC). The D-mode panel has
+         **no** central prescaler knob — the header widget is the sole
+         surface for both prescaler params. The two apvts params stay
+         distinct — `fm_dac_prescaler` per FM patch; `prescaler` is a
+         plain D-mode apvts param owned by the host (no preset
+         format — [ADR-0025](../../design/adr/0025-tagged-preset-browser.md));
+         the header widget switches its bound target on `mode_select`
+         change without copying values between them.
    - [ ] **`CH VOL` master TL knob** sits above the operator-grid TL
          column with fan-out connector lines drawn down into each of
          the 4 operator rows' TL knobs (decorative SVG overlay).

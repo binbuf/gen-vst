@@ -111,7 +111,8 @@ in the *Open questions* below).
 ## Out of scope
 
 - The v2 widget library and any UI changes — Task 04+.
-- D-mode preset format (`.gdac`) — Task 09.
+- Any D-mode preset format — D has none ([ADR-0025](../../design/adr/0025-tagged-preset-browser.md));
+  the 3 D apvts params persist via the host's normal project state.
 - The header Output Filter / Ladder Effect toggle widgets — Task 08
   (the apvts params already exist from Task 02; the UI binding is the
   later task).

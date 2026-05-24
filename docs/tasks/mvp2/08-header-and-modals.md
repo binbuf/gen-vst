@@ -57,6 +57,14 @@ attributions and the version string.
   - 📂 button opens the preset browser modal (Task 09 — stub for this
     task; the button exists and is mounted with a click handler that
     no-ops or opens an "Under construction" toast).
+  - **D-mode greying of the patch cluster** — when `mode_select == D`
+    the entire patch cluster (`.hdr-patch` container holding the LCD
+    + ◀ + ▶ + 📂) toggles `.is-disabled` and becomes non-interactive.
+    The LCD displays a static `AUDIO FX` placeholder instead of a
+    patch name. D mode has no preset format ([ADR-0025](../../design/adr/0025-tagged-preset-browser.md))
+    so the cluster has nothing to do. This task wires the toggle
+    (subscribing to `mode_select` apvts changes); Task 09 implements
+    the actual `patchNav` / browser-open behaviour for FM/SQ.
   - Output Filter toggle — 2-position physical switch (`LEGACY` /
     `CRYSTAL CLEAR`) bound to `output_filter`. `LEGACY = output_filter
     on`. Disabled & forced-on when HARDWARE STRICT is on.
@@ -67,11 +75,26 @@ attributions and the version string.
     `level-meter-mini` variant (two thin horizontal rows, L on top, R
     below; ~24 px tall together). Subscribed to `peakL` / `peakR`
     telemetry. Replaces the v2 first-pass bottom status bar.
-  - **DAC PRESCALER** knob — a `knob-sm` bound to `fm_dac_prescaler`.
-    Sits next to VOL per the RYM2612 reference. Active in FM mode;
-    greyed (`.is-disabled`) in SQ (PSG bypasses DAC) and D (D-mode
-    panel has its own central prescaler bound to a separate `prescaler`
-    param).
+  - **DAC PRESCALER** knob — a `knob-sm` paired with a `DAC PRESC`
+    caption. Sits next to VOL per the RYM2612 reference. **Mode-aware
+    binding** per `08-ui-views.md` view 1:
+    - FM mode → binds `fm_dac_prescaler` (per-FM-patch param).
+    - D mode → binds `prescaler` (D-mode DSP global param). The D panel
+      itself has no prescaler control; this header widget is the sole
+      surface for both prescalers.
+    - SQ mode → greyed (`.is-disabled`); PSG bypasses the DAC and the
+      widget has nothing meaningful to bind.
+
+    Implementation: a small `bindSliderByMode({ FM: 'fm_dac_prescaler',
+    D: 'prescaler' })` helper (or inline equivalent) that subscribes
+    to `mode_select`, unbinds + rebinds + reloads the displayed value
+    on each mode change, and applies `.is-disabled` when the active
+    mode has no entry in the map. The two underlying params are
+    **distinct** — `fm_dac_prescaler` travels with an FM patch;
+    `prescaler` is a plain D-mode apvts param owned by the host (no
+    preset format — see [ADR-0025](../../design/adr/0025-tagged-preset-browser.md)).
+    The helper must not copy values between them on mode switch;
+    each param keeps its own last-set value.
   - VOL knob bound to `master_volume` (small `knob`).
   - **TIPS toggle** — small `toggle` with a `TIPS` text caption, bound
     to `tooltips_enabled`. Mirrors the Settings `TOOLTIPS` row above
@@ -182,8 +205,10 @@ attributions and the version string.
 
 - The preset browser modal — Task 09 wires the 📂 button and the
   patch-name LCD ◀ / ▶ buttons; this task ships them as stubs.
-- The `.psg` / `.gdac` formats and tag-derived mode auto-switch —
-  Task 09.
+- The `.psg` format and tag-derived mode auto-switch — Task 09.
+  (D mode has no preset format per
+  [ADR-0025](../../design/adr/0025-tagged-preset-browser.md) —
+  see Task 09's *Out of scope* for the full rationale.)
 - Custom roots — Task 09 / Task 10 (the *Add Folder* button lives in
   the preset browser).
 

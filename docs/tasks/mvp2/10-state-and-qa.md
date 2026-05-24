@@ -161,26 +161,33 @@ for a v2 release.
    tweak a couple of knobs, save the project, close Reaper, re-open
    the project. The plugin returns with the same patch loaded, the
    tweaked knobs, the same mode.
-4. Repeat for SQ (`.psg`) and D (`.gdac`). Confirm the right panel is
-   mounted on restore.
-5. **Mode-switch + restore** — set mode to D, load `crunchy-drums.gdac`,
-   save the project; close; re-open — the plugin restores to D mode
-   with the preset applied.
-6. **Custom-root persistence** — add an external folder via the
+4. Repeat for SQ (`.psg`). Confirm the SQ panel is mounted on restore
+   and the per-channel envelope / vol / pan / detune values match.
+5. **D-mode state persistence** — set `mode_select = D`; route audio
+   into the plugin; tweak `prescaler` to ~0.7, `mono` to on, `dry_wet`
+   to ~0.5. Save the project; close Reaper; re-open the project. The
+   plugin restores in D mode with all three apvts values intact (no
+   `.gdac` file involved — the state rides on the host's normal
+   project state envelope via `setStateInformation`).
+6. **Mode-switch + restore** — start in FM with a patch loaded; flip
+   to D and tweak the decimator; save the project; close; re-open —
+   plugin restores to D mode with the tweaked values, **and** the FM
+   patch path is still remembered so flipping back to FM restores it.
+7. **Custom-root persistence** — add an external folder via the
    browser's *Add Folder…*; close & re-open the project; the folder
    is still in the tree, still scannable.
-7. **Missing-patch toast** — delete the active patch file on disk,
+8. **Missing-patch toast** — delete the active patch file on disk,
    re-open the project; a notification toast surfaces "Patch could
    not be loaded: <path>"; the apvts values remain so the sound is
    approximately what was saved.
-8. **Missing custom-root toast** — same, with a removed external
+9. **Missing custom-root toast** — same, with a removed external
    folder.
-9. **Parity audit** — open `07-feature-spec.md`, walk every checkbox.
-   Tick those that ship. Move any deferred line to the README's
-   Post-MVP backlog. Common candidates: `.kbm` keyboard mapping
-   (already deferred), MTS Sysex, multi-instrument OPM bank import,
-   Channel 3 special as a top-level editor (post-MVP per ADR-0014).
-10. **CI pass** — push to a v2-final branch; confirm
+10. **Parity audit** — open `07-feature-spec.md`, walk every checkbox.
+    Tick those that ship. Move any deferred line to the README's
+    Post-MVP backlog. Common candidates: `.kbm` keyboard mapping
+    (already deferred), MTS Sysex, multi-instrument OPM bank import,
+    Channel 3 special as a top-level editor (post-MVP per ADR-0014).
+11. **CI pass** — push to a v2-final branch; confirm
     Windows / macOS / Linux jobs are green.
 11. **CPU profile** — open the Reaper stress project, hold a 16-voice
     chord with FM AUTO_RETRIG + LFO + filter + ladder + telemetry

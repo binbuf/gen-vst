@@ -66,6 +66,17 @@ body {
   cursor: not-allowed;
 }
 
+/* D-mode greys the entire patch cluster — D has no preset format
+ * per ADR-0025, so the LCD + prev/next/browse buttons have nothing
+ * to do. Mirrors the .hdr-prescaler.is-disabled treatment. */
+.hdr-patch.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.hdr-patch.is-disabled .icon-btn {
+  cursor: not-allowed;
+}
+
 .hdr-brand {
   display: inline-flex;
   align-items: center;

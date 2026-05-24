@@ -57,8 +57,9 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] Manual mode selector in header
 - [ ] Auto mode-switch when a tagged preset is loaded
 - [ ] `.psg` preset format (SQ mode)
-- [ ] `.gdac` preset format (D mode)
-- [ ] Unified tagged preset browser with `All / FM / SQ / D` filter chips
+- [ ] Unified tagged preset browser with `All / FM / SQ` filter chips
+      (D mode has no preset format —
+      [ADR-0025](adr/0025-tagged-preset-browser.md))
 
 ### Polyphony (FM mode)
 - [ ] FM polyphony beyond the YM2612's hardware 6 voices — single-patch,
@@ -85,7 +86,7 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] **FIXED per-operator** toggle — when active in `FLOAT_MUL` / `AUTO_RETRIG`, the operator runs at an absolute Hz value (`freq_fixed_hz[op]`) instead of `note × mul_float[op]`. Greyed out in `INT_MUL`.
 - [ ] **RETRIG RATE** (TimerA value, 0–1023) — visible/editable only when `freq_ctrl_mode == AUTO_RETRIG`; writes YM2612 registers `0x24` / `0x25`.
 - [ ] **MW → PMS routing** — modwheel (CC 1) routes into the LFO `PMS` field at fixed full depth (no adjustable knob). RYM2612 manual page 10. (Modwheel is the **only** instrument-level MW route in v2; both the earlier per-operator `mw[op]` TL-modulation column and the global `mw_to_pms` depth knob were removed during the post-mockup review — the per-patch `PMS` knob already covers the "amount of vibrato" axis.)
-- [ ] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel. **Lives in the persistent header next to VOL** (per RYM2612 reference); active in FM mode, greyed in SQ (PSG bypasses DAC) and D (D-mode panel has its own loud central knob).
+- [ ] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel. **Lives in the persistent header next to VOL** (per RYM2612 reference) with **mode-aware binding** — FM targets `fm_dac_prescaler`, D targets `prescaler`, SQ greys it (PSG bypasses DAC). The D panel itself carries **no** prescaler knob; the header widget is the sole UI surface for both prescaler params (see `08-ui-views.md` views 1 + 4).
 - [ ] **CH VOL (channel TL master)** knob (`channel_tl`, 0.0–1.0) — UI-only convenience that multiplies into all 4 operator TLs on the register-write path. Sits above the operator grid with connector lines fanning down to each op's TL knob, mirroring the RYM2612 reference. Not a YM2612 hardware register; the multiplier is applied per-op before the `attenuation = 127 - level` flip. Default 1.0 (no master attenuation).
 - [ ] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*.
 - [ ] **HARDWARE STRICT** authenticity toggle — Settings-level opt-in
@@ -272,7 +273,8 @@ decision, not a real-time MIDI surface
 
 - FM mode: PC selects from the FM-tagged patches.
 - SQ mode: PC selects from the SQ-tagged (`.psg`) presets.
-- D mode: PC selects from the D-tagged (`.gdac`) presets.
+- D mode: PC is ignored (no preset format — see
+  [ADR-0025](adr/0025-tagged-preset-browser.md)).
 
 Bank Select (MSB/LSB) to address different roots (factory vs. user vs.
 custom) is a possible later addition.
@@ -307,8 +309,11 @@ Apvts params:
 - `mono` (bool)
 - `dry_wet` (float, 0..1)
 
-`.gdac` JSON presets store exactly these three values — schema in
-[04-patch-system.md](04-patch-system.md).
+These three apvts params persist via the host's project state and the
+DAW's plugin user-preset feature; there is no dedicated D-mode preset
+file format. See
+[ADR-0025](adr/0025-tagged-preset-browser.md) *Alternatives considered*
+for the rationale.
 
 ---
 

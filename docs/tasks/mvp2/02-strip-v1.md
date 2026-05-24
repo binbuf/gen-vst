@@ -142,7 +142,8 @@ reconnected in Task 05 (FM) / Task 06 (SQ).
 - The new v2 widgets / views — Task 04 onward.
 - The audio input bus + D mode DSP — Task 03.
 - `OutputFilter` / `LadderEffect` DSP — Task 03.
-- `.psg` / `.gdac` loaders, the tagged preset browser — Task 09.
+- `.psg` loader, the tagged preset browser — Task 09. (D has no
+  preset format per [ADR-0025](../../design/adr/0025-tagged-preset-browser.md).)
 - Restoring active patch path and custom roots in state — Task 10.
 
 ## Implementation steps

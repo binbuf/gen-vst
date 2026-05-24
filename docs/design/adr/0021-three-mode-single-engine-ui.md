@@ -35,12 +35,21 @@ sound, native DAW workflow.
 - The active engine is selected per-instance and persists with the project.
 - Mode is switched in two ways:
   - **Auto** — loading a tagged preset switches the instance to that
-    preset's mode (see [ADR-0025](0025-tagged-preset-browser.md)).
+    preset's mode (see [ADR-0025](0025-tagged-preset-browser.md)). Only
+    FM and SQ presets exist; D has no preset format.
   - **Manual** — a mode selector in the UI header.
-- On manual mode switch, the instance **silently loads a sensible default
-  preset for the new mode** (idiomatic modern multi-engine synth behaviour —
-  cf. UVI Falcon, Plogue Chipsounds, Aly James Lab). The pre-switch patch
-  remains saved on disk; nothing is lost.
+- On manual mode switch behaviour differs by destination mode:
+  - **FM / SQ** — the instance **silently loads a sensible default
+    preset for the new mode** (idiomatic modern multi-engine synth
+    behaviour — cf. UVI Falcon, Plogue Chipsounds, Aly James Lab). The
+    pre-switch patch remains saved on disk; nothing is lost.
+  - **D** — the instance does **nothing** to its D apvts params
+    (`prescaler`, `mono`, `dry_wet`). The host owns those values via
+    project state, automation, and the generic editor — identical to
+    any other audio FX plugin. First switch into D in a fresh instance
+    starts from the `juce::AudioParameter` defaults naturally;
+    subsequent switches preserve whatever the host last set. D has no
+    preset format ([ADR-0025](0025-tagged-preset-browser.md)).
 - The MIDI input is a single channel per instance (the plugin's host channel).
   Per-channel routing tables, MIDI routing modals, per-part transpose/range/
   detune/balance, and per-part polyphony modes are removed from the

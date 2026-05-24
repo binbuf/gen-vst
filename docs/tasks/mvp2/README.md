@@ -58,9 +58,9 @@ stretch of unverifiable work.
 | 04 | **Widget library** | Every v2 widget exists as a real JS module bound through the relay layer; gallery page exercises each |
 | 05 | **FM mode plays** | FM mode plays MIDI through the full RYM2612-style FM panel UI; FREQ CTRL MODE INT/FLOAT/AUTO RETRIG paths work |
 | 06 | **SQ mode plays** | SQ mode plays MIDI through the 3 tone + 1 noise SN76489 panel UI |
-| 07 | **D mode plays** | D mode processes audio input through the PCM2612-style D panel UI; level meters live |
+| 07 | **D mode plays** | D mode processes audio input through the spartan D panel UI (DRY/WET + MONO); the header's mode-aware DAC PRESCALER drives decimation |
 | 08 | **Header + Settings** | Header mode selector / patch LCD / Output Filter + Ladder Effect toggles / VOL / NOTE ON LED; Settings + About modals open from the gear icon |
-| 09 | **Tagged preset browser** | One unified browser shows FM/SQ/D presets; loading auto-switches mode; `.psg` and `.gdac` formats work |
+| 09 | **Tagged preset browser** | One unified browser shows FM and SQ presets; loading auto-switches mode; `.psg` format works. D mode has no preset format (per ADR-0025) — header patch chrome is greyed in D |
 | 10 | **Release-ready** | DAW state save/restore works; v2 parity audit clean; pluginval passes cross-platform |
 
 ## Task index
@@ -75,7 +75,7 @@ stretch of unverifiable work.
 | 06 | [SQ panel](06-sq-panel.md) | SQ mode plays | 04 |
 | 07 | [D panel](07-d-panel.md) | D mode plays | 04 |
 | 08 | [Header, Settings & About modals](08-header-and-modals.md) | Header + Settings | 05, 06, 07 |
-| 09 | [Tagged preset browser & .psg / .gdac formats](09-preset-browser.md) | Tagged preset browser | 08 |
+| 09 | [Tagged preset browser & .psg format](09-preset-browser.md) | Tagged preset browser | 08 |
 | 10 | [State persistence & v2 parity audit](10-state-and-qa.md) | Release-ready | 09 |
 
 ## Task file structure
@@ -112,8 +112,10 @@ reference.
   *Microtuning*).
 - CLAP build target (ADR-0008).
 - Channel 3 special mode as a standalone editor surface (ADR-0014).
-- v2-tagged bank format mixing FM/SQ/D presets into one shareable file
-  (04-patch-system *retired `.gnbank`*).
+- v2-tagged bank format mixing FM and SQ presets into one shareable
+  file (04-patch-system *retired `.gnbank`*). D mode has no preset
+  format ([ADR-0025](../../design/adr/0025-tagged-preset-browser.md))
+  so it has nothing to contribute to a bundled bank.
 - Signed/notarized macOS `.pkg`; `.deb`/AppImage for Linux (ADR-0016).
 - Cross-OS portability for custom-root paths (existing limitation,
   carried).

@@ -84,13 +84,25 @@ VOL knob, and a gear icon for settings.
   [`09-visual-spec.md`](09-visual-spec.md)). Clicking opens the About
   modal (view 7).
 - **Mode selector** — 3-segment pill: `FM` / `SQ` / `D`. Bound to
-  `mode_select` apvts param. Tapping a different segment loads a
-  sensible default preset for that mode ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
-- **Patch-name LCD** (`patch-name-lcd` widget) — large monospace LCD
-  showing the active patch name. Flanked by:
+  `mode_select` apvts param. Tapping FM or SQ loads a sensible default
+  preset for that mode; tapping D leaves the D apvts params untouched
+  (D has no preset format — the host owns its values like any other
+  audio FX). See [ADR-0021](adr/0021-three-mode-single-engine-ui.md).
+- **Patch-name LCD + navigation cluster** (`patch-name-lcd` widget +
+  prev/next/browse buttons) — large monospace LCD showing the active
+  patch name. Flanked by:
   - **◀ / ▶** — prev/next patch within the active mode. Sorted-order
     navigation across all roots.
   - **📂** — opens the preset browser modal (view 5).
+
+  **D-mode behaviour**: when `mode_select == D` the entire cluster
+  (LCD + ◀ + ▶ + 📂) is greyed (`.is-disabled`) and non-interactive.
+  D has no preset format ([ADR-0025](adr/0025-tagged-preset-browser.md))
+  so there is no patch name to display, nothing to step through, and
+  no save/load surface — the LCD shows a static `AUDIO FX` (or `—`)
+  placeholder. A D-mode user who wants to browse FM/SQ presets clicks
+  the FM or SQ mode-selector pill first; the browser becomes
+  reachable from the now-active FM/SQ header.
 - **Output character toggles** — two `toggle-switch` widgets bound to
   `output_filter` and `ladder_effect` apvts params
   ([ADR-0024](adr/0024-hardware-filter-toggles.md)). The Output Filter
@@ -102,18 +114,28 @@ VOL knob, and a gear icon for settings.
   Ladder toggle is a single on/off LED rocker. **Ladder is greyed out
   in SQ mode** (it has no audible effect there).
 - **`DAC PRESCALER` knob** — a `knob-sm` paired with a small `DAC PRESC`
-  caption. Bound to apvts param `fm_dac_prescaler` (see
-  [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM
-  mode)*). The control is **persistent** in the header — mirroring the
+  caption. The control is **persistent** in the header — mirroring the
   RYM2612 reference, which places `DAC PRESCALER` next to `VOL` rather
-  than inside the operator grid — but its semantics are mode-specific:
-  - **FM mode** — active; sweeps the YM2612 DAC clock divider, colouring
-    the FM voice rendering with characteristic aliasing / quantization.
+  than inside the operator grid. **Binding is mode-aware** — the same
+  widget targets a different apvts param depending on the active mode:
+  - **FM mode** — active; binds `fm_dac_prescaler` (per-FM-patch; see
+    [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM
+    mode)*). Sweeps the YM2612 DAC clock divider, colouring the FM
+    voice rendering with characteristic aliasing / quantization.
+  - **D mode** — active; binds the D-mode global `prescaler` (per
+    [ADR-0021](adr/0021-three-mode-single-engine-ui.md)). Sweeps the
+    sample-rate decimator on the input signal. The D-mode panel itself
+    therefore carries **no** prescaler knob — this header control is
+    the sole UI surface for the D-mode prescaler.
   - **SQ mode** — greyed (`.is-disabled`); the SN76489 PSG bypasses the
-    YM2612 DAC on real hardware so the prescaler has no audible effect.
-  - **D mode** — greyed; the D-mode panel exposes its own larger central
-    `DAC PRESCALER` knob (bound to a separate apvts param `prescaler`
-    for the audio-FX use case — see view 4).
+    YM2612 DAC on real hardware so prescaling has no audible effect.
+
+  The two underlying params (`fm_dac_prescaler` and `prescaler`) remain
+  **distinct** — `fm_dac_prescaler` travels with an FM patch, `prescaler`
+  is a plain D-mode apvts param (no preset format — the host owns it,
+  see [ADR-0025](adr/0025-tagged-preset-browser.md)). The header widget
+  switches its bound target on `mode_select` change but does not copy
+  values between the two.
 - **L / R output meters** (`level-meter` widget, `level-meter-mini`
   variant) — two thin horizontal level bars stacked vertically (L on
   top, R below) inside a single recessed cell. Read post-master-gain
@@ -381,38 +403,37 @@ the strip above.
 
 ## 4. D mode panel
 
-Active when `mode_select = D`. Modelled directly on Inphonik's
-**PCM2612 Retro Decimator Unit**. Audio FX only — MIDI is ignored.
+Active when `mode_select = D`. Inspired by Inphonik's **PCM2612 Retro
+Decimator Unit** but reduced to the two D-only controls — the global
+prescaler, output meters, and output-character toggles all live in the
+persistent header. Audio FX only — MIDI is ignored.
 
 ```
 ┌─ D MODE — RETRO DECIMATOR UNIT ───────────────────────────────────────────────┐
 │                                                                                │
-│                              ┌─ DAC PRESCALER ─┐                              │
-│                              │      (large)    │                              │
-│                              │       ●         │                              │
-│                              │                 │                              │
-│                              └─────────────────┘                              │
+│                              ┌─  DRY / WET  ─┐                                │
+│                              │    (large)    │                                │
+│                              │       ●       │                                │
+│                              │               │                                │
+│                              └───────────────┘                                │
 │                                                                                │
-│   ┌─ STEREO LEVEL METERS ──────────────────────────────────────────────┐      │
-│   │  L  ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮     [ MONO ]     ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮ R│      │
-│   └────────────────────────────────────────────────────────────────────┘      │
-│                                                                                │
-│           DRY / WET                                                            │
-│              ●                                                                 │
+│                                  [ MONO ]                                      │
 │                                                                                │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **`DAC PRESCALER`** — large central `decimator-knob`. Bound to the
-  `prescaler` apvts param (0.0..1.0; 0 = no decimation, 1 = max).
-- **Stereo level meters** — `level-meter` widget showing input
-  (pre-decimation) L/R peaks. Updated via the C++→JS telemetry push.
+- **`DRY / WET`** — large central knob (uses the 96 px `decimator-knob`
+  body variant from [`09-visual-spec.md`](09-visual-spec.md) so the
+  panel keeps a prominent central anchor). Bound to the `dry_wet`
+  apvts param (0.0..1.0; 0 = unprocessed input, 1 = fully decimated).
 - **`MONO`** — `toggle-switch` (lit when on); bound to `mono`.
-- **`DRY / WET`** — `knob`; bound to `dry_wet`.
 
-The Output Filtering and Ladder Effect toggles live in the **header**,
-not on this panel (they're global, not D-specific) — consistent with
-how RYM2612 keeps `OUTPUT FILTERING` on its main chassis.
+The DAC PRESCALER, Output Filtering, and Ladder Effect controls live
+in the **header** (view 1), not on this panel — they're global /
+cross-mode and the header is their canonical home. The stereo output
+level meters also live in the header cluster. The D panel itself is
+deliberately spartan, carrying only the two controls that exist
+nowhere else.
 
 No MIDI controls, no sample loader, no MIDI channel selector — D mode
 processes the audio input bus and only the audio input bus
@@ -425,9 +446,9 @@ are therefore centered horizontally and the wide bands on either side
 of the centered column carry the same brushed-metal chassis treatment
 defined in [`09-visual-spec.md`](09-visual-spec.md) so the panel reads
 as one continuous physical surface rather than a small unit floating
-on grey. The empty band above the `DAC PRESCALER` knob is the natural
-home for a stylised mode wordmark (e.g. `RETRO DECIMATOR` in IBM Plex
-Mono Bold) — implementation detail, tuned at render time.
+on grey. The empty band above the central knob is the natural home for
+a stylised mode wordmark (e.g. `RETRO DECIMATOR` in IBM Plex Mono
+Bold) — implementation detail, tuned at render time.
 
 **Deliberate divergences from PCM2612** (recorded so they don't get
 re-litigated during implementation):
@@ -441,6 +462,17 @@ re-litigated during implementation):
    is part of the "Genesis sound" downstream of the same DAC path D
    mode emulates, so the toggle stays useful here
    ([ADR-0024](adr/0024-hardware-filter-toggles.md)).
+3. **DAC PRESCALER lives in the header**, not on the D chassis. PCM2612
+   makes it the unit's centerpiece; v2 promotes it to the header so the
+   same widget can target either `fm_dac_prescaler` (FM mode) or
+   `prescaler` (D mode) and the D panel can stay spartan (it would
+   otherwise duplicate a header control).
+4. **Input-side stereo level meters are removed.** PCM2612 puts L/R
+   input meters on its chassis; v2 relies on (a) the header's
+   post-master L/R output meters and (b) the header NOTE ON LED's
+   "input-audio-present" behaviour in D mode (per view 1) plus the
+   DAW's native track-level input meter. Adding a panel-side input
+   meter would triplicate signal-presence feedback.
 
 ---
 
@@ -453,13 +485,13 @@ window; the main UI is dimmed behind it.
 
 ```
 ┌─ PRESET BROWSER ────────────────────────────────────────────────  [X] ┐
-│  [All] [FM] [SQ] [D]   [ Search…                                   🔍 ]│
+│  [All] [FM] [SQ]       [ Search…                                   🔍 ]│
 │ ┌────────────────────┬─────────────────────────────────────────────┐  │
 │ │ ▼ Factory      🔒  │  FM   Bass Guitar                            │  │
 │ │ ▼ Saved            │  FM   Techno Lead                            │  │
 │ │ ▼ Imported         │  FM ▶ Synth Brass                  ◀ sel    │  │
 │ │ ▼ extra  (custom)  │  SQ   Pulse Arp                              │  │
-│ │   ▶ 01      (842)  │  D    Crunchy Drums                          │  │
+│ │   ▶ 01      (842)  │  SQ   Chip Bass                              │  │
 │ │   ▼ 02      (915)  │  …                                           │  │
 │ │     ▶ game_a  (28) │                                              │  │
 │ │   ▶ 03      (770)  │                                              │  │
@@ -471,24 +503,31 @@ window; the main UI is dimmed behind it.
 
 **Controls**
 
-- **Mode filter chips** (top-left) — `All / FM / SQ / D`. Default = the
-  instance's current mode, so the user first sees patches for what
-  they're editing. Switching to `All` shows everything.
+- **Mode filter chips** (top-left) — `All / FM / SQ`. Default = the
+  instance's current mode (or `All` when the instance is in D mode,
+  since D has no presets to filter to), so the user first sees patches
+  for what they're editing. Switching to `All` shows everything across
+  both preset modes. D mode is intentionally absent — D has no preset
+  format ([ADR-0025](adr/0025-tagged-preset-browser.md)). The browser
+  is normally not opened from D mode anyway because the header 📂
+  button is greyed in D (see view 1).
 - **Search box** — filters by patch name across all roots, honouring
   the active mode chip.
 - **Left pane — folder tree** — every root and its subfolders as a
   collapsible tree. `Factory` carries a lock glyph (read-only).
   `Saved`/`Imported` are writable. Each scanned folder shows its patch
   count. Lazy scan on first expand.
-- **Right pane — patch list** — each row prefixed with a `FM` / `SQ` /
-  `D` badge. Files in the selected folder, filtered by the active mode
+- **Right pane — patch list** — each row prefixed with a `FM` / `SQ`
+  badge. Files in the selected folder, filtered by the active mode
   chip.
 - **`+ Add Folder…`** — registers a custom root (view 10 native chooser).
 - **`Import file`** — file picker
-  (`*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg;*.gdac`); copies into the
+  (`*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg`); copies into the
   user-imported root.
-- **`Export▾`** — export the current mode's patch as TFI/VGI (FM),
-  `.psg` (SQ), or `.gdac` (D).
+- **`Export▾`** — export the current mode's patch as TFI/VGI (FM) or
+  `.psg` (SQ). Greyed out when `mode_select == D` (no D format to
+  write — use the DAW's project save or its plugin user-preset feature
+  instead).
 - **`Delete`** — removes a patch from a writable root; disabled for
   `Factory`.
 - **`Close` / `[X]`** — dismiss the modal.
@@ -666,12 +705,12 @@ Native OS dialogs (`juce::FileChooser`), not WebView content.
 
 | Trigger | Kind | Filter / result |
 |---------|------|-----------------|
-| `Import file` (browser) | Open file | `*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg;*.gdac` → copied into the user-imported root |
-| `Export▾` (browser) | Save file | Writes the current mode's patch format |
+| `Import file` (browser) | Open file | `*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg` → copied into the user-imported root |
+| `Export▾` (browser) | Save file | Writes the current mode's patch format (FM → TFI/VGI, SQ → `.psg`; greyed in D mode — no format) |
 | `+ Add Folder…` (browser) | Choose directory | Registers a custom patch root |
 
 **Drag-and-drop** is the non-dialog path: any
-`.tfi/.vgi/.dmp/.y12/.opm/.psg/.gdac` file dropped on the plugin window
+`.tfi/.vgi/.dmp/.y12/.opm/.psg` file dropped on the plugin window
 imports into the user-imported root (and auto-switches mode if it's a
 different tag than the current mode). A `.vgm`/`.vgz` triggers VGM bank
 import (Task 21 semantics retained). A **folder** dropped on the window
@@ -681,6 +720,10 @@ register a folder as a browser-only custom root use the Preset Browser's
 "Add Folder…" button instead. Because an OS drop must yield real
 filesystem paths, this uses a native `juce::FileDragAndDropTarget` on
 the editor, **not** HTML5 drag-and-drop.
+
+D mode is not a drop target — there is no D preset format to import.
+A drop while in D mode that resolves to an FM or SQ tag still imports
++ auto-switches mode as for any other instance state.
 
 The v1 dedicated `LOAD WAV…` button (D section) is **removed** — D mode
 no longer loads WAV files.

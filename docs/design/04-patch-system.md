@@ -13,7 +13,11 @@ patch is loaded.
 | `.tfi`, `.vgi`, `.dmp`, `.y12`, `.opm` | **FM** | See FM format sections below |
 | `.vgm`, `.vgz` | **FM** | VGM bank import (extracts FM patches) |
 | `.psg` | **SQ** | New v2 JSON — schema below |
-| `.gdac` | **D**  | New v2 JSON — schema below |
+
+D mode has no preset extension — its 3 apvts params (`prescaler`,
+`mono`, `dry_wet`) persist only via the host's project state. See the
+*D Mode — No Preset Format* section below and
+[ADR-0025](adr/0025-tagged-preset-browser.md) *Alternatives considered*.
 
 `.wav` is **not** a recognised patch tag in v2 — D mode is an audio FX,
 not a sampler ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
@@ -377,31 +381,29 @@ bass / lead / arp tones — Task v2/05 seeds them).
 
 ---
 
-## `.gdac` Format (v2 D Preset — JSON)
+## D Mode — No Preset Format
 
-A tiny JSON file holding the three D-mode DSP values. New in v2; loaded
-only in D mode.
+D mode is an audio FX with three apvts params (`prescaler`, `mono`,
+`dry_wet`) and **does not have a dedicated preset format**. State is
+persisted entirely through the host:
 
-**Schema (single supported `version = 1`):**
+- **Project save / load** — `setStateInformation()` serializes the apvts
+  values along with `mode_select == D`; reopening the project restores
+  both.
+- **Cross-project recall** — covered by the DAW's own "user preset"
+  mechanism (every major DAW provides this for plugins regardless of
+  whether the plugin ships its own preset format).
+- **Manual mode switch to D** — leaves the D apvts params untouched (no
+  `.gdac` file is read; the host's last values stand). See
+  [ADR-0021](adr/0021-three-mode-single-engine-ui.md) on manual mode
+  switch behaviour.
 
-```json
-{
-  "version": 1,
-  "name": "Crunchy Drums",
-  "prescaler": 0.65,
-  "mono": false,
-  "dry_wet": 1.0
-}
-```
-
-- `prescaler` — 0.0..1.0; 0.0 = no decimation (host rate); 1.0 = maximum
-  decimation. Mapping to actual sample-and-hold divisor lives in
-  `DspDecimator`.
-- `mono` — collapse L/R to mono before the decimator.
-- `dry_wet` — 0.0 = original audio only, 1.0 = decimated only.
-
-Loader/writer live in `src/DacPreset.{h,cpp}`. Schema parallels `.psg` for
-consistency; default presets ship under `extern/patches/d/`.
+A `.gdac` JSON format mirroring `.psg` was considered and rejected — the
+machinery (schema, loader, factory files, browser tag, drag-drop,
+CMake staging) was disproportionate for 3 floats. See
+[ADR-0025](adr/0025-tagged-preset-browser.md) *Alternatives considered*
+for the full rationale. There is no `src/DacPreset.{h,cpp}` and no
+`extern/patches/d/` folder.
 
 ---
 
@@ -540,8 +542,8 @@ A **patch root** is a top-level folder the browser scans:
 
 - **Factory root** — the bundled factory patches. Read-only, always present,
   auto-loaded on every startup. Cannot be removed. Holds the seed `.tfi`
-  FM patches plus the seed `.psg` and `.gdac` presets under `sq/` and `d/`
-  subfolders.
+  FM patches plus the seed `.psg` SQ presets under the `sq/` subfolder.
+  D mode has no factory presets (no preset format).
 - **User-saved root** — `<userAppData>/GenVst/patches/saved/`. Writable;
   populated by save operations from any of the three modes. Auto-created
   (idempotent `fs::create_directories`) on first launch.
@@ -577,13 +579,13 @@ for every root and every tag.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ [All] [FM] [SQ] [D]    [ Search patches…    🔍 ]│
+│ [All] [FM] [SQ]        [ Search patches…    🔍 ]│
 │ ┌────────────────────┬──────────────────────────┐│
 │ │ ▼ Factory          │ FM  Bass Guitar          ││
 │ │ ▼ extra  (custom)  │ FM  Techno Lead          ││
 │ │   ▶ 01      (842)  │ FM  ▶ Synth Brass  ← sel ││
 │ │   ▼ 02      (915)  │ SQ  Pulse Arp            ││
-│ │     ▶ game_a (28)  │ D   Crunchy Drums        ││
+│ │     ▶ game_a (28)  │ SQ  Chip Bass            ││
 │ │     ▶ game_b (40)  │ ...                      ││
 │ │   ▶ 03      (770)  │                          ││
 │ │ [+ Add Folder…]    │                          ││
@@ -592,9 +594,11 @@ for every root and every tag.
 └─────────────────────────────────────────────────┘
 ```
 
-- **Mode filter chips (top-left):** `All / FM / SQ / D`. Default = the
-  instance's current mode, so the user first sees patches for what they're
-  editing. Switching to `All` shows every patch across modes.
+- **Mode filter chips (top-left):** `All / FM / SQ`. Default = the
+  instance's current mode (or `All` when the instance is in D mode,
+  since D has no presets to filter to), so the user first sees patches
+  for what they're editing. Switching to `All` shows every patch
+  across both preset modes.
 - **Left pane — folder tree:** every root and its subdirectories as a
   collapsible tree. Each scanned folder node shows its patch count so size
   is visible before expanding. Selecting a folder shows its patches on the
@@ -632,8 +636,9 @@ thread.
 Patch loads must not block the audio thread. Workflow:
 
 1. User selects a patch → the message thread parses the file into the
-   appropriate in-memory struct (`Patch` for FM, `PsgPreset` for SQ,
-   `DacPreset` for D) and tags it with the mode it belongs to.
+   appropriate in-memory struct (`Patch` for FM, `PsgPreset` for SQ) and
+   tags it with the mode it belongs to. D mode is never selectable
+   through this flow because it has no preset format.
 2. If the patch's mode differs from the current mode, the message thread
    first flips `mode_select` via the apvts.
 3. Push the typed-patch item into a `juce::AbstractFifo`-based lock-free
@@ -651,7 +656,7 @@ thread — it is shown to the user via the UI notification toast (see
   scanned lazily; its directory structure becomes the navigable tree. The path is
   persisted across sessions.
 - **Import file:** a file picker filtered to
-  `*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg;*.gdac` copies a single patch
+  `*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg` copies a single patch
   into the **user-imported root** (`…/patches/imported/`). The supported
   extension list lives at `kSupportedPatchExtensions` in
   `src/PatchSystem.h`; the picker and the drag-and-drop handler both
@@ -668,13 +673,21 @@ thread — it is shown to the user via the UI notification toast (see
   *folder* registers it as a new custom root.
 - **Save patch:** `savePatch()` writes the current mode's patch into the
   **user-saved root** (`…/patches/saved/`). The format depends on the mode
-  (FM → TFI by default; SQ → `.psg`; D → `.gdac`).
+  (FM → TFI by default; SQ → `.psg`). D mode is not savable through this
+  flow — use the DAW's plugin user-preset feature instead, or save the
+  project (D state persists via the normal apvts envelope).
 - **Export TFI** (FM mode): construct a 42-byte buffer from the current
   `Patch` struct and write to file.
 - **Export VGI** (FM mode): construct a 43-byte buffer, pack AMS/FMS into
   byte 2, AMON into DR byte.
-- **Export PSG** (SQ mode) and **Export DAC** (D mode): write the
-  in-memory struct out as JSON via the corresponding loader's writer.
+- **Export PSG** (SQ mode): write the in-memory `PsgPreset` struct out as
+  JSON via the loader's writer. D mode has no Export button — there is
+  no format to write.
+
+The supported-extension set in `kSupportedPatchExtensions` /
+`tagFromExtension()` is `{ .tfi, .vgi, .dmp, .y12, .opm, .psg }`; the
+`Tag` enum is `{ FM, SQ }`. D mode is a `mode_select` value but never
+a tag value, and there is no extension that resolves to a D tag.
 - **Delete:** removes a patch from a writable root. Disabled for the
   read-only factory root.
 
@@ -787,9 +800,10 @@ each plugin instance holds one patch, and routing across instances is the
 DAW's job, not the plugin's.
 
 `src/BankIO.{h,cpp}` and `tests/BankIOTests.cpp` are deleted in Task v2/02
-along with `PartManager`. A future v2-tagged-bank format (mixing FM/SQ/D
-presets into one shareable file) is a possible follow-up but is **not in
-v2 MVP scope** — the unified preset browser handles per-file sharing
+along with `PartManager`. A future v2-tagged-bank format (mixing FM and
+SQ presets into one shareable file) is a possible follow-up but is
+**not in v2 MVP scope** — the unified preset browser handles per-file
+sharing
 fine. Users wanting to package a curated collection can zip a folder and
 share that.
 

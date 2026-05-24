@@ -169,8 +169,8 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 | `algorithm-mini` | The 8 YM2612 algorithm topologies, drawn small; selected one highlighted | Canvas |
 | `envelope-curve` | Per-operator (FM) or per-channel (SQ) ADSR shape; computed live from envelope params | Canvas |
 | `note-on-led` | Single header LED that lights on key-on (FM/SQ) or input-audio-present (D) | CSS animation on apvts-bound state |
-| `level-meter` | Stereo LED-style level bars (stacked `level-meter-mini` cell in the header for output; full-fat variant on the D-mode panel for input) | Canvas |
-| `decimator-knob` | Large central knob in D mode (PCM2612-style); identical mechanics to `knob` with larger body | CSS body + Canvas indicator arc |
+| `level-meter` | Stereo LED-style level bars; only deployed as the stacked `level-meter-mini` cell in the header for post-master output (no D-panel input variant in v2 — see `08-ui-views.md` view 4) | Canvas |
+| `decimator-knob` | Large 96 px central knob body variant (PCM2612-style — matte body, no top sheen); identical mechanics to `knob`. Used by the D panel's central `DRY/WET` knob | CSS body + Canvas indicator arc |
 | `patch-name-lcd` | Larger LCD readout in the header showing the active patch | Canvas; uses LCD-style font |
 | `op-badge` | Blue-filled square showing the operator number `1..4`; click to make that operator the active target of the `envelope-curve` widget; carries an outer glow when active | CSS only |
 | `notification-toast` | Transient banner for errors / warnings; same role as v1 | CSS only |
@@ -244,7 +244,7 @@ sized to the whole 1200×560 window. The browser is configured
 - An event listener for a `uiReady` event the page fires once mounted.
 
 **File drag-and-drop.** Importing patches by dropping
-`.tfi`/`.vgi`/`.dmp`/`.y12`/`.opm`/`.psg`/`.gdac` files — or a folder —
+`.tfi`/`.vgi`/`.dmp`/`.y12`/`.opm`/`.psg` files — or a folder —
 onto the plugin window needs the real filesystem path of each dropped
 item. An HTML5 drop inside the WebView only yields `File` objects, not
 paths (and cannot enumerate a dropped folder), so drag-and-drop is
