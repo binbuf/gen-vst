@@ -49,7 +49,7 @@ headroom, and verify the full feature set against the parity checklist.
 
 - Re-architecting the voice model — only if profiling proves it necessary, and
   then it is a new ADR + its own task, not part of this one.
-- Post-MVP features (see the backlog in `docs/tasks/README.md`).
+- Post-MVP features (see the backlog in `docs/tasks/mvp/README.md`).
 
 ## Implementation steps
 

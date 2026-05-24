@@ -19,7 +19,7 @@ Close the remaining cosmetic + correctness gaps observed in the 16 Genny screens
 - **Algorithm diagram routing** is canonical YM2612 (8 algorithms; carriers are the operators that sum to output). Cross-reference plutiedev's YM2612 algorithm table for the exact carrier mask per algorithm.
 - **Palette is the source of truth in `design-system.css`** — if a discrepancy exists between widget code and the CSS variable, fix the widget.
 - **Bracket glyphs** are the small `▌` / `▐` decorations flanking the 7-seg display per `08-ui-views.md` header diagram.
-- **Punch list deliverable.** This task may surface small leftover deltas that don't fit. Capture them in `docs/tasks/30-cosmetic-cleanup.md` rather than silently dropping.
+- **Punch list deliverable.** This task may surface small leftover deltas that don't fit. Capture them in `docs/tasks/mvp/30-cosmetic-cleanup.md` rather than silently dropping.
 
 ## Scope
 
@@ -28,8 +28,8 @@ Close the remaining cosmetic + correctness gaps observed in the 16 Genny screens
 - `ui/src/styles/design-system.css` — palette audit; reconcile any drift.
 - `ui/src/widgets/seg-display.js` + `ui/index.html` — bracket glyphs flanking the 7-seg.
 - `ui/src/views/d-view.js` — restyle to Genny layout: HZ knob (replace the 8000/11025/22050 stepper with a continuous knob bound to the existing rate param; clamp/snap if engine still requires fixed rates), LEV slider, "DAC" branding label, 4×5 note-grid backdrop, "Click Note To Load Sample" prompt overlay, click handler that toasts the deferral message.
-- `docs/tasks/29-dac-multisample.md` — new stub task file with the multi-sample DAC plan referenced from the screenshots.
-- `docs/tasks/30-cosmetic-cleanup.md` — new only if the side-by-side leaves remaining deltas.
+- `docs/tasks/mvp/29-dac-multisample.md` — new stub task file with the multi-sample DAC plan referenced from the screenshots.
+- `docs/tasks/mvp/30-cosmetic-cleanup.md` — new only if the side-by-side leaves remaining deltas.
 
 ## Out of scope
 
@@ -49,7 +49,7 @@ Close the remaining cosmetic + correctness gaps observed in the 16 Genny screens
    - The grid is read-only; clicks anywhere emit the deferral toast.
    - Keep the existing LOAD WAV / CLEAR controls but visually subordinate them (small bottom strip) so the panel reads as Genny's multi-sample grid even though only the single-WAV path works.
 6. **Side-by-side** — open the running standalone next to each screenshot; note any remaining visual delta.
-7. **Stamp follow-ups** — write `docs/tasks/29-dac-multisample.md` (always); write `docs/tasks/30-cosmetic-cleanup.md` only if the side-by-side surfaces leftover items.
+7. **Stamp follow-ups** — write `docs/tasks/mvp/29-dac-multisample.md` (always); write `docs/tasks/mvp/30-cosmetic-cleanup.md` only if the side-by-side surfaces leftover items.
 
 ## Deliverables
 
@@ -58,8 +58,8 @@ Close the remaining cosmetic + correctness gaps observed in the 16 Genny screens
 - `ui/src/views/d-view.js` — restyled.
 - `ui/src/styles/design-system.css` — palette reconciled.
 - `tests/AlgoMappingTests.cpp` or `ui/tests/algo-mapping.test.js` — new.
-- `docs/tasks/29-dac-multisample.md` — new.
-- `docs/tasks/30-cosmetic-cleanup.md` — only if needed.
+- `docs/tasks/mvp/29-dac-multisample.md` — new.
+- `docs/tasks/mvp/30-cosmetic-cleanup.md` — only if needed.
 
 ## Verification
 

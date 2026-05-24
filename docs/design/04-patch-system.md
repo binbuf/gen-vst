@@ -1,8 +1,36 @@
 # Patch System
 
-## Patch Data Model
+## Tagging — file extension is the tag
 
-The internal `Patch` struct stores all YM2612 parameters for **one FM part** as plain integers matching hardware register ranges. There are 6 parts, so the processor holds 6 `Patch` instances (see [ADR-0013](adr/0013-multitimbral-voice-model.md)):
+Under [ADR-0025](adr/0025-tagged-preset-browser.md), every patch file is
+tagged with the mode it belongs to, and the tag is derived from the file's
+extension — no sidecar, no metadata header. The browser uses the tag to
+filter the visible patches and to auto-switch the instance's mode when a
+patch is loaded.
+
+| Extension | Tag | Format |
+|---|---|---|
+| `.tfi`, `.vgi`, `.dmp`, `.y12`, `.opm` | **FM** | See FM format sections below |
+| `.vgm`, `.vgz` | **FM** | VGM bank import (extracts FM patches) |
+| `.psg` | **SQ** | New v2 JSON — schema below |
+| `.gdac` | **D**  | New v2 JSON — schema below |
+
+`.wav` is **not** a recognised patch tag in v2 — D mode is an audio FX,
+not a sampler ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
+
+The lookup table lives in `src/PatchSystem.{h,cpp}` as `tagFromExtension()`
+and `kSupportedPatchExtensions`. Both the file picker and the drag-and-drop
+handler consume them so the supported set stays in one place.
+
+---
+
+## FM Patch Data Model
+
+The internal `Patch` struct stores all YM2612 parameters for **the FM
+patch** as plain integers matching hardware register ranges. Under v2
+([ADR-0021](adr/0021-three-mode-single-engine-ui.md)) the processor holds
+**one** `Patch` instance — the v1 six-part array is retired with
+`PartManager`:
 
 ```cpp
 struct Patch {
@@ -265,6 +293,77 @@ determines which operators are carriers vs. modulators.
 
 ---
 
+## `.psg` Format (v2 SQ Preset — JSON)
+
+A small JSON file holding one SQ-mode patch: per-channel envelope settings,
+noise type/rate, channel volumes, channel pans, and a display name. New
+in v2; loaded only in SQ mode.
+
+**Schema (single supported `version = 1`):**
+
+```json
+{
+  "version": 1,
+  "name": "Soft Lead",
+  "channels": {
+    "tone1": { "atk": 8, "dr1": 4, "sus": 12, "dr2": 0, "rr": 6,
+               "vol": 1.0, "pan": -0.3, "detune": 0 },
+    "tone2": { "atk": 8, "dr1": 4, "sus": 12, "dr2": 0, "rr": 6,
+               "vol": 1.0, "pan":  0.3, "detune": 7 },
+    "tone3": { "atk": 0, "dr1": 0, "sus": 15, "dr2": 0, "rr": 0,
+               "vol": 0.0, "pan":  0.0, "detune": 0 },
+    "noise": { "atk": 0, "dr1": 0, "sus": 15, "dr2": 0, "rr": 0,
+               "vol": 0.0, "pan":  0.0,
+               "type": "white", "rate": "mid" }
+  }
+}
+```
+
+- `atk / dr1 / sus / dr2 / rr` — software-ADSR stage values (Task 23
+  semantics, unchanged).
+- `vol` — 0.0..1.0 per-channel volume.
+- `pan` — -1.0..+1.0 L/R balance.
+- `detune` — semitone offset (signed integer).
+- `noise.type` — `"white"` or `"periodic"`.
+- `noise.rate` — `"low"`, `"mid"`, `"high"`, or `"ch2"`.
+
+Loader/writer live in `src/PsgPreset.{h,cpp}`. Out-of-range or missing
+fields are clamped to defaults; an unparseable file raises a notification
+toast and does not load.
+
+Default `.psg` presets ship under `extern/patches/sq/` (a handful of
+bass / lead / arp tones — Task v2/05 seeds them).
+
+---
+
+## `.gdac` Format (v2 D Preset — JSON)
+
+A tiny JSON file holding the three D-mode DSP values. New in v2; loaded
+only in D mode.
+
+**Schema (single supported `version = 1`):**
+
+```json
+{
+  "version": 1,
+  "name": "Crunchy Drums",
+  "prescaler": 0.65,
+  "mono": false,
+  "dry_wet": 1.0
+}
+```
+
+- `prescaler` — 0.0..1.0; 0.0 = no decimation (host rate); 1.0 = maximum
+  decimation. Mapping to actual sample-and-hold divisor lives in
+  `DspDecimator`.
+- `mono` — collapse L/R to mono before the decimator.
+- `dry_wet` — 0.0 = original audio only, 1.0 = decimated only.
+
+Loader/writer live in `src/DacPreset.{h,cpp}`. Schema parallels `.psg` for
+consistency; default presets ship under `extern/patches/d/`.
+
+---
+
 ## VGM Bank Import
 
 VGM (`.vgm`) and VGZ (`.vgz`, gzipped VGM) files are register-log captures of a
@@ -399,63 +498,79 @@ flat bank list.
 A **patch root** is a top-level folder the browser scans:
 
 - **Factory root** — the bundled factory patches. Read-only, always present,
-  auto-loaded on every startup. Cannot be removed. Feeds the main-window
-  **INSTRUMENTS** list.
+  auto-loaded on every startup. Cannot be removed. Holds the seed `.tfi`
+  FM patches plus the seed `.psg` and `.gdac` presets under `sq/` and `d/`
+  subfolders.
 - **User-saved root** — `<userAppData>/GenVst/patches/saved/`. Writable;
-  populated only by `savePatch()`. Feeds the main-window **PRESETS** tab.
-  Auto-created (idempotent `fs::create_directories`) on first launch.
+  populated by save operations from any of the three modes. Auto-created
+  (idempotent `fs::create_directories`) on first launch.
 - **User-imported root** — `<userAppData>/GenVst/patches/imported/`. Writable;
-  populated only by `importPatch()` and drag-and-drop imports. Feeds the
-  main-window **IMPORT** tab. Auto-created on first launch.
+  populated by imports and drag-and-drop. Auto-created on first launch.
 - **Custom roots** — any number of folders the user registers via "Add Folder…".
   Each root's full subdirectory structure is preserved and navigable. The list of
   custom root paths is persisted in plugin state and re-scanned on next startup.
   Removing a root only unregisters it — no files are deleted from disk.
 
+The v1 split of the main window into INSTRUMENTS / PRESETS / IMPORT lists
+on different columns/tabs is **removed**. The unified preset browser modal
+([ADR-0025](adr/0025-tagged-preset-browser.md)) is the single navigator
+for every root and every tag.
+
 > **Pre-existing flat user roots.** Earlier builds wrote both saves and
 > imports directly to `<userAppData>/GenVst/patches/`. Such legacy patches
-> stay on disk but no longer appear in the main-window PRESETS / IMPORT
-> tabs after the split. They remain reachable by adding the legacy folder
-> as a custom root via the patch browser's *Add Folder…* — a one-way,
-> non-destructive migration.
+> stay on disk but no longer appear in the writable-root scans. They remain
+> reachable by adding the legacy folder as a custom root via the patch
+> browser's *Add Folder…* — a one-way, non-destructive migration.
 
-> **Cross-OS portability.** Custom-root and per-part patch paths are stored as
-> **absolute filesystem paths** in plugin state. A project saved on one OS and
-> reopened on another — or on a machine with a different folder layout — will not
-> resolve those paths; only the factory root always resolves, because it is found
-> relative to the plugin bundle. A path that fails to resolve is reported via a
-> notification toast and does not block loading: the part keeps its restored
-> parameter values (see [01-architecture.md](01-architecture.md) *State
-> Persistence*). This is an accepted limitation for the MVP.
+> **Cross-OS portability.** Custom-root paths and the active patch path
+> are stored as **absolute filesystem paths** in plugin state. A project
+> saved on one OS and reopened on another — or on a machine with a
+> different folder layout — will not resolve those paths; only the factory
+> root always resolves, because it is found relative to the plugin bundle.
+> A path that fails to resolve is reported via a notification toast and
+> does not block loading: the instance keeps its restored apvts parameter
+> values (see [01-architecture.md](01-architecture.md) *State Persistence*).
+> This is an accepted limitation for the MVP.
 
 ### UI structure
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ [ Search patches…                            🔍 ]│
+│ [All] [FM] [SQ] [D]    [ Search patches…    🔍 ]│
 │ ┌────────────────────┬──────────────────────────┐│
-│ │ ▼ Factory          │ Bass Guitar              ││
-│ │ ▼ extra  (custom)  │ Techno Lead              ││
-│ │   ▶ 01      (842)  │ ▶ Synth Brass       ← sel ││
-│ │   ▼ 02      (915)  │ Marimba                  ││
-│ │     ▶ game_a (28)  │ ...                      ││
-│ │     ▶ game_b (40)  │                          ││
+│ │ ▼ Factory          │ FM  Bass Guitar          ││
+│ │ ▼ extra  (custom)  │ FM  Techno Lead          ││
+│ │   ▶ 01      (842)  │ FM  ▶ Synth Brass  ← sel ││
+│ │   ▼ 02      (915)  │ SQ  Pulse Arp            ││
+│ │     ▶ game_a (28)  │ D   Crunchy Drums        ││
+│ │     ▶ game_b (40)  │ ...                      ││
 │ │   ▶ 03      (770)  │                          ││
 │ │ [+ Add Folder…]    │                          ││
 │ └────────────────────┴──────────────────────────┘│
-│ [Import file] [Export] [Delete]      [▶ Preview] │
+│ [Import file] [Export] [Delete]                  │
 └─────────────────────────────────────────────────┘
 ```
 
-- **Left pane — folder tree:** every root and its subdirectories as a collapsible
-  tree. Each scanned folder node shows its patch count so size is visible before
-  expanding. Selecting a folder shows its patches on the right.
-- **Right pane — patch list:** the `.tfi`/`.vgi`/`.dmp` files in the selected
-  folder. Single-click or `Enter` loads the patch.
-- **Search box:** filters by patch name across all roots; each result shows its
-  folder path so duplicates from different games stay distinguishable.
-- **Preview button:** sends a middle C note-on at fixed velocity for 1 second,
-  then note-off.
+- **Mode filter chips (top-left):** `All / FM / SQ / D`. Default = the
+  instance's current mode, so the user first sees patches for what they're
+  editing. Switching to `All` shows every patch across modes.
+- **Left pane — folder tree:** every root and its subdirectories as a
+  collapsible tree. Each scanned folder node shows its patch count so size
+  is visible before expanding. Selecting a folder shows its patches on the
+  right.
+- **Right pane — patch list:** every patch file in the selected folder,
+  filtered by the active chip. Each row carries a small `FM` / `SQ` / `D`
+  badge. Single-click or `Enter` loads the patch. **Loading auto-switches
+  the instance's mode** if the patch's tag differs from the current mode
+  ([ADR-0025](adr/0025-tagged-preset-browser.md)) — no confirmation modal;
+  the previous patch is not auto-saved but remains untouched on disk.
+- **Search box:** filters by patch name across all roots and all modes
+  honouring the active mode filter; each result shows its folder path.
+
+There is no separate "Preview" button — single-click on a patch loads it
+into the instance (preview *is* load), consistent with RYM2612 and most
+modern preset browsers. The browser stays open so several patches can be
+auditioned in turn.
 
 ### Scanning strategy (large directory trees)
 
@@ -475,23 +590,31 @@ thread.
 
 Patch loads must not block the audio thread. Workflow:
 
-1. User selects a patch → the message thread loads the file into a `Patch` struct, tagged with the target part index
-2. Push the `(part, Patch)` item into a `juce::AbstractFifo`-based lock-free queue (capacity 4 is sufficient)
-3. At the start of `processBlock`, drain the queue; each item updates that part's stored patch and is applied to the part's active and future voices
+1. User selects a patch → the message thread parses the file into the
+   appropriate in-memory struct (`Patch` for FM, `PsgPreset` for SQ,
+   `DacPreset` for D) and tags it with the mode it belongs to.
+2. If the patch's mode differs from the current mode, the message thread
+   first flips `mode_select` via the apvts.
+3. Push the typed-patch item into a `juce::AbstractFifo`-based lock-free
+   queue (one queue per mode is sufficient; capacity 4 each).
+4. At the start of `processBlock`, drain the queue for the active mode
+   and apply.
 
-A load failure (`PatchLoadResult::error` set) never reaches the audio thread — it
-is shown to the user via the UI notification toast (see [05-ui-ux.md](05-ui-ux.md)).
+A load failure (`PatchLoadResult::error` set) never reaches the audio
+thread — it is shown to the user via the UI notification toast (see
+[05-ui-ux.md](05-ui-ux.md)).
 
 ### Folders, Import & Export
 
 - **Add Folder:** a folder picker registers a new custom root. The folder is
   scanned lazily; its directory structure becomes the navigable tree. The path is
   persisted across sessions.
-- **Import file:** a file picker filtered to `*.tfi;*.vgi;*.dmp;*.y12;*.opm`
-  copies a single patch into the **user-imported root**
-  (`…/patches/imported/`). The supported extension list lives at
-  `kSupportedPatchExtensions` in `src/PatchSystem.h`; the picker and the
-  drag-and-drop handler both consume it so the set stays in one place.
+- **Import file:** a file picker filtered to
+  `*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg;*.gdac` copies a single patch
+  into the **user-imported root** (`…/patches/imported/`). The supported
+  extension list lives at `kSupportedPatchExtensions` in
+  `src/PatchSystem.h`; the picker and the drag-and-drop handler both
+  consume it so the set stays in one place.
 - **Import Bank:** a separate button with its own picker filtered to
   `*.vgm;*.vgz`. Extracts every unique FM channel state captured at each
   key-on event into the user-imported root, one `.tfi` per patch, named
@@ -502,12 +625,17 @@ is shown to the user via the UI notification toast (see [05-ui-ux.md](05-ui-ux.m
   `kSupportedPatchExtensions` imports it into the user-imported root;
   dropping a `.vgm` or `.vgz` runs Import Bank on that file; dropping a
   *folder* registers it as a new custom root.
-- **Save patch:** `savePatch()` writes a TFI into the **user-saved root**
-  (`…/patches/saved/`). This is the only path that populates the PRESETS tab.
-- **Export TFI:** construct a 42-byte buffer from the current `Patch` struct and write to file.
-- **Export VGI:** construct a 43-byte buffer, pack AMS/FMS into byte 2, AMON into DR byte.
-- **Delete:** removes a patch from a writable root. Disabled for the read-only
-  factory root.
+- **Save patch:** `savePatch()` writes the current mode's patch into the
+  **user-saved root** (`…/patches/saved/`). The format depends on the mode
+  (FM → TFI by default; SQ → `.psg`; D → `.gdac`).
+- **Export TFI** (FM mode): construct a 42-byte buffer from the current
+  `Patch` struct and write to file.
+- **Export VGI** (FM mode): construct a 43-byte buffer, pack AMS/FMS into
+  byte 2, AMON into DR byte.
+- **Export PSG** (SQ mode) and **Export DAC** (D mode): write the
+  in-memory struct out as JSON via the corresponding loader's writer.
+- **Delete:** removes a patch from a writable root. Disabled for the
+  read-only factory root.
 
 ---
 
@@ -609,66 +737,39 @@ can be committed or shipped.
 
 ---
 
-## Bank bundle format (`.gnbank`, v1)
+## Bank bundle format (`.gnbank`) — retired in v2
 
-Task 24's *Export Bank* / *Import Bank* JSON file. A snapshot of the user-curated
-instrument rack (Task 22) plus each row's per-instrument routing values.
-Distinct from the `.vgm`/`.vgz` bank-import path (Task 21): VGM extracts FM
-patches into the user-imported root and never touches the rack; `.gnbank`
-captures the rack itself.
+The v1 `.gnbank` rack bundle captured the user-curated instrument rack
+(Task 22) plus each row's per-instrument routing. The rack model is
+**removed** in v2 ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)) —
+each plugin instance holds one patch, and routing across instances is the
+DAW's job, not the plugin's.
 
-**Schema (single supported `version = 1`; no migration story yet — older
-bundles fail with a descriptive error):**
-
-```json
-{
-  "version": 1,
-  "rows": [
-    {
-      "type":      "fm" | "sq" | "d",
-      "slot":      0,
-      "patchPath": "<absolute path or empty for SQ/D>",
-      "routing": {
-        "midiCh":       1,
-        "transposeSt":  0,
-        "transposeOct": 0,
-        "noteLo":       0,
-        "noteHi":       127,
-        "detuneCents":  0,
-        "balance":      0.0
-      }
-    }
-  ]
-}
-```
-
-- `type` mirrors `PartManager::InstrumentType`. `slot` mirrors the rack
-  pool index — `0..4` for FM, `0..2` for PSG tone, `3` for PSG noise, `0`
-  for DAC.
-- `patchPath` is an absolute filesystem path. Cross-OS portability has the
-  same caveat as the rest of the patch system: an unresolved path leaves
-  the row's routing apvts values intact and raises a toast.
-- The DAC sample (8-bit PCM) is **not** part of the bank bundle — it
-  rides on the plugin-state path (Task 16, base64-embedded in the project).
-- Import is a **replace, not a merge**: every rack slot is cleared first,
-  then each row in the JSON replays through `addInstrument` →
-  `loadIntoPart` → routing param writes. The patchRootsChanged event
-  refreshes the rack widget after the replay completes.
-
-Reader/writer live in `src/BankIO.{h,cpp}`; the JSON-roundtrip and
-empty-rack edge cases are covered by `tests/BankIOTests.cpp`.
+`src/BankIO.{h,cpp}` and `tests/BankIOTests.cpp` are deleted in Task v2/02
+along with `PartManager`. A future v2-tagged-bank format (mixing FM/SQ/D
+presets into one shareable file) is a possible follow-up but is **not in
+v2 MVP scope** — the unified preset browser handles per-file sharing
+fine. Users wanting to package a curated collection can zip a folder and
+share that.
 
 ---
 
 ## Plugin state file (`.gnvst`)
 
-Task 24's *Save State* / *Load State* JSON-XML file. The bytes are the same
+The *Save State* / *Load State* JSON-XML file. The bytes are the same
 `juce::AudioProcessorValueTreeState` blob the plugin returns from
-`getStateInformation` / consumes via `setStateInformation` (Task 16) — the
-`.gnvst` extension just lifts that state out of the DAW project into a
-standalone file the user can copy across sessions or machines.
+`getStateInformation` / consumes via `setStateInformation` — the `.gnvst`
+extension just lifts that state out of the DAW project into a standalone
+file the user can copy across sessions or machines.
 
-Unlike `.gnbank`, this file **does** carry the DAC PCM (base64) and every
-custom-root path, because that is how `getStateInformation` already
-serialises them. There is no separate schema document for the `.gnvst`
-format — see `src/PluginState.cpp` for the authoritative XML shape.
+Contents (per `src/PluginState.cpp` in v2):
+
+- The full `apvts` parameter tree (mode, FM patch params, SQ patch params,
+  D-mode DSP params, globals).
+- The active patch path (one path; the patch's extension implies its tag
+  and therefore the mode).
+- Registered custom-root paths.
+
+**No embedded base64 PCM** — v2 D mode does not load WAV files, so there
+is no PCM to persist ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
+The v1 base64-PCM serialisation is removed from `PluginState`.

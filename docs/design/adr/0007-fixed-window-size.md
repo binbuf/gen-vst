@@ -1,8 +1,9 @@
 # ADR-0007: Fixed 960x640 plugin window for MVP
 
-- **Status:** Accepted (revised 2026-05-23 — was 960x560 from 2026-05-21)
+- **Status:** Superseded by [ADR-0023](0023-fixed-window-1200x560.md) (2026-05-24). Was Accepted 2026-05-23 (revised from 960x560, 2026-05-21).
 - **Date:** 2026-05-23
-- **Related:** [05-ui-ux.md](../05-ui-ux.md), [07-feature-spec.md](../07-feature-spec.md), [ADR-0001](0001-juce8-webview-ui.md)
+- **Related:** [ADR-0023](0023-fixed-window-1200x560.md), [ADR-0001](0001-juce8-webview-ui.md)
+- **Historical note:** The 960×640 window was sized for the v1 pixel-art chassis; v2 (modern aesthetic, RYM2612-style layout) uses 1200×560. The v1 UI design documents are archived under `docs/design/archive/`.
 
 ## Context
 

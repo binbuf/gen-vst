@@ -1,8 +1,9 @@
 # ADR-0013: Six-part multitimbral architecture with a shared 16-voice pool
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0021](0021-three-mode-single-engine-ui.md) (2026-05-24). Was Accepted 2026-05-21.
 - **Date:** 2026-05-21
-- **Related:** [01-architecture.md](../01-architecture.md), [05-ui-ux.md](../05-ui-ux.md), [07-feature-spec.md](../07-feature-spec.md), [ADR-0010](0010-ymfm-instance-model.md), [ADR-0014](0014-special-channel-features.md)
+- **Related:** [ADR-0021](0021-three-mode-single-engine-ui.md), [ADR-0010](0010-ymfm-instance-model.md), [ADR-0014](0014-special-channel-features.md)
+- **Historical note:** v2 abandons the six-part multitimbral model in favour of a single-engine-per-instance design (FM, SQ, or D, set per instance). The shared 16-voice ymfm pool from ADR-0010 is **retained** for FM mode polyphony; only the parts/routing layer goes away.
 
 ## Context
 

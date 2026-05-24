@@ -83,9 +83,9 @@ boundary clean.
 
 - ADR-0018 status flips to `Superseded by ADR-0019`. Its body is unchanged so
   the deferral reasoning remains readable in the history.
-- Two new task files: `docs/tasks/20-y12-opm-loaders.md` and
-  `docs/tasks/21-vgm-bank-import.md`. The post-MVP backlog entry in
-  `docs/tasks/README.md` that referenced ADR-0018 is removed.
+- Two new task files: `docs/tasks/mvp/20-y12-opm-loaders.md` and
+  `docs/tasks/mvp/21-vgm-bank-import.md`. The post-MVP backlog entry in
+  `docs/tasks/mvp/README.md` that referenced ADR-0018 is removed.
 - `docs/design/04-patch-system.md` grows Y12, OPM, and VGM Bank Import
   subsections (byte/parameter mapping for Y12 + OPM; flow + state-tracker
   description for VGM). File-picker filter widens from `*.tfi;*.vgi;*.dmp` to

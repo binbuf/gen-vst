@@ -2,21 +2,29 @@
 
 ## System Overview
 
-Gen VST is a JUCE-based VST3/AU instrument plugin emulating the Sega Genesis sound hardware:
+Gen VST is a JUCE-based plugin emulating the Sega Genesis sound hardware. It
+is a **three-mode single-engine instrument** ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)):
+each plugin instance runs exactly one of three modes — **FM**, **SQ**, or
+**D** — selected via the `mode_select` apvts parameter and persisted with
+the project.
 
-- **YM2612** (OPN2) — 6-channel FM synthesis, 4 operators per channel
-- **SN76489** (PSG) — 3 square-wave tone channels + 1 noise channel
+| Mode | Engine | Role |
+|---|---|---|
+| **FM** | `ymfm::ym2612` 16-voice pool | Single-patch FM synth (RYM2612-style) |
+| **SQ** | libvgm `sn764xx` core | Single-patch PSG synth — 3 tone + 1 noise channels |
+| **D** | Pure DSP — `DspDecimator` + Ladder | PCM2612-style audio FX: takes the audio input bus and runs it through sample-rate decimation + 8-bit quantization + MONO + DRY/WET |
 
-Gen VST is a **six-part multitimbral instrument** (see [ADR-0013](adr/0013-multitimbral-voice-model.md)):
-6 FM parts, each with its own patch and MIDI channel, plus the PSG and a DAC
-sample channel. FM polyphony is a shared pool of 16 voices — see *Parts and
-Voices* below.
+To play multiple Genesis timbres in a project, the user instantiates the
+plugin once per timbre — native DAW workflow, one track per sound.
 
 Plugin formats: VST3 (Windows, macOS, Linux) and AU (macOS only).
-JUCE flags: `IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`.
+JUCE flags: `IS_SYNTH TRUE` (the plugin can still emit instrument output),
+`NEEDS_MIDI_INPUT TRUE`. **The plugin also declares an audio input bus** so
+that D mode has a source to process; in FM and SQ modes the input bus is
+present but unread.
 
-Gen VST models the **NTSC** Genesis. The PAL system (a slightly different master
-clock) is out of scope.
+Gen VST models the **NTSC** Genesis. The PAL system (a slightly different
+master clock) is out of scope.
 
 ---
 
@@ -24,53 +32,84 @@ clock) is out of scope.
 
 ```
 GenVstAudioProcessor
-├── juce::AudioProcessorValueTreeState (apvts)  ← 6 parts' FM params + PSG + DAC + global
-├── PartManager
-│   └── Part[0..5]   ←  patch + assigned MIDI channel, one per FM part
+├── juce::AudioProcessorValueTreeState (apvts)
+│   ├── mode_select  (FM | SQ | D)
+│   ├── FM params  (single patch — ~50 params)
+│   ├── SQ params  (per-channel envelope + tuning)
+│   ├── D params   (prescaler, mono, dry_wet)
+│   └── globals    (output_filter, ladder_effect, master_volume)
 ├── VoiceAllocator
-│   ├── voice pool: ymfm::ym2612 instance[0..15]  (1 channel/instance — ADR-0010)
-│   └── (pool LRU steal, part↔MIDI-channel binding, register write sequencing)
+│   └── voice pool: ymfm::ym2612 instance[0..15]  (1 channel/instance — ADR-0010)
 ├── SN76489Engine
-│   └── SN76489Wrapper  ←  wraps libvgm sn764xx (ADR-0009)
-├── DACPlayer
-│   └── dedicated 17th ymfm::ym2612 instance  ←  DAC on its channel 6 (ADR-0014)
-├── FmMixBus + Resampler  ←  sum voices at native rate, one resample pass (ADR-0011)
+│   └── SN76489Wrapper × 4  ←  wraps libvgm sn764xx (ADR-0009)
+├── DspDecimator   ←  D mode: sample-rate decimation + 8-bit quantizer
+├── LadderEffect   ←  YM2612 stepwise nonlinearity (FM voice sum + D output)
+├── OutputFilter   ←  Model-1 RC lowpass + amp coloration (mix bus, all modes)
+├── FmMixBus + Resampler  ←  sum FM voices at native rate, one resample pass (ADR-0011)
 └── GenVstAudioProcessorEditor
     └── juce::WebBrowserComponent  (see docs/design/05-ui-ux.md)
 ```
 
 `GenVstAudioProcessor` does **not** subclass `juce::Synthesiser` — the
-hardware-accurate register model requires direct control over voice lifetime and
-register sequencing that `Synthesiser` abstracts away.
+hardware-accurate register model requires direct control over voice lifetime
+and register sequencing that `Synthesiser` abstracts away.
+
+**Retired in v2** (deleted from the codebase per ADR-0021):
+`PartManager`, `DACPlayer`, `DACKit`, `MidiRouter` (collapsed into the
+processor's host-channel handling).
 
 ---
 
-## Parts and Voices
+## Mode dispatch
 
-Gen VST separates **parts** (timbres) from **voices** (sounding notes). See
-[ADR-0013](adr/0013-multitimbral-voice-model.md).
+`mode_select` is read once at the top of `processBlock`. The active engine
+processes the entire block; the other two engines are bypassed (no register
+writes, no `generate()` calls). This is a per-block branch, cheap and
+predictable.
 
-- **Parts.** There are 6 FM parts. Each part owns one `Patch` and one assigned
-  MIDI channel. The 6 parts are the `CHANNELS 1–6` the UI edits one at a time.
-  The PSG (4 slots) and the DAC are addressed on their own MIDI channels — see
-  [03-psg-synthesis.md](03-psg-synthesis.md) and
-  [ADR-0014](adr/0014-special-channel-features.md).
-- **Voice pool.** There are 16 `ymfm::ym2612` instances, each using only channel 0
-  ([ADR-0010](adr/0010-ymfm-instance-model.md)). Voices are **not** statically
-  owned by parts.
-- **Allocation.** On note-on: the part bound to the event's MIDI channel is
-  identified → a free voice is taken from the pool (LRU steal if none free) → the
-  voice is loaded with that part's patch register values and keyed on. The voice
-  records which part and note it serves.
-- **Polyphony.** 16 notes total, shared across all active parts. This is the
-  "16 voices, beyond Genny's hardware 6" target — the *pool size*, not a per-part
-  limit. Per-part voice caps are a possible post-MVP refinement.
+```cpp
+switch (currentMode()) {
+    case Mode::FM: renderFM(buffer, midi); break;
+    case Mode::SQ: renderSQ(buffer, midi); break;
+    case Mode::D:  renderD(buffer);        break;  // MIDI ignored in D mode
+}
+```
 
-Voice stealing: global LRU across the pool. Voices in release phase are preferred
-for stealing over voices still in sustain/decay.
+When the user switches modes (via the header selector or by loading a tagged
+preset), the apvts param updates on the message thread; the audio thread
+picks up the new mode on the next block. A short fade-out / fade-in is
+applied to avoid clicks at the mode boundary.
 
-The PSG has its own allocation (3 tone slots round-robin + 1 noise slot,
-last-note priority), described in [03-psg-synthesis.md](03-psg-synthesis.md).
+---
+
+## Voice and channel models (per mode)
+
+### FM mode
+
+- **16 ymfm::ym2612 instances**, each using only channel 0 ([ADR-0010](adr/0010-ymfm-instance-model.md)).
+- All 16 voices play the **one** active patch — collapsed from v1's six-part
+  multitimbral model. The patch lives on the processor; no PartManager.
+- Polyphony: 16 voices. Voice stealing: global LRU across the pool. Voices
+  in release phase are preferred for stealing.
+- MIDI events from the host channel (any channel — the plugin is not
+  channel-filtered) go straight to the voice allocator.
+
+### SQ mode
+
+- **4 SN76489 wrappers** with mute-mask isolation for per-channel pan/volume,
+  as shipped in Task 07.
+- 3 tone channels: round-robin LRU allocation, polyphonic across all three.
+- 1 noise channel: last-note priority.
+- Per-channel software ADSR envelope (Task 23) multiplied into the mix.
+
+### D mode
+
+- **No voice model.** D mode is purely DSP on the audio input bus.
+- MIDI is ignored.
+- Signal flow: input → optional MONO collapse → `DspDecimator`
+  (sample-rate decimation + 8-bit quantization) → optional `LadderEffect`
+  (if global toggle on) → DRY/WET blend with the unprocessed input →
+  `OutputFilter` (if global toggle on) → output.
 
 ---
 
@@ -81,11 +120,12 @@ last-note priority), described in [03-psg-synthesis.md](03-psg-synthesis.md).
 | YM2612   | 7,670,454 Hz       | ~53,267 Hz         |
 | SN76489  | 3,579,545 Hz       | ~223,722 Hz        |
 
-Both clocks are derived from the Genesis master clock (53,693,175 Hz / 7 and / 15
-respectively).
+Both clocks are derived from the Genesis master clock (53,693,175 Hz / 7 and
+/ 15 respectively).
 
-`ym2612::sample_rate(7670454)` returns the exact native rate. The host DAW may run
-at 44,100, 48,000, 88,200 or 96,000 Hz — resampling is required (see *Resampling*).
+D mode does not use a chip clock — its sample-rate decimation is computed
+directly against the host sample rate (e.g., `prescaler = 0.5` → keep every
+2nd input sample, hold value for the rest).
 
 ---
 
@@ -103,129 +143,154 @@ public:
     void setStateInformation(const void*, int) override;
 
 private:
-    PartManager    partManager;     // 6 FM parts: patch + MIDI channel each
-    VoiceAllocator voiceAllocator;  // 16-voice ymfm pool
-    SN76489Engine  psgEngine;
-    DACPlayer      dacPlayer;       // dedicated ymfm instance
+    VoiceAllocator voiceAllocator;  // 16-voice ymfm pool (FM mode)
+    SN76489Engine  psgEngine;       // SQ mode
+    DspDecimator   decimator;       // D mode
+    LadderEffect   ladder;          // FM + D output stages
+    OutputFilter   outputFilter;    // mix bus, all modes
     // single FM mix-bus resampler
 };
 ```
 
+`getBusesProperties()` declares **both** an input and an output stereo bus
+(the input is silent in FM/SQ). Most hosts (Reaper, Bitwig, Logic, Cubase)
+handle "instrument with audio input" natively. Host-specific quirks are
+flagged for v2/02 verification.
+
 `apvts` is initialized in the constructor via `createParameterLayout()`. All
-plugin parameters — per-part FM operator/channel values, LFO, PSG, DAC — live in
-the `apvts` tree and are therefore automatically DAW-automatable and
-state-persistent.
+plugin parameters live in the `apvts` tree and are therefore automatically
+DAW-automatable and state-persistent.
 
 ---
 
 ## Parameter System
 
-The `apvts` holds a **full FM parameter set for each of the 6 parts**. Parameter
-IDs follow the pattern `<name>_op<1-4>_part<1-6>` for per-operator params,
-`<name>_part<1-6>` for per-part channel params, and `<name>` for globals
-(e.g. `psg_mix`, `dac_enable`). This is ~50 FM params per part (≈300 FM
-parameters), plus PSG, DAC and global params — within VST3/AU limits.
+The v2 `apvts` holds:
+
+- **Mode** — `mode_select` (choice: FM | SQ | D).
+- **FM params** — a single patch's worth, ~50 params: per-operator
+  (TL/MUL/DT/AR/DR/SR/RR/SL/KS/SSG-EG/AMON), per-channel (ALG/FB/AMS/PMS),
+  global LFO. **No `_part<n>` suffix** — v1's multi-part naming is retired.
+- **SQ params** — per-channel envelope (ATK/DR1/SUS/DR2/RR), tuning, volume,
+  pan; noise type/rate.
+- **D params** — `prescaler` (0.0–1.0), `mono` (bool), `dry_wet` (0.0–1.0).
+- **Globals** — `output_filter` (bool), `ladder_effect` (bool),
+  `master_volume`.
+
+All three modes' parameters coexist in the apvts even though only one mode is
+audible at a time. This is intentional — switching modes mid-session keeps
+the inactive modes' settings around for when the user switches back.
 
 Parameters are declared once in `createParameterLayout()` and accessed at
 audio-thread speed via a raw pointer cache:
 
 ```cpp
-// cached per part:
-param_tl_op1[part] = apvts.getRawParameterValue("tl_op1_part" + juce::String(part + 1));
+// cached in prepareToPlay:
+param_tl_op1 = apvts.getRawParameterValue("tl_op1");
 
 // In processBlock (no locks, no heap allocation):
-float tl = *param_tl_op1[partIndex];
+float tl = *param_tl_op1;
 ```
 
-The UI edits one part at a time; FM-channel relays are named **without** the
-`_part<n>` suffix and rebind on part selection — see
-[05-ui-ux.md](05-ui-ux.md) (*FM channel paging*).
-
-Dirty tracking: each `Voice` holds a shadow copy of the last-written register
-values. `processBlock` diffs the relevant part's params against each voice's
-shadow and writes only changed registers to ymfm, avoiding redundant writes on
-every block.
+Dirty tracking: each FM voice holds a shadow copy of the last-written
+register values. `processBlock` diffs the active patch's params against the
+voice's shadow and writes only changed registers to ymfm.
 
 ---
 
 ## MIDI Pipeline
 
-MIDI is processed **sample-accurately** within each block. The `juce::MidiBuffer`
-is iterated in timestamp order; between consecutive MIDI events, audio is rendered
-for the gap duration.
+MIDI is processed **sample-accurately** within each block. The
+`juce::MidiBuffer` is iterated in timestamp order; between consecutive MIDI
+events, audio is rendered for the gap duration.
 
 ```
-processBlock:
+processBlock(buffer, midi):
+  if currentMode == D:
+    runD(buffer)                  // MIDI ignored entirely
+    return
+
   for each MIDI event at sample offset T:
-    render FM mix bus + PSG + DAC for samples [lastOffset .. T)
-    dispatch event by its MIDI channel:
-      noteOn    → part = routeForChannel(ch);
-                  voiceAllocator.noteOn(part, note, vel)   // or PSG slot / DAC trigger
-      noteOff   → voiceAllocator.noteOff(part, note)
-      pitchBend → voiceAllocator.pitchBend(part, value)
-      CC        → apply to the part bound to ch (see docs/design/07-feature-spec.md)
-      progChange→ patchSystem.loadProgram(part, program)   // Nth factory patch
-  render voices for samples [lastOffset .. blockEnd)
+    render [lastOffset .. T) into the buffer
+    dispatch event (no channel filtering — host channel is the only channel):
+      noteOn    → engine.noteOn(note, vel)
+      noteOff   → engine.noteOff(note)
+      pitchBend → engine.pitchBend(value)
+      CC        → apply per the CC map in 07-feature-spec.md
+      progChange→ load the Nth tagged preset of the active mode
+  render [lastOffset .. blockEnd)
 ```
 
-Each MIDI channel maps to exactly one destination: one of the 6 FM parts, one of
-the 4 PSG slots, or the DAC channel. The binding table is user-configurable and
-persisted (see [07-feature-spec.md](07-feature-spec.md)).
+There is no channel→destination routing table in v2. The collapsed MIDI
+router is a thin shim in the processor; the v1 `MidiRouter.{h,cpp}` is
+deleted.
 
-Pitch bend recalculates the F-number and BLK registers for every active voice
-belonging to the bent part.
+Program Change loads the Nth patch **of the currently active mode** — see
+[07-feature-spec.md](07-feature-spec.md). PC does not switch modes.
 
-CC 64 (sustain pedal): holds a part's voices through note-off until the pedal is
-released. CC 120/123: all-sound-off / all-notes-off — immediately silence and free
-all voices.
-
-Program Change loads a factory patch into the part on that MIDI channel — the
-program-number mapping is in [07-feature-spec.md](07-feature-spec.md).
+CC 64 (sustain pedal), CC 120/121/123 (all-sound-off / reset-controllers /
+all-notes-off) behave as before, scoped to the active engine.
 
 ---
 
 ## Resampling
 
-All 16 FM voice instances and the dedicated DAC instance generate audio at the
-YM2612 native rate (~53,267 Hz). They are summed into one **FM mix bus** at that
-rate, then resampled to the host rate in a **single pass**
-([ADR-0011](adr/0011-resampling-strategy.md)).
+**FM mode.** All 16 voices generate at the YM2612 native rate (~53,267 Hz),
+sum into one FM mix bus at that rate, then resample to host rate in a
+**single pass** ([ADR-0011](adr/0011-resampling-strategy.md)) via
+`juce::LagrangeInterpolator`.
 
-Resampling is linear, so summing then resampling is equivalent to resampling each
-voice then summing — at roughly 1/16 the cost. The resampler is a
-`juce::Interpolator` (`juce::LagrangeInterpolator` to start;
-`juce::WindowedSincInterpolator` if profiling shows audible aliasing).
-`juce::ResamplingAudioSource` is **not** used — it is a pull-model `AudioSource`
-that does not fit this push-model render loop.
+**SQ mode.** The SN76489 wrappers resample **internally** (each is
+initialised with the host sample rate). The PSG bypasses the FM mix-bus
+resampler.
 
-The SN76489 PSG resamples **internally** (its core is initialized with the host
-sample rate), so the PSG does not pass through the FM mix-bus resampler.
+**D mode.** No chip; signal stays at host sample rate throughout. The
+decimator's "sample-rate reduction" is implemented as a sample-and-hold at a
+divisor of the host rate, *not* an actual resample pass.
 
 ---
 
-## Render Pipeline (per block)
+## Render Pipeline (per mode, per block)
+
+### FM mode
 
 ```
-processBlock(buffer, midiBuffer):
-  1. Drain the patch queue (apply patches loaded on the message thread).
-  2. Collect MIDI events with sample timestamps.
-  3. For each sub-block [start..end] between MIDI events, at the native rate:
-     a. For each active FM voice: write dirty registers, ymfm.generate(),
-        accumulate int32 output → native-rate FM mix buffer.
-     b. DACPlayer.process(): feed PCM to the DAC instance, generate,
-        accumulate into the same native-rate FM mix buffer.
-  4. Resample the native-rate FM mix buffer → host rate (single pass).
-  5. SN76489Engine.generate() at host rate; mix PSG (scaled) into the output.
-  6. Apply master gain and a soft-clip guard.
-  7. Write the working buffer → juce::AudioBuffer<float> (L, R channels).
+1. Drain the patch queue (apply patches loaded on the message thread).
+2. For each sub-block between MIDI events, at native rate:
+   - For each active voice: write dirty registers, ymfm.generate(),
+     accumulate int32 output → native-rate FM mix buffer.
+3. LadderEffect (if global toggle on) — per-channel stepwise nonlinearity.
+4. Resample native-rate FM mix → host rate (single pass).
+5. OutputFilter (if global toggle on) — Model-1 RC lowpass + amp coloration.
+6. Apply master gain and a soft-clip guard.
+7. Write to output buffer.
 ```
 
-All working buffers are pre-allocated in `prepareToPlay` — never heap-allocated in
-`processBlock`.
+### SQ mode
 
-Summing 16 voices plus the DAC can exceed unity; per-voice scaling and the master
-soft-clip guard keep the mix bounded. Final headroom tuning is an implementation
-task.
+```
+1. For each sub-block between MIDI events, at host rate:
+   - SN76489Engine.generate(numSamples).
+2. OutputFilter (if global toggle on).
+3. Master gain + soft-clip.
+4. Write to output buffer.
+```
+
+### D mode
+
+```
+1. Copy input buffer → working buffer.
+2. If MONO: average L/R → both channels.
+3. DspDecimator.process(working) — sample-and-hold + 8-bit quantize.
+4. LadderEffect (if global toggle on) — applied to the quantized signal.
+5. DRY/WET blend with the original input.
+6. OutputFilter (if global toggle on).
+7. Master gain + soft-clip.
+8. Write to output buffer.
+```
+
+All working buffers are pre-allocated in `prepareToPlay` — never
+heap-allocated in `processBlock`.
 
 ---
 
@@ -233,17 +298,20 @@ task.
 
 | Thread | Responsibilities |
 |--------|-----------------|
-| Audio thread | `processBlock`, register writes to ymfm/SN76489, resampler |
-| Message thread | Patch loading, state save/restore, UI parameter changes |
+| Audio thread | `processBlock`, register writes to ymfm/SN76489, decimator, ladder, filter, resampler |
+| Message thread | Patch loading, state save/restore, UI parameter changes, mode switches |
 
-Patch loads are non-trivial (file I/O, struct construction) and happen on the
-message thread. The loaded `Patch` — tagged with its target part — is passed to
-the audio thread via a `juce::AbstractFifo`-based lock-free single-producer/
-single-consumer queue. The audio thread drains this queue at the start of each
-block.
+Patch loads are non-trivial (file I/O, struct construction) and happen on
+the message thread. The loaded patch is passed to the audio thread via a
+`juce::AbstractFifo`-based lock-free single-producer/single-consumer queue.
+The audio thread drains this queue at the start of each block.
 
-`apvts` parameter reads in `processBlock` use `std::atomic<float>` — safe from any
-thread.
+Mode switches travel the same path: an apvts change on the message thread
+flips `mode_select`; the audio thread reads it at the top of the next block
+and fades over to the new engine.
+
+`apvts` parameter reads in `processBlock` use `std::atomic<float>` — safe
+from any thread.
 
 No heap allocation, no mutexes, no blocking calls in `processBlock`.
 
@@ -253,25 +321,24 @@ No heap allocation, no mutexes, no blocking calls in `processBlock`.
 
 ```cpp
 void getStateInformation(juce::MemoryBlock& destData) {
-    auto state = apvts.copyState();   // all per-part FM/PSG/DAC params
+    auto state = apvts.copyState();   // mode + FM + SQ + D + global params
     auto xml = state.createXml();
     // append custom fields:
-    //   - per part: assigned MIDI channel + active patch path
+    //   - active patch path (one path; the patch's extension implies its tag)
     //   - registered custom patch-root folder paths
-    //   - DAC: embedded 8-bit PCM (base64) so the project is self-contained
     juce::MemoryOutputStream stream(destData, true);
     xml->writeTo(stream);
 }
-
-void setStateInformation(const void* data, int sizeInBytes) {
-    // parse XML, restore apvts, re-bind MIDI channels,
-    // reload each part's patch by path, restore DAC PCM
-}
 ```
 
-All `apvts` parameters round-trip automatically. Patches are referenced **by
-path**, not by a flat bank index — the browser is a folder tree
-([ADR-0006](adr/0006-folder-tree-patch-browser.md)). If a saved patch path no
-longer resolves on load, the part keeps its restored `apvts` register values and a
-notification is shown ([05-ui-ux.md](05-ui-ux.md)). Custom root folders are
-re-registered and re-scanned; a missing root is reported, not silently dropped.
+All `apvts` parameters round-trip automatically. The active patch is
+referenced **by path** ([ADR-0006](adr/0006-folder-tree-patch-browser.md));
+the patch's extension determines its tag and therefore implies the mode
+([ADR-0025](adr/0025-tagged-preset-browser.md)).
+
+**No embedded base64 PCM** in v2 — D mode does not load WAV files
+([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
+
+If a saved patch path no longer resolves on load, the instance keeps its
+restored apvts values (so the previous sound is approximated) and a
+notification toast is shown.

@@ -9,7 +9,10 @@ The **Yamaha YM2612** (OPN2 — FM Operator Type-N, 2nd generation) is the FM so
 - Two register banks: Bank 0 (channels 1–3), Bank 1 (channels 4–6)
 - Stereo output (left/right independently enabled per channel)
 - Single global LFO for vibrato/tremolo
-- Channel 6 can switch to 8-bit PCM DAC mode
+- Channel 6 can switch to 8-bit PCM DAC mode *(hardware feature; Gen VST v2
+  does not exercise it — D mode emulates DAC character via pure DSP, see
+  the [Ladder Effect DSP](#ladder-effect-dsp) section below and
+  [ADR-0021](adr/0021-three-mode-single-engine-ui.md))*
 
 **NTSC clock:** 7,670,454 Hz (Genesis master 53,693,175 Hz ÷ 7).
 **Native output rate:** `ym2612::sample_rate(7670454)` ≈ **53,267 Hz**.
@@ -104,21 +107,24 @@ Convenience wrappers for Bank 1: `write_address_hi(addr)`, `write_data_hi(data)`
 
 Key-on sequence: write with OPS=0x00 (key-off), then write with OPS=0xF0 (key-on). This reliably retriggers the envelope.
 
-### `0x2A` — DAC Data
+### `0x2A` / `0x2B` / `0x2C` — DAC registers (not used by Gen VST v2)
 
-8-bit PCM sample value. ymfm internally XOR's with 0x80 to convert between the hardware's unsigned format and internal signed representation. Write raw signed bytes (or pre-XOR if needed). Must be written at the desired DAC sample rate (typically 8,000–22,050 Hz) by triggering writes from the audio block render loop.
+The hardware's PCM DAC on channel 6 is documented in standard YM2612
+references for completeness, but **Gen VST v2 does not write these
+registers**. D mode is implemented as pure DSP on an audio input bus
+([ADR-0021](adr/0021-three-mode-single-engine-ui.md)) — the v1 dedicated
+ymfm DAC instance and its `0x2B = 0x80` DACEN latch have been removed
+along with `src/DACPlayer.{h,cpp}` and `src/DACKit.{h,cpp}`. The
+characteristic DAC sound is reproduced in v2 by the
+[Ladder Effect DSP](#ladder-effect-dsp) below applied after the
+`DspDecimator` 8-bit quantizer.
 
-### `0x2B` — DAC Enable
-
-| Bits | Field | Description |
-|------|-------|-------------|
-| 7    | DACEN | 1 = Channel 6 outputs DAC register; FM synthesis on ch6 is silenced |
-
-Write `0x80` to enable DAC, `0x00` to restore FM on channel 6. In Gen VST the DAC runs on a **dedicated `ymfm` instance** reserved for it ([ADR-0014](adr/0014-special-channel-features.md)), so no FM voice is ever displaced.
-
-### `0x2C` — DAC LSB (test register)
-
-Bit 3 provides the 9th bit of the DAC word for extended precision. Rarely used in practice.
+The full hardware register definitions for `0x2A` (DAC data, 8-bit
+unsigned), `0x2B` (DACEN bit 7), and `0x2C` (9th-bit LSB / test) are
+available in standard YM2612 references (Plutiedev, SMS Power!) and in the
+git history of this file at any commit before 2026-05-24. They are
+unchanged hardware behaviour and would only need to be re-documented here
+if a future v3 brought back a real ymfm-based DAC instance.
 
 ---
 
@@ -330,27 +336,67 @@ The LFO is triangular waveform only (hardware fixed). PMS controls vibrato depth
 
 ---
 
-## DAC Mode (Channel 6 PCM)
+## Ladder Effect DSP
 
-Channel 6 can be repurposed as a PCM playback channel. This is how Sega Genesis games played drums, speech, and bass guitar samples.
+The YM2612's analog output stage has a documented stepwise nonlinearity
+at low signal levels — historically called the "ladder effect" or "TDM
+distortion" — caused by an error in the chip's amplitude voltage curve.
+The DAC's output is linear from −256 to −1 and from 0 to +255, but the
+gap between −1 and 0 is **eight times** what a linear DAC would produce.
+Low-volume waveforms get exaggeratedly amplified and grow gritty.
 
-```cpp
-// Enable DAC
-chip.write(0, 0x2B);   // address
-chip.write(1, 0x80);   // DACEN = 1
+This is the famous "Genesis bass grit" and is one of the two output-
+character toggles in ADR-0024 (the other being Output Filtering).
 
-// Feed PCM samples — called at ~8kHz–22kHz from processBlock
-chip.write(0, 0x2A);   // address
-chip.write(1, sample_byte);  // 8-bit signed PCM
+**Where it applies:** FM mode (per-voice sum, before the FM mix-bus
+resample) and D mode (after the `DspDecimator` 8-bit quantizer, before
+DRY/WET blend). SQ mode is **not** affected — the SN76489 PSG has its
+own output pin and doesn't pass through the YM2612 ladder DAC on the real
+hardware.
 
-// Disable DAC (restore FM on ch6)
-chip.write(0, 0x2B);
-chip.write(1, 0x00);
+**Coefficients / curve.** Implemented in `src/LadderEffect.{h,cpp}` as a
+piecewise linear lookup, calibrated against measurements published in
+[jsgroth's "Emulating the YM2612: Part 5" series](https://jsgroth.dev/blog/posts/emulating-ym2612-part-5/)
+and the SpritesMind hardware-test threads. The curve is fixed; not
+user-tunable beyond the on/off toggle.
+
+```
+linear input (signed, normalized -1..1):
+    -1.0 ──────────  -1/256  …  0  …  +1/256  ──────────  +1.0
+                          ^         ^
+                          │         │
+                          └── 8× gap ──┘
+                          (the "ladder")
 ```
 
-Phase-accurate write timing: compute the number of host samples per DAC sample, decrement a counter each block, and write when the counter reaches zero.
+**Implementation.** A single pass over the buffer, branchless:
 
-In Gen VST, DAC playback uses a dedicated `ymfm::ym2612` instance separate from the 16-voice pool ([ADR-0014](adr/0014-special-channel-features.md)); no channel is ever excluded from FM allocation.
+```cpp
+// Pseudocode — actual code uses a 512-entry lookup
+float sample = ...;
+int quantized = std::clamp(int(sample * 256.0f), -256, 255);
+float ladderized = ladderLookup[quantized + 256];  // -512..+511 indexed
+```
+
+Bypass when `ladder_effect` is false: the DSP stage early-returns; no
+multiplication, no lookup.
+
+---
+
+## Output Filtering DSP
+
+The other half of ADR-0024 is the **Output Filter** — a model of the
+Sega Model-1 console's analog audio stage (RC low-pass + amp coloration
++ DAC reconstruction characteristic). Applied at the **mix bus**, in all
+three modes (FM, SQ, D), before the master soft-clip.
+
+- **Topology.** One-pole RC low-pass at ≈3.4 kHz (−3 dB knee), followed
+  by a light high-shelf to tame the upper midrange the way the Model-1
+  amp does. Fixed coefficients.
+- **Implemented in** `src/OutputFilter.{h,cpp}`.
+- **Bypass** when `output_filter` is false: early-return, no DSP.
+
+This is a v2 feature; the v1 mix bus had no output stage modelling.
 
 ---
 

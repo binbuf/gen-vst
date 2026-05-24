@@ -200,29 +200,19 @@ Auto-mode is off by default — the direct parameters are the primary interface.
 
 ---
 
-## MIDI Routing Options
+## MIDI Routing in v2
 
-### Option A: Separate MIDI Channels (recommended)
+Under [ADR-0021](adr/0021-three-mode-single-engine-ui.md), each plugin
+instance runs exactly one mode. **SQ mode** receives MIDI on the host
+channel — the plugin is not channel-filtered, and there is no per-PSG-slot
+MIDI channel binding. Routing across the four PSG channels (3 tone slots +
+1 noise) happens **inside the SQ engine** via the allocation rules below
+(round-robin LRU across tone slots; last-note priority on noise).
 
-Assign each PSG voice to a dedicated MIDI channel:
-
-| MIDI Channel | PSG Slot | Default |
-|--------------|----------|---------|
-| 11           | Tone ch0 | configurable |
-| 12           | Tone ch1 | configurable |
-| 13           | Tone ch2 | configurable |
-| 14           | Noise ch3 | configurable |
-
-MIDI channels 1–10 remain available for FM voices.
-
-### Option B: PSG Layer Mode
-
-PSG voices are automatically layered on every FM note-on, creating a combined FM+PSG timbre. Less flexible but produces a richer sound with less setup.
-
-**Decision:** Option A (separate MIDI channels) is the default. Option B is
-available as a "PSG Layer" toggle. PSG MIDI-channel assignments are
-user-configurable and persisted alongside the FM part bindings (see
-[01-architecture.md](01-architecture.md) and [ADR-0013](adr/0013-multitimbral-voice-model.md)).
+To play several PSG timbres in a project, instantiate the plugin multiple
+times — each instance is its own SQ mode patch. The "PSG layered on every
+FM note-on" option (v1's Option B) is **removed** in v2; FM and SQ are
+separate modes and never share an instance.
 
 ---
 
@@ -235,24 +225,31 @@ Portamento/glide on PSG: if requested, linearly interpolate N-value toward targe
 
 ---
 
-## Mixing PSG into FM Output
+## Mixing the four PSG channels into stereo output (SQ mode)
 
-The SN76489 produces mono output. It is mixed into the FM stereo bus:
+The SN76489 produces mono output per channel. In SQ mode the four channels
+(3 tone + 1 noise) are summed into the stereo output bus with software
+panning:
 
 ```cpp
 // After per-block generation:
 for (int i = 0; i < numSamples; i++) {
-    float psgSample = psgBuf[i] / 32768.0f * psgMixLevel;
+    float psgSample = psgBuf[i] / 32768.0f * psgChannelVol;
     leftOut[i]  += psgSample * leftPsgGain[channel];
     rightOut[i] += psgSample * rightPsgGain[channel];
 }
 ```
 
-- **PSG Mix Level:** global parameter (0.0–1.0), controlling PSG contribution to the main output.
-- **Per-channel soft pan:** left/right gain pair per PSG channel (no hardware pan in SN76489; entirely software).
+- **Per-channel volume:** apvts param `psg_vol_ch1..3` / `psg_vol_noise`,
+  multiplied per channel.
+- **Per-channel soft pan:** left/right gain pair per PSG channel
+  (`psg_pan_*`); no hardware pan in SN76489, entirely software.
+- **Master volume:** the global `master_volume` apvts param applies after
+  the sum, before the output filter.
 
-**Decision:** Per-channel PSG panning is an automatable `apvts` parameter — a
-per-channel L/R balance control.
+The v1 `psg_mix` "PSG contribution to the FM output" parameter is **retired**
+— v2 has no per-instance FM+PSG mix because the two never share an instance
+([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
 
 ---
 

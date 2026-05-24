@@ -1,478 +1,396 @@
-# UI View Catalog
+# UI View Catalog (v2)
 
 ## Purpose & relationship to other docs
 
-This document is the **exhaustive per-view specification** for the Gen VST
-interface. Every screen, panel, modal and dialog the user can reach is defined
-here with a layout, a control list and behaviour notes.
+This document is the **exhaustive per-view specification** for the Gen
+VST interface under v2. Every screen, panel, modal and dialog the user
+can reach is defined here with a layout, a control list and behaviour
+notes.
 
-- [`genny-ui.md`](../genny-ui.md) — the authoritative **visual style** reference
-  and the detailed spec of the main window's FM section.
-- [`05-ui-ux.md`](05-ui-ux.md) — UI **strategy & architecture**: the WebView
-  approach, the component inventory, and the C++↔JS integration contract.
-- **This document** — the **complete set of views**. Where `genny-ui.md` already
-  specifies a surface (the FM section), this doc cross-references it and fills in
-  what was missing; every other surface is defined here from scratch.
+- [`05-ui-ux.md`](05-ui-ux.md) — UI **strategy & architecture**: the
+  WebView approach, the component inventory, and the C++↔JS integration
+  contract.
+- [`09-visual-spec.md`](09-visual-spec.md) — the authoritative **visual
+  style**: palette, fonts, exact CSS recipes per widget.
+- **This document** — the **complete set of views**.
 
-The visual language for all views is the pixel-art skeuomorphic style in
-`genny-ui.md` and the binding pixel-art rules in `05-ui-ux.md` (1× grid,
-`image-rendering: pixelated`, no `border-radius`, hard-edged bevels, 8px grid).
-New views invent layouts that obey that language; **exact pixel coordinates and
-sizes are tuned at implementation time against `genny-ui.md`** — this doc fixes
-the content and structure, not the precise pixels.
+The visual language for all views follows
+[`09-visual-spec.md`](09-visual-spec.md) and the modern-aesthetic
+principles in [`05-ui-ux.md`](05-ui-ux.md) (top-left light, layered
+shadows, monospace labels, antialiasing on). **Exact pixel coordinates
+and sizes are tuned at implementation time against the visual spec** —
+this doc fixes the content and structure, not the precise pixels.
 
 ## Conventions
 
-- **One OS window.** There is exactly one native window — the fixed 960×640
-  WebView ([ADR-0007](adr/0007-fixed-window-size.md)). Every "popup", "sub-window"
-  and "modal" in this catalog is an **in-WebView overlay layer** (a DOM layer
-  drawn on the same canvas), **not** a separate OS window. The only exceptions
-  are native OS file choosers (view 11) and the native fallback panel (view 9),
-  which are not WebView content at all.
-- **Scaling.** The whole window scales by integer presets per
-  [ADR-0017](adr/0017-hidpi-display-scaling.md).
-- **Backends.** The UI renders on three WebView engines; functional parity is
-  required, pixel-parity is not ([ADR-0015](adr/0015-webview-backend-support.md)).
+- **One OS window.** Fixed 1200×560 WebView
+  ([ADR-0023](adr/0023-fixed-window-1200x560.md)). Every "popup",
+  "sub-window" and "modal" in this catalog is an **in-WebView overlay
+  layer** (a DOM layer drawn on the same canvas), **not** a separate OS
+  window. The only exceptions are native OS file choosers and the native
+  fallback panel, which are not WebView content.
+- **Mode-based view swap.** The middle "mode panel" region swaps when
+  the active mode changes; the header and status bar persist.
+- **Scaling.** Integer-preset scaling per
+  [ADR-0017](adr/0017-hidpi-display-scaling.md). Fractional scales are
+  visually acceptable in v2 (no pixel-grid constraint —
+  [ADR-0022](adr/0022-modern-vst-aesthetic.md)), but the presets remain
+  integer for predictability.
 
 ## View index
 
 | # | View | Type | Entry point |
 |---|------|------|-------------|
-| 1 | Main window — FM section | Base view | Default; `FM` section pill |
-| 2 | Main window — SQ (PSG) section | Base view | `SQ` section pill |
-| 3 | Main window — D (DAC) section | Base view | `D` section pill |
-| 4 | Patch browser | Modal overlay | Folder icon in the Presets/Import tab header |
-| 5 | MIDI routing editor | Modal overlay | `MIDI ROUTING…` button in Settings |
-| 6 | Settings | Modal overlay | Gear icon in the header |
-| 7 | About / credits | Modal overlay | `ABOUT…` in Settings, or click the wordmark |
-| 8 | Notification toast | Transient overlay | System-triggered (`notify` event) |
-| 9 | WebView fallback panel | Native (non-WebView) | Shown when the WebView fails to init |
-| 10 | Per-part polyphony controls | Inline (FM section) | Always visible in the FM section |
-| 11 | Native file choosers | Native OS dialog | Import/Export/Add-Folder/Load-WAV buttons |
+| 1 | Header | Persistent base | Always visible |
+| 2 | FM mode panel | Base view (mode swap) | `mode_select = FM` |
+| 3 | SQ mode panel | Base view (mode swap) | `mode_select = SQ` |
+| 4 | D mode panel | Base view (mode swap) | `mode_select = D` |
+| 5 | Status bar | Persistent base | Always visible |
+| 6 | Preset browser | Modal overlay | 📂 icon in the header |
+| 7 | Settings | Modal overlay | ⚙ icon in the header |
+| 8 | About / credits | Modal overlay | `ABOUT…` in Settings, or click the wordmark |
+| 9 | Notification toast | Transient overlay | System-triggered (`notify` event) |
+| 10 | WebView fallback panel | Native (non-WebView) | Shown when the WebView fails to init |
+| 11 | Native file choosers | Native OS dialog | Import/Export/Add-Folder buttons |
 
 ---
 
-## 1. Main window — FM section
+## 1. Header (persistent)
 
-The default view. Its layout — header, left column (LFO/Algorithm), center column
-(instrument rack + per-row routing), right column (Presets), and the bottom row of
-four operator panels — is specified in full in [`genny-ui.md`](../genny-ui.md).
-This section records only what `genny-ui.md` left unplaced.
-
-### Center column — Instrument rack (Task 22)
-
-The center column hosts a **user-curated instrument rack** in place of the
-fixed `INSTRUMENTS` LCD + global `FM / SQ / D` pills + global routing strip
-shown in earlier drafts. The rack is an ordered list of N loaded instruments,
-each one a typed slot (FM / SQ / D) with its own MIDI channel, transpose, range,
-detune and L/R balance. The underlying 6-FM + 3-PSG-tone + 1-noise + 1-DAC
-engine is **unchanged** (per [ADR-0013](adr/0013-multitimbral-voice-model.md));
-the rack is a UI repackaging that maps each row onto one of the fixed parts.
+The header is ~64 px tall and spans the full width. It hosts the
+brand wordmark, the mode selector, the patch-name LCD with
+prev/next/browse buttons, the two output-character toggles, and a gear
+icon for settings.
 
 ```
-┌─ INSTRUMENTS ──────────────────── + − ┐
-│ ◇  ~  GADGET BASS                ::: −│   ← FM row, slot 1
-│ ◇  ⊓  PSG 1                       ::: −│   ← SQ row, slot M1
-│ ◇  □  break_amen.wav              ::: −│   ← D row (DAC)
-│ + ADD INSTRUMENT  …                    │
-└────────────────────────────────────────┘
-TYPE  [FM / SQ / D]                ← read-only (set by row click)
-CHANS [1 2 3 4 5]                  ← read-only slot indicator
-MIDI  [ 1▾]
-TRPS  [ 0▾] [ 0▾]
-RNG   |▟───────────▙|   0–127
-DET   |─────▟────|       0 ¢
-BAL   |───────▟───|
-```
-
-**Rack pool.** FM rows occupy parts 0..4 (5 slots; channel 6 is reserved per
-[ADR-0014](adr/0014-special-channel-features.md)); SQ rows occupy the three
-PSG tone channels (`M1`..`M3`) and the PSG noise channel (`M4`); the D pool
-has the single DAC slot. `+ ADD INSTRUMENT` opens a small 3-row popover
-(FM / SQ / D); the choice picks `getFreeSlot(type)` and either opens the
-patch browser (FM — scoped to FM patches), the WAV loader (D), or simply
-activates the slot (SQ, since PSG is parameter-driven). A full pool surfaces
-a toast: "All `<type>` slots are in use."
-
-**Row selection.** Clicking a row sets the active rack slot. For FM rows this
-calls the existing `selectChannel(n)` path so the bottom panel + right
-column rebind to that part's apvts parameters; for SQ rows the bottom region
-swaps to the SQ view (view 2); D rows swap to the D view (view 3). The
-`FM / SQ / D` type pills are non-interactive in this revision — section
-selection is implied by the row click.
-
-**Per-instrument routing.** The strip beneath the rack binds to the selected
-row's apvts params:
-
-- `midi_ch_*` — step field, 1..16 (or 0 = Off). Per-row MIDI channel
-  override; this is the user-facing edit point for routing. The MIDI
-  ROUTING modal (view 5) stays as the conflict-overview surface.
-- `transpose_st_*` — semitone offset (−24..+24).
-- `transpose_oct_*` — octave offset (−2..+2).
-- `note_lo_*` / `note_hi_*` — two-thumb range slider; notes outside the
-  window are silently dropped.
-- `detune_cents_*` — −100..+100 cents, applied as a fractional pitch offset
-  on top of pitch bend.
-- `balance_*` — −1..+1 stereo balance.
-
-The `_*` suffix is `_part<n>` for FM parts, `_psg_ch1..3` / `_psg_noise`
-for the PSG slots, and `_dac` for the DAC slot.
-
-**Channel slot cells.** The `CHANS` row below the type indicator is now a
-read-only slot indicator for the currently selected row's type. FM rows
-highlight one of `1..5`; SQ rows show `M1 M2 M3 M4` and highlight one of
-them; D rows show just `6` (the DAC chip channel). User-driven slot
-reassignment is a post-MVP nicety.
-
-### Right column — Patch-list data sources
-
-The two right-column lists each pin to one of the patch roots from
-[`04-patch-system.md`](04-patch-system.md) *Patch roots*:
-
-- **PRESETS** tab → user-saved root (`…/patches/saved/`).
-- **IMPORT** tab → user-imported root (`…/patches/imported/`).
-
-Both start empty on a fresh install and fill in as the user saves or
-imports. The factory bank is no longer pinned to the center column — the
-rack's `+ → FM` button opens the patch browser modal (view 4) which is the
-unified navigator for every patch root, factory included. The full mapping,
-the modal's role, and the list/tab behaviour are specified in view 4 below.
-
-### Header meter bay
-
-`genny-ui.md` places the logo, a "TRUE STEREO" VU meter and the 7-segment
-patch-name display in the ~80px header. The header's left zone is extended into a
-**meter bay** that also hosts the telemetry indicators that previously had no
-home:
-
-```
-┌─ HEADER ────────────────────────────────────────────────────────────┐
-│ ░GEN VST░   ┌VU┐ ┌─oscilloscope─┐   [ ▌ RED 7-SEG PATCH NAME ▐ ] ⚙ │
-│             └──┘ └──────────────┘   ················voice ▮▮▮▮▮ ◆clip│
+┌─ HEADER ─────────────────────────────────────────────────────────────┐
+│  ░GEN VST░   [ FM ⋅ SQ ⋅ D ]   [ ◀  ▌GADGET BASS▐  ▶  📂 ]           │
+│                              [Output Filtering] [Ladder Effect]   ⚙  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Oscilloscope** — a small green-LCD inset in the meter bay, right of the VU
-  meter. Draws the recent mixed output; fed by the C++→JS `meterData` telemetry
-  push (`05-ui-ux.md`). Component: `oscilloscope`.
-- **Voice-activity LEDs** — a row of **16** tiny LEDs (one per pool voice,
-  [ADR-0010](adr/0010-ymfm-instance-model.md)); each lights while its voice is
-  keyed on. Driven by the `voiceMask` field of the telemetry push. Placed along
-  the lower edge of the header.
-- **Clip LED** — one red LED at the end of the voice row; lights from the
-  telemetry `clip` flag and decays over ~1s.
-- **Gear icon** — top-right of the header; opens the Settings modal (view 6).
+- **Wordmark** — `GEN VST` in the v2 brand style (see
+  [`09-visual-spec.md`](09-visual-spec.md)). Clicking opens the About
+  modal (view 8).
+- **Mode selector** — 3-segment pill: `FM` / `SQ` / `D`. Bound to
+  `mode_select` apvts param. Tapping a different segment loads a
+  sensible default preset for that mode ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
+- **Patch-name LCD** (`patch-name-lcd` widget) — large monospace LCD
+  showing the active patch name. Flanked by:
+  - **◀ / ▶** — prev/next patch within the active mode. Sorted-order
+    navigation across all roots.
+  - **📂** — opens the preset browser modal (view 6).
+- **Output character toggles** — two `toggle-switch` widgets bound to
+  `output_filter` and `ladder_effect` apvts params
+  ([ADR-0024](adr/0024-hardware-filter-toggles.md)). The Ladder toggle
+  is **greyed out in SQ mode** (it has no audible effect there).
+- **⚙ Gear** — opens the Settings modal (view 7).
 
-### Section tabs
-
-The `FM / SQ / D` pills (`genny-ui.md`, center column) swap **only the bottom
-~220px region** of the window via the `selectSection` native function
-(`05-ui-ux.md`): FM shows the four operator panels; SQ shows view 2; D shows
-view 3. The header and the left/center/right columns persist across sections.
-
-### Per-part polyphony controls
-
-The FM section's center-column control stack gains a polyphony group — see
-view 10.
-
-### Reset-part button
-
-The CHANNELS 1–6 selector row ends with a small `R` button that resets every
-parameter of the currently selected FM part to its `juce::AudioParameter`
-default (operators, envelopes, alg/fb, polyphony settings) and clears the
-active patch path. A confirmation modal guards the destructive action.
-Backed by the `resetCurrentPart` native function — implemented as a parameter
-walk over IDs ending in `_part<n>`, so the FM-relay rebind path repaints the
-entire panel in one batch (same mechanism as channel paging).
-
-### Center-column visual treatment
-
-The lower half of the center column (CHANNELS / MIDI / TRPS / RNG / DEL / PAN
-/ POLY / GLIDE / SPREAD) sits on the same green LCD background as the
-Instruments list directly above it, rather than the dark chassis used by the
-bottom row of operator panels. Labels use the dark-LCD ink colour
-(`--lcd-text-dark`); numeric value placeholders stay LED-red so each reads
-as a tiny inset display printed on the green LCD. The bottom row (operator
-panels) stays on the dark chassis — that contrast is intentional and matches
-the mixing-console feel called out in `genny-ui.md`.
-
-### Header oscilloscope and VU idle behaviour
-
-When no audio is playing, the oscilloscope still draws a faint baseline trace
-in `lcd-pixel-hi` so the meter visibly lives, and the VU meter's first
-segment is always lit (dim phosphor) for the same reason. Without these
-"alive" indicators the meters in a silent project looked indistinguishable
-from a broken telemetry pipe.
+The header persists across mode swaps. The patch-name LCD updates to
+whichever patch loads (FM patch, SQ preset, or D preset).
 
 ---
 
-## 2. Main window — SQ (PSG) section
+## 2. FM mode panel
 
-Shown in the bottom region when the `SQ` pill is selected (or any SQ row is
-picked from the Task 22 rack). The SN76489 PSG has three tone channels and one
-noise channel ([`03-psg-synthesis.md`](03-psg-synthesis.md)). The region
-mirrors the FM section's four-panel rhythm: a thin section-header band plus
-**four envelope panels** (3 tone + 1 noise), each visually identical to an FM
-operator panel.
-
-The SN76489 has **no envelope hardware**; this view drives a per-channel
-**software amplitude ADSR** computed in `SN76489Engine::PsgEnvelope` and
-multiplied into the chip's mix gain. Stage names (`ATK / DR1 / SUS / DR2 /
-RR`) mirror the FM operator vocabulary so the `operator-panel` widget renders
-unchanged — only the bindings differ.
+Active when `mode_select = FM`. Modelled on Inphonik's **RYM2612**: a
+dense column-based operator grid with the LFO + algorithm controls
+flanking it, an envelope curve overlay, and a frequency-control mode
+selector.
 
 ```
-┌─ SQUARE · SN76489 PSG ───────────────────  PSG MIX ▭▭▭▭▭·· 0  [LAYER] ┐
-│ ┌ TONE 1 ──────────┐ ┌ TONE 2 ──────────┐ ┌ TONE 3 ──────────┐ ┌ NOISE ───────────┐ │
-│ │ [1] ◆            │ │ [2] ◆            │ │ [3] ◆            │ │ [N] ◆            │ │
-│ │ ╔══════════════╗ │ │ ╔══════════════╗ │ │ ╔══════════════╗ │ │ ╔══════════════╗ │ │
-│ │ ║   envelope   ║ │ │ ║   envelope   ║ │ │ ║   envelope   ║ │ │ ║   envelope   ║ │ │
-│ │ ║   ╲___       ║ │ │ ║   ╲___       ║ │ │ ║   ╲___       ║ │ │ ║   ╲___       ║ │ │
-│ │ ╚══════════════╝ │ │ ╚══════════════╝ │ │ ╚══════════════╝ │ │ ╚══════════════╝ │ │
-│ │  ATK DR1 SUS     │ │  ATK DR1 SUS     │ │  ATK DR1 SUS     │ │  ATK DR1 SUS     │ │
-│ │  DR2 RR          │ │  DR2 RR          │ │  DR2 RR          │ │  DR2 RR          │ │
-│ │  DETUNE  ▭───    │ │  DETUNE  ▭───    │ │  DETUNE  ▭───    │ │  DETUNE  ▭───    │ │
-│ │  FREQ    ▭───    │ │  FREQ    ▭───    │ │  FREQ    ▭───    │ │  FREQ    ▭───    │ │
-│ │  ENV SC. ▭───    │ │  ENV SC. ▭───    │ │  ENV SC. ▭───    │ │  ENV SC. ▭───    │ │
-│ │  LFO ● SSG 00    │ │  LFO ● SSG 00    │ │  LFO ● SSG 00    │ │  LFO ● SSG 00    │ │
-│ │                  │ │                  │ │                  │ │ ─────────────── │ │
-│ │                  │ │                  │ │                  │ │ SN76489  SHFT •  │ │
-│ │                  │ │                  │ │                  │ │ PERIODIC ◆       │ │
-│ │                  │ │                  │ │                  │ │ TYPE RATE AUTO   │ │
-│ └──────────────────┘ └──────────────────┘ └──────────────────┘ └──────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─ FM MODE ──────────────────────────────────────────────────────────────────────┐
+│ LFO  RATE  PMS  AMS    ┌─ ENVELOPE CURVE ─┐  FREQ CTRL MODE          OP1 FB    │
+│ [○] [○]  [○]  [○]      │                  │  [INT MUL]                          │
+│ POLY  LEGATO RANGE     │   ╱╲___          │  [FLOAT MUL]                [○]    │
+│ [⋅]   [⋅⋅]  [⋅⋅⋅]      │                  │  [AUTO RETRIG]                      │
+│ PB ▭▭▭                 └──────────────────┘                                     │
+│ MW ▭▭▭                                                                          │
+│                                                                                  │
+│  ┌─ OPERATOR GRID ────────────────────────────────────────────────┐  ┌ ALGO ─┐ │
+│  │       AM  AR  DR  SL  SR  RR  RS  SSG-EG  MUL  FREQ  FIXED  DT │  │  ┌──┐ │ │
+│  │  [1]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [3.00] ▢     ○  │  │  │ 4│ │ │
+│  │  [2]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [1.00] ▢     ○  │  │  └──┘ │ │
+│  │  [3]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │ ALG 4 │ │
+│  │  [4]  ▢   ○   ○   ○   ○   ○   ○   [OFF]   ○   [0.50] ▢     ○  │  │       │ │
+│  │  TL: |▟|  |▟|  |▟|  |▟|     VEL: ○  ○  ○  ○                    │  │       │ │
+│  └────────────────────────────────────────────────────────────────┘  └───────┘ │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Section-header band**
+**Top-left block — LFO & global controls**
 
-- `PSG MIX` — global PSG mix-level slider (0–1), PSG contribution to the main
-  output.
-- `LAYER` — "PSG Layer Mode" toggle (Option B in `03-psg-synthesis.md`): layer
-  PSG on every FM note-on. Off by default.
+- `LFO`, `RATE`, `PMS`, `AMS` — four small `knob`s.
+- `POLY` — three-position `toggle-switch`: `POLY / MONO / UNISON`.
+- `LEGATO` — only visible in Mono: `RETRIG / LEGATO`.
+- `RANGE` — only visible in Unison: spread (0–50¢).
+- `PB`, `MW` — pitch bend + mod wheel level meters (read-only
+  visualisation of incoming MIDI).
 
-**Per-channel envelope panel (×4 — 3 tone + 1 noise)**
+**Top-centre — envelope curve**
 
-The `operator-panel` widget renders each panel:
+A large `envelope-curve` widget. Shows the **currently selected
+operator's** ADSR shape, computed live from its envelope knobs. Click
+an operator row's number badge `[1]..[4]` to swap which operator the
+curve tracks.
 
-- **Badge + status dot** — `1 / 2 / 3 / N` numeric badge, red activity LED.
-- **Envelope graph** — a wide green-LCD inset, the same `adsr-graph` widget
-  the FM row uses. Computes the curve analytically in JS from the five rate
-  knobs.
-- **Knob row** — `ATK / DR1 / SUS / DR2 / RR` (the software-ADSR parameters).
-  `SUS` is a sustain LEVEL (0 = peak / no decay, 15 = silent after decay);
-  `DR2 = 0` collapses the second decay into "hold at sustain"; `RR = 0` gives
-  an instant note-off. These are the only knobs that audibly shape the
-  envelope today.
-- **Slider rows** — `DETUNE / FREQ / ENV SCALE` and the `LFO / SSG` pair.
-  Bound to per-channel apvts params (`psg_detune_*`, `psg_freq_*`, `psg_ksr_*`,
-  `psg_vel_*` on the AMON slot, `psg_ssg_*`). Only `psg_vel_*` is audible
-  today — it toggles velocity sensitivity for the envelope's peak level;
-  the rest are visual stubs reserved for follow-up tasks.
+**Top-right — frequency control mode + OP1 feedback**
 
-**Noise extras footer (channel 3 only)**
+- `FREQ CTRL MODE` — three-button pill: `INT MUL / FLOAT MUL / AUTO
+  RETRIG`. Selects how the operator `FREQ` value is interpreted
+  (integer multiple of the note, free-running float, or auto-retriggering
+  for percussion). Bound to a new apvts param `freq_ctrl_mode`.
+- `OP1 FB` — single `knob` for operator-1 self-feedback (the YM2612 `FB`
+  field).
 
-A small SN76489-branding strip with an alternate display of the two noise
-controls, plus the canonical `TYPE / RATE / AUTO` row beneath:
+**Centre-right — algorithm diagram**
 
-- `SN76489` — printed branding label.
-- `SHFT` — knob bound to `psg_noise_rate` (cycles the 4 shift rates).
-- `PERIODIC` — toggle bound to `psg_noise_type`; lights when periodic (mode 0).
-- `TYPE` — pill row, periodic / white.
-- `RATE` — pill row, `LOW / MID / HIGH / CH2` (the four shift rates, `CH2` =
-  locked to tone-channel-2 frequency).
-- `AUTO` — toggle for the optional MIDI-note → shift-rate auto-mapping
-  (`03-psg-synthesis.md`); off by default.
+`algorithm-mini` widget showing the current algorithm topology (the
+8 YM2612 routings; selected one highlighted). Beneath it: `ALG N`
+label and a small selector for picking algorithm 1–8.
 
-`SHFT` / `PERIODIC` and `TYPE` / `RATE` bind to the same apvts params — both
-display surfaces stay in sync via the JUCE relay.
+**Operator grid (main body)**
 
-**Retired controls (moved to the rack — Task 22 / view 1)**
+The bulk of the panel. Four rows, one per operator (S1..S4 — see note
+about hardware swap order in [`02-fm-synthesis.md`](02-fm-synthesis.md)).
+Columns:
 
-- `MIDI` step-field per panel → the rack's per-row `MIDI` cell.
-- `PAN` slider → the rack's `BAL` slider.
-- `BEND` toggle → the rack's per-row routing strip.
-- `VOL` knob → replaced by the envelope's peak level (`SUS` knob + `psg_vel`).
-- `note` readout → not currently surfaced; if needed back later it would go in
-  the panel head, but the rack's existing per-row context obviates it.
+| Column | Type | Bound to (per op) |
+|---|---|---|
+| `[N]` | Numeric badge / select | Operator index (active-curve target) |
+| `AM` | Toggle | `amon[op]` |
+| `AR / DR / SL / SR / RR` | Knobs | Envelope rate values |
+| `RS` (Rate Scaling) | Knob | `ks[op]` |
+| `SSG-EG` | Combo (OFF + 8 shapes) | `ssg[op]` |
+| `MUL` | Knob | `mul[op]` |
+| `FREQ` | LCD readout | Derived (mul × note) display |
+| `FIXED` | Toggle | A new "fixed frequency" flag (post-MVP if not trivial) |
+| `DT` | Knob | `dt[op]` |
+| `TL` (right margin) | Vertical slider | `tl[op]` — separate vertical column so it reads at a glance |
+| `VEL` (right margin) | Knob | A new per-op velocity-to-TL scaling factor |
 
-All SQ controls are `apvts` parameters bound through the standard relays.
+All controls in the grid are `apvts`-bound through the standard relays.
 
 ---
 
-## 3. Main window — D (DAC) section
+## 3. SQ mode panel
 
-Shown in the bottom region when the `D` pill is selected. Controls the dedicated
-DAC sample channel ([ADR-0014](adr/0014-special-channel-features.md)).
+Active when `mode_select = SQ`. Clean subtractive-style layout for 3
+tone channels + 1 noise channel. Each channel is a vertical strip with
+its own envelope + tuning + level.
 
 ```
-┌─ DAC · PCM SAMPLE CHANNEL ──────────────  ENABLE [on]   MIDI [16] ────┐
-│ ┌ SAMPLE ──────────────────────────┐  ┌ PLAYBACK ───────────────────┐ │
-│ │ [ LOAD WAV… ]   break_amen.wav   │  │ RATE  [ 8000 ·11025· 22050 ] │ │
-│ │ ▟▙▟▆▂▃▅▇▆▂▁▃▆█▆▃▁  1.4 s · 8-bit │  │ MODE  [ ONE-SHOT · LOOP ]    │ │
-│ │ [ CLEAR ]                         │  │ (LEVEL)                      │ │
-│ └───────────────────────────────────┘  └──────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─ SQ MODE ─────────────────────────────────────────────────────────────────────┐
+│  ┌ TONE 1 ────────┐  ┌ TONE 2 ────────┐  ┌ TONE 3 ────────┐  ┌ NOISE ────┐  │
+│  │ ╱╲___          │  │ ╱╲___          │  │ ╱╲___          │  │ ╱╲___      │  │
+│  │ (envelope)     │  │ (envelope)     │  │ (envelope)     │  │ (envelope) │  │
+│  │ ATK DR1 SUS    │  │ ATK DR1 SUS    │  │ ATK DR1 SUS    │  │ ATK DR1    │  │
+│  │  ○   ○   ○     │  │  ○   ○   ○     │  │  ○   ○   ○     │  │  ○   ○     │  │
+│  │ DR2  RR        │  │ DR2  RR        │  │ DR2  RR        │  │ SUS DR2 RR │  │
+│  │  ○   ○         │  │  ○   ○         │  │  ○   ○         │  │  ○   ○   ○ │  │
+│  │ DETUNE  ○      │  │ DETUNE  ○      │  │ DETUNE  ○      │  │            │  │
+│  │ VOL     ○      │  │ VOL     ○      │  │ VOL     ○      │  │ VOL     ○  │  │
+│  │ PAN     ▭▭▭    │  │ PAN     ▭▭▭    │  │ PAN     ▭▭▭    │  │ PAN     ▭▭ │  │
+│  └────────────────┘  └────────────────┘  └────────────────┘  │ TYPE [W/P] │  │
+│                                                              │ RATE [LMH2]│  │
+│                                                              └────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- `ENABLE` — DAC enable toggle (register `0x2B`).
-- `MIDI` — step-field, the DAC's MIDI channel (default 16).
-- `LOAD WAV…` — opens a native file chooser (view 11); loads a WAV, converts to
-  8-bit PCM. The converted PCM is embedded in plugin state (`07-feature-spec.md`).
-- Sample strip — loaded filename, a green-LCD **waveform display** of the sample,
-  its length and bit-depth; `CLEAR` unloads it.
-- `RATE` — 8000 / 11025 / 22050 Hz selector.
-- `MODE` — one-shot / loop toggle.
-- `LEVEL` — DAC output-level knob.
+**Per-tone-channel strip (×3)**
 
-Empty state: before a WAV is loaded the sample strip shows `— no sample —` and
-the waveform display is blank; `CLEAR` is disabled.
+- `envelope-curve` widget showing the channel's ADSR shape (Task 23
+  software-ADSR semantics, retained).
+- `ATK / DR1 / SUS / DR2 / RR` — five envelope knobs.
+- `DETUNE` knob — cents offset.
+- `VOL` knob — channel volume.
+- `PAN` slider — L/R balance.
+
+**Noise channel strip**
+
+Same envelope + VOL + PAN, plus noise-specific controls:
+- `TYPE` — toggle: white (W) / periodic (P).
+- `RATE` — 4-position selector: `LOW / MID / HIGH / CH2` (SN76489
+  shift-rate options).
+
+All controls are `apvts`-bound. Allocation across the 3 tone channels
+(round-robin LRU) and noise (last-note priority) is handled by the
+engine ([`03-psg-synthesis.md`](03-psg-synthesis.md)).
+
+The v1 `PSG MIX`, `LAYER` toggle, and SHFT / PERIODIC / TYPE / RATE /
+AUTO band are removed — `psg_mix` is gone (no FM-to-mix in v2);
+`LAYER` (PSG-on-FM-note) is removed; the noise controls collapse into
+the strip above.
 
 ---
 
-## 4. Patch browser (modal overlay)
+## 4. D mode panel
 
-A **full-window modal overlay** ([ADR-0006](adr/0006-folder-tree-patch-browser.md);
-form confirmed by the user). It covers the 960×640 window; the main UI is dimmed
-behind it.
+Active when `mode_select = D`. Modelled directly on Inphonik's
+**PCM2612 Retro Decimator Unit**. Audio FX only — MIDI is ignored.
 
 ```
-┌─ PATCH BROWSER ──────────────────────────────────────────────── [X] ┐
-│ [ Search patches…                                              🔍 ] │
-│ ┌────────────────────┬──────────────────────────────────────────┐  │
-│ │ ▼ Factory      🔒  │  Bass Guitar                              │  │
-│ │ ▼ Saved            │  Techno Lead                              │  │
-│ │ ▼ Imported         │ ▶ Synth Brass                      ◀ sel  │  │
-│ │ ▼ extra  (custom)  │  Marimba                                  │  │
-│ │   ▶ 01      (842)  │  …                                        │  │
-│ │   ▼ 02      (915)  │                                           │  │
-│ │     ▶ game_a  (28) │                                           │  │
-│ │   ▶ 03      (770)  │                                           │  │
-│ │ [ + Add Folder… ]  │                                           │  │
-│ └────────────────────┴──────────────────────────────────────────┘  │
-│ [Import file] [Export▾] [Delete]            [▶ Preview]  [ Close ]  │
+┌─ D MODE — RETRO DECIMATOR UNIT ───────────────────────────────────────────────┐
+│                                                                                │
+│                              ┌─ DAC PRESCALER ─┐                              │
+│                              │      (large)    │                              │
+│                              │       ●         │                              │
+│                              │                 │                              │
+│                              └─────────────────┘                              │
+│                                                                                │
+│   ┌─ STEREO LEVEL METERS ──────────────────────────────────────────────┐      │
+│   │  L  ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮     [ MONO ]     ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮ R│      │
+│   └────────────────────────────────────────────────────────────────────┘      │
+│                                                                                │
+│           DRY / WET                                                            │
+│              ●                                                                 │
+│                                                                                │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **`DAC PRESCALER`** — large central `decimator-knob`. Bound to the
+  `prescaler` apvts param (0.0..1.0; 0 = no decimation, 1 = max).
+- **Stereo level meters** — `level-meter` widget showing input
+  (pre-decimation) L/R peaks. Updated via the C++→JS telemetry push.
+- **`MONO`** — `toggle-switch` (lit when on); bound to `mono`.
+- **`DRY / WET`** — `knob`; bound to `dry_wet`.
+
+The Output Filtering and Ladder Effect toggles live in the **header**,
+not on this panel (they're global, not D-specific) — consistent with
+how RYM2612 keeps `OUTPUT FILTERING` on its main chassis.
+
+No MIDI controls, no sample loader, no MIDI channel selector — D mode
+processes the audio input bus and only the audio input bus
+([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
+
+---
+
+## 5. Status bar (persistent)
+
+A thin (~16 px) strip at the bottom of the window, always visible.
+
+```
+┌─ STATUS ─────────────────────────────────────────────────────────────┐
+│ ◉ NOTE ON    L ▮▮▮▮▮▮▮▮▮▮▮▮     R ▮▮▮▮▮▮▮▮▮▮▮▮            v0.2.0   │
 └──────────────────────────────────────────────────────────────────────┘
+```
+
+- `◉ NOTE ON` — `note-on-led`, lit while any voice is keyed on.
+  In D mode, lit while audio input exceeds a tiny threshold.
+- L / R level bars — output level meters.
+- Version string — read-only.
+
+---
+
+## 6. Preset browser (modal overlay)
+
+A **full-window modal overlay**
+([ADR-0006](adr/0006-folder-tree-patch-browser.md),
+[ADR-0025](adr/0025-tagged-preset-browser.md)). Covers the 1200×560
+window; the main UI is dimmed behind it.
+
+```
+┌─ PRESET BROWSER ────────────────────────────────────────────────  [X] ┐
+│  [All] [FM] [SQ] [D]   [ Search…                                   🔍 ]│
+│ ┌────────────────────┬─────────────────────────────────────────────┐  │
+│ │ ▼ Factory      🔒  │  FM   Bass Guitar                            │  │
+│ │ ▼ Saved            │  FM   Techno Lead                            │  │
+│ │ ▼ Imported         │  FM ▶ Synth Brass                  ◀ sel    │  │
+│ │ ▼ extra  (custom)  │  SQ   Pulse Arp                              │  │
+│ │   ▶ 01      (842)  │  D    Crunchy Drums                          │  │
+│ │   ▼ 02      (915)  │  …                                           │  │
+│ │     ▶ game_a  (28) │                                              │  │
+│ │   ▶ 03      (770)  │                                              │  │
+│ │ [ + Add Folder… ]  │                                              │  │
+│ └────────────────────┴─────────────────────────────────────────────┘  │
+│ [Import file] [Export▾] [Delete]                            [ Close ]  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Controls**
 
-- **Search box** — filters by patch name across all roots; each hit shows its
-  folder path. Backed by the background search index (`04-patch-system.md`).
-- **Left pane — folder tree** — every root and its subfolders as a collapsible
-  tree. `Factory` carries a lock glyph (read-only). `Saved` and `Imported` are
-  the two writable user roots (see `04-patch-system.md` *Patch roots*); custom
-  roots follow. Each scanned folder shows its patch count. Lazy scan on first
-  expand.
-- **Right pane — patch list** — the `.tfi`/`.vgi`/`.dmp` files in the selected
-  folder.
-- **`+ Add Folder…`** — directory picker; registers a custom root (view 11).
-- **`Import file`** — file picker (`*.tfi;*.vgi;*.dmp`); copies into the
-  user-imported root (`…/patches/imported/`).
-- **`Export▾`** — export the current patch as TFI or VGI (save dialog).
-- **`Delete`** — removes a patch from a writable root; disabled for `Factory`.
-- **`Preview`** — middle-C note-on at fixed velocity for ~1s into the active part.
+- **Mode filter chips** (top-left) — `All / FM / SQ / D`. Default = the
+  instance's current mode, so the user first sees patches for what
+  they're editing. Switching to `All` shows everything.
+- **Search box** — filters by patch name across all roots, honouring
+  the active mode chip.
+- **Left pane — folder tree** — every root and its subfolders as a
+  collapsible tree. `Factory` carries a lock glyph (read-only).
+  `Saved`/`Imported` are writable. Each scanned folder shows its patch
+  count. Lazy scan on first expand.
+- **Right pane — patch list** — each row prefixed with a `FM` / `SQ` /
+  `D` badge. Files in the selected folder, filtered by the active mode
+  chip.
+- **`+ Add Folder…`** — registers a custom root (view 11 native chooser).
+- **`Import file`** — file picker
+  (`*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg;*.gdac`); copies into the
+  user-imported root.
+- **`Export▾`** — export the current mode's patch as TFI/VGI (FM),
+  `.psg` (SQ), or `.gdac` (D).
+- **`Delete`** — removes a patch from a writable root; disabled for
+  `Factory`.
 - **`Close` / `[X]`** — dismiss the modal.
 
 **Behaviour**
 
-- Single-click or `Enter` on a patch loads it into the **currently selected FM
-  part** ([ADR-0013](adr/0013-multitimbral-voice-model.md)); the modal stays open
-  so several patches can be auditioned. `Close` dismisses it.
-- **Relationship to the main-window lists.** The main window's three
-  patch-list surfaces are *quick-access* views, each pinned to one of the
-  writable/read-only roots from `04-patch-system.md`:
-    - **INSTRUMENTS** (center column) → the **factory** root.
-    - **PRESETS** tab (right column) → the **user-saved** root
-      (`…/patches/saved/`). Empty until the user calls `savePatch()`.
-    - **IMPORT** tab (right column) → the **user-imported** root
-      (`…/patches/imported/`). Empty until the user imports a file or
-      drag-drops one.
-  The browser modal is the full folder-tree navigator and the only place to
-  manage roots, import, export and delete; it can also browse any custom
-  roots, which the main-window lists do not expose. The folder icon in the
-  Presets/Import tab header opens this modal.
-- A load failure raises a notification toast (view 8); it never blocks.
+- Single-click or `Enter` on a patch loads it into the instance.
+  **If the patch's tag differs from the current mode, the instance's
+  mode auto-switches** ([ADR-0025](adr/0025-tagged-preset-browser.md));
+  no confirmation modal.
+- The browser stays open after loading so several patches can be
+  auditioned in turn; `Close` dismisses.
+- A load failure raises a notification toast (view 9); it never blocks.
+
+The v1 main-window LCD lists (INSTRUMENTS / PRESETS / IMPORT in the
+center/right columns) are **removed** — this browser is the only patch
+navigator.
 
 ---
 
-## 5. MIDI routing editor (modal overlay)
-
-A modal giving a single consolidated view of the MIDI-channel → destination
-binding table. The per-destination MIDI channel can also be set inline (the
-`MIDI` step-fields in views 1/2/3); this editor is the authoritative overview and
-the place conflicts are surfaced.
-
-```
-┌─ MIDI ROUTING ───────────────────────────────────────────────── [X] ┐
-│  DESTINATION              MIDI CHANNEL                                │
-│  FM Part 1                [  1 ▾]                                     │
-│  FM Part 2                [  2 ▾]                                     │
-│  …                        …                                          │
-│  FM Part 6                [  6 ▾]                                     │
-│  PSG Tone 1 / 2 / 3       [ 11 ▾] [ 12 ▾] [ 13 ▾]                     │
-│  PSG Noise                [ 14 ▾]                                     │
-│  DAC                      [ 16 ▾]                                     │
-│  ⚠ Channel 11 is assigned to two destinations.                        │
-│                              [ Reset to defaults ]      [ Close ]    │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-- One row per destination: 6 FM parts, 3 PSG tone slots, PSG noise, DAC. Each
-  has a MIDI-channel selector (1–16, or `Off`).
-- **Conflict highlighting** — if two destinations share a channel, both rows are
-  flagged and a warning line is shown. Sharing is permitted (it is a valid layer
-  setup) but surfaced so it is never accidental.
-- `Reset to defaults` restores the documented default map (FM 1–6, PSG 11–14,
-  DAC 16).
-- The table is persisted in plugin state (`07-feature-spec.md`).
-
----
-
-## 6. Settings (modal overlay)
+## 7. Settings (modal overlay)
 
 Global plugin preferences. Opened from the header gear icon.
 
 ```
 ┌─ SETTINGS ──────────────────────────────────────────────────── [X] ┐
-│  VOICE COUNT        [ 8 · 12 ·(16)]                                  │
-│  PITCH BEND RANGE   [±1 ·(±2)· ±7 · ±12]   semitones                 │
-│  UI SCALE           [(1×)· 2× · 3×]                                  │
-│  VELOCITY → TL      [ on ]                                           │
-│  AFTERTOUCH         [ Off ·(LFO depth)· Carrier TL ]                 │
-│  TOOLTIPS           [ on ]                                           │
+│  VOICE COUNT (FM mode)  [ 8 · 12 ·(16)]                              │
+│  PITCH BEND RANGE       [±1 ·(±2)· ±7 · ±12]   semitones             │
+│  UI SCALE               [(1×)· 2× · 3×]                              │
+│  VELOCITY → TL (FM)     [ on ]                                       │
+│  AFTERTOUCH             [ Off ·(LFO depth)· Carrier TL ]             │
+│  TOOLTIPS               [ on ]                                       │
 │  ────────────────────────────────────────────────────────────────   │
-│  [ MIDI ROUTING… ]      [ ABOUT / CREDITS… ]                         │
+│  [ ABOUT / CREDITS… ]                                                │
 │  [ RESET ALL TO DEFAULTS ]                                           │
 │                                                  [ Close ]          │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- `VOICE COUNT` — 8 / 12 / 16 (`07-feature-spec.md`; default 16).
-- `PITCH BEND RANGE` — ±1 / ±2 / ±7 / ±12 semitones (default ±2).
-- `UI SCALE` — 1× / 2× / 3× integer presets ([ADR-0017](adr/0017-hidpi-display-scaling.md)).
-- `VELOCITY → TL` — enable/disable velocity → TL scaling.
-- `AFTERTOUCH` — channel-pressure routing: Off / LFO depth / Carrier TL.
-- `TOOLTIPS` — global hover-tooltip toggle (default on). Persisted in apvts
-  as `tooltips_enabled` so the user's preference survives across sessions.
-- `MIDI ROUTING…` opens view 5; `ABOUT / CREDITS…` opens view 7.
+- `VOICE COUNT` (FM mode) — 8 / 12 / 16; default 16.
+- `PITCH BEND RANGE` — ±1 / ±2 / ±7 / ±12 semitones; default ±2.
+- `UI SCALE` — integer presets ([ADR-0017](adr/0017-hidpi-display-scaling.md)).
+- `VELOCITY → TL` — FM mode velocity → TL scaling toggle.
+- `AFTERTOUCH` — channel pressure routing: Off / LFO depth / Carrier TL.
+  Default = **LFO depth (PMS)**.
+- `TOOLTIPS` — global hover-tooltip toggle.
+- `ABOUT / CREDITS…` opens view 8.
 - `RESET ALL TO DEFAULTS` — destructive button (red label). After a
-  confirmation modal, snaps every parameter (every FM part, PSG, DAC, global
-  settings) to its `juce::AudioParameter` default and resets routing. Active
-  patch paths are cleared; the DAC sample is unloaded.
+  confirmation modal, snaps every parameter to its `juce::AudioParameter`
+  default and clears the active patch path.
 
-Per-part settings (polyphony mode, unison spread, mono retrigger/legato) are
-**not** here — they live with the selected part (view 10).
+The v1 `MIDI ROUTING…` button is **removed** (no routing matrix in v2).
 
 ---
 
-## 7. About / credits (modal overlay)
+## 8. About / credits (modal overlay)
 
-A modal carrying the version and the **license attributions**. The project is
-GPL v3 and bundles third-party code and data, so this surface is legally
-required, not optional.
+A modal carrying the version and the **license attributions**. The
+project is GPL v3 and bundles third-party code and data, so this surface
+is legally required, not optional.
 
 ```
 ┌─ ABOUT ─────────────────────────────────────────────────────── [X] ┐
-│              ░ GEN VST ░   v0.1.0                                    │
+│              ░ GEN VST ░   v0.2.0                                    │
 │        Sega Genesis YM2612 + SN76489 emulation                       │
 │                                                                      │
 │  Gen VST is free software under the GNU GPL v3.                      │
@@ -481,8 +399,9 @@ required, not optional.
 │  libvgm sn764xx        LGPL              (SN76489 core)               │
 │  JUCE 8                GPL v3                                         │
 │  Furnace tfilib        GPL               (factory patch bank)         │
-│  Press Start 2P        SIL OFL           (label font)                │
-│  torinak 7-segment     SIL OFL           (patch-display font)         │
+│  IBM Plex Mono /       SIL OFL           (label font — TBD)          │
+│  JetBrains Mono                                                       │
+│  LCD-style face        SIL OFL           (LCD display font — TBD)    │
 │                                                                      │
 │  Source: <repository URL>                          [ Close ]        │
 └──────────────────────────────────────────────────────────────────────┘
@@ -491,33 +410,37 @@ required, not optional.
 The attribution list is kept in sync with the *Legal Notes* table in
 [`04-patch-system.md`](04-patch-system.md) and the licensing ADRs
 ([ADR-0003](adr/0003-gpl-v3-license.md), [ADR-0004](adr/0004-furnace-only-factory-bank.md)).
+Exact font choices for v2 are pinned in
+[`09-visual-spec.md`](09-visual-spec.md).
 
 ---
 
-## 8. Notification toast
+## 9. Notification toast
 
-The single user-visible error/status channel (`05-ui-ux.md`, component
-`notification-toast`). Driven by the C++→JS `notify` event `{ level, message }`.
+The single user-visible error/status channel
+([`05-ui-ux.md`](05-ui-ux.md), component `notification-toast`). Driven
+by the C++→JS `notify` event `{ level, message }`.
 
-- **Position** — slides down from the top edge, centered, below the header.
-- **Levels & colour** — `info` (green-LCD palette), `warn` (logo-yellow palette),
-  `error` (LED-red palette). Hard 1–2px border, no radius, per the pixel-art
-  rules.
-- **Duration** — auto-dismiss after ~4s; click to dismiss immediately.
+- **Position** — slides down from the top edge, centered, below the
+  header.
+- **Levels & colour** — `info`, `warn`, `error` — palette per
+  [`09-visual-spec.md`](09-visual-spec.md).
+- **Duration** — auto-dismiss after ~4 s; click to dismiss immediately.
 - **Stacking** — at most two visible at once; further notifications queue.
 - **Triggers** — bad/unreadable patch file, DMP version rejected
-  ([ADR-0012](adr/0012-dmp-version-scope.md)), a custom root that no longer
-  resolves, a saved patch path that no longer resolves on project load.
+  ([ADR-0012](adr/0012-dmp-version-scope.md)), a custom root that no
+  longer resolves, a saved patch path that no longer resolves on project
+  load.
 
 ---
 
-## 9. WebView fallback panel (native, non-WebView)
+## 10. WebView fallback panel (native, non-WebView)
 
-If `juce::WebBrowserComponent` fails to initialise — most often a missing or
-broken WebView2 runtime on Windows ([ADR-0016](adr/0016-webview2-runtime-distribution.md))
-— the editor shows this panel **instead of** the WebView. It is drawn with native
-`juce::Graphics` (there is no WebView to host HTML), so it is plain and
-functional rather than pixel-art styled.
+If `juce::WebBrowserComponent` fails to initialise — most often a
+missing or broken WebView2 runtime on Windows
+([ADR-0016](adr/0016-webview2-runtime-distribution.md)) — the editor
+shows this panel **instead of** the WebView. Drawn with native
+`juce::Graphics`, plain and functional rather than pixel-art styled.
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -538,85 +461,71 @@ functional rather than pixel-art styled.
 └──────────────────────────────────────────────────────┘
 ```
 
-- Sized to the 960×640 editor area.
-- `Retry` attempts to recreate the WebView (e.g. after the user installs the
-  runtime without reloading the plugin).
+- Sized to the 1200×560 editor area.
+- `Retry` attempts to recreate the WebView.
 - The audio processor is unaffected — only the editor is degraded.
-
----
-
-## 10. Per-part polyphony controls (inline, FM section)
-
-Polyphony mode is a **per-part** setting ([`07-feature-spec.md`](07-feature-spec.md)).
-Its controls are added to the FM section's center-column control stack (the
-`MIDI / TRANSPOSE / RNG / DEL / PAN` group in `genny-ui.md`), so they edit the
-currently selected FM part alongside the rest of that stack.
-
-```
-  POLY    [ POLY · MONO · UNISON ]
-  ├ MONO   → GLIDE [ RETRIG · LEGATO ]
-  └ UNISON → SPREAD ▭▭▭··· 12 ¢
-```
-
-- `POLY` — three-way mode selector for the selected part.
-- When `MONO` is selected, a `GLIDE` toggle appears: retrigger vs legato.
-- When `UNISON` is selected, a `SPREAD` slider appears: unison detune spread in
-  cents (0–50).
-- In `POLY` mode neither sub-control is shown.
-
-These bind to per-part `apvts` parameters and re-bind on part selection like the
-rest of the FM-part controls (`05-ui-ux.md`, *FM channel paging*).
 
 ---
 
 ## 11. Native file choosers
 
-These are **native OS dialogs** (`juce::FileChooser`), not WebView content. They
-look native on each platform — consistent with the functional-parity /
-not-pixel-parity stance of [ADR-0015](adr/0015-webview-backend-support.md).
+Native OS dialogs (`juce::FileChooser`), not WebView content.
 
 | Trigger | Kind | Filter / result |
 |---------|------|-----------------|
-| `Import file` (browser) | Open file | `*.tfi;*.vgi;*.dmp` → copied into the user-imported root (`…/patches/imported/`) |
-| `Export▾` (browser) | Save file | writes a TFI (42 B) or VGI (43 B) file |
-| `+ Add Folder…` (browser) | Choose directory | registers a custom patch root |
-| `LOAD WAV…` (D section) | Open file | `*.wav` → converted to 8-bit PCM |
+| `Import file` (browser) | Open file | `*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg;*.gdac` → copied into the user-imported root |
+| `Export▾` (browser) | Save file | Writes the current mode's patch format |
+| `+ Add Folder…` (browser) | Choose directory | Registers a custom patch root |
 
-**Drag-and-drop** is the non-dialog path: `.tfi`/`.vgi`/`.dmp` files dropped
-on the plugin window import into the user-imported root
-(`…/patches/imported/`). A **folder** dropped on the window is now also
-treated as an import — every patch file inside the folder is copied
-recursively into the user-imported root so the patches appear in the main
-window's IMPORT tab. Users who want to register a folder as a browser-only
-*custom root* (no copy) use the Patch Browser's "Add Folder..." button
-instead. Because an OS drop must yield real filesystem paths, this uses a
-native `juce::FileDragAndDropTarget` on the editor, **not** HTML5
-drag-and-drop (see `05-ui-ux.md`).
+**Drag-and-drop** is the non-dialog path: any
+`.tfi/.vgi/.dmp/.y12/.opm/.psg/.gdac` file dropped on the plugin window
+imports into the user-imported root (and auto-switches mode if it's a
+different tag than the current mode). A `.vgm`/`.vgz` triggers VGM bank
+import (Task 21 semantics retained). A **folder** dropped on the window
+is treated as an import — every supported patch file inside the folder
+is copied recursively into the user-imported root. Users who want to
+register a folder as a browser-only custom root use the Preset Browser's
+"Add Folder…" button instead. Because an OS drop must yield real
+filesystem paths, this uses a native `juce::FileDragAndDropTarget` on
+the editor, **not** HTML5 drag-and-drop.
+
+The v1 dedicated `LOAD WAV…` button (D section) is **removed** — D mode
+no longer loads WAV files.
 
 ---
 
 ## Modal behaviour (shared)
 
-Views 4–7 are in-WebView modal overlays and share this behaviour:
+Views 6–8 are in-WebView modal overlays and share this behaviour:
 
-- Open over a **dimmed** main UI; only one modal is open at a time. View 5 and
-  view 7 are opened *from* view 6 and replace it.
+- Open over a **dimmed** main UI; only one modal is open at a time.
+  View 8 is opened *from* view 7 and replaces it.
 - Dismissed by `Close`, the `[X]`, or the `Esc` key.
-- Modal while open: clicks outside the modal panel do not reach the main UI.
-- The notification toast (view 8) may still appear above an open modal.
-- Modals are sized within the 960×640 canvas; they never spawn an OS window.
+- Modal while open: clicks outside the modal panel do not reach the
+  main UI.
+- The notification toast (view 9) may still appear above an open modal.
+- Modals are sized within the 1200×560 canvas; they never spawn an OS
+  window.
 
 ---
 
-## Resolved open questions
+## What v2 removed from v1's catalog
 
-This catalog closes the UI open questions previously tracked in `05-ui-ux.md`:
+The following v1 views no longer exist:
 
-- **Window scaling** — resolved by [ADR-0017](adr/0017-hidpi-display-scaling.md).
-- **WebView2 runtime fallback** — the fallback panel is view 9, per
-  [ADR-0016](adr/0016-webview2-runtime-distribution.md).
-- **SQ / D section parity** — both sections are **fully specified** (views 2 and
-  3); they are not stubbed in the design. Build sequencing may still implement
-  them after the FM section, but the design is complete.
-- **Patch list ↔ part** — the browser loads into the selected part (view 4),
-  consistent with [ADR-0013](adr/0013-multitimbral-voice-model.md).
+- **Instrument rack** (v1 view 1 center column) — multi-instrument
+  rack is gone; one engine per instance.
+- **MIDI routing editor** (v1 view 5) — no routing matrix; each
+  instance is on the host's MIDI channel.
+- **Per-part polyphony controls** (v1 view 10) — polyphony is an
+  instance-level setting now, lives in the FM mode panel.
+- **Header meter bay** (v1 — VU + oscilloscope + 16-voice LED bank +
+  clip LED) — replaced by the simpler status bar (view 5) + level
+  meters integrated into the D mode panel.
+- **Section tabs** (v1 — FM/SQ/D pills as a section selector inside the
+  bottom region) — replaced by the **header mode selector** that also
+  swaps the full mode panel.
+- **Reset-part button** (v1) — replaced by `RESET ALL TO DEFAULTS` in
+  Settings (whole-instance, since there's nothing finer than the
+  instance).
+- **Per-instrument routing strip** (v1) — removed entirely.

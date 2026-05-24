@@ -13,8 +13,8 @@ Promote the right column's IMPORT tab to Genny's full action stack: eight button
 - **No new modal layers.** Each button either opens a native file chooser (`juce::FileChooser`) or pipes into an existing modal/handler.
 - **State files** for Load/Save State write a `.gnvst` file (extension new; format = the `juce::AudioProcessorValueTreeState` XML the plugin already serializes). Document the format in code.
 - **Export Bank** writes all currently-loaded patches (every active rack row) as a single JSON bundle to a chosen file. Format: `{ version, rows: [{ type, slot, patchPath, routing }] }`. Importing the bundle restores the same rows by re-loading each `patchPath` and applying `routing`.
-- **Log VGM** is a toggle button: starts a `VgmLogger` that captures every YM2612 + SN76489 register write to a `.vgm`-format file in `<userAppData>/GenVst/logs/`. If implementation runs long, **stub the button to a `"Coming soon — see Task 27"` toast** and stamp `docs/tasks/27-vgm-logging.md`.
-- **Import Tuning** opens a `.scl` Scala file picker, parses the tuning, and applies it to MidiRouter's note→frequency table. If implementation runs long, stub to toast + stamp `docs/tasks/28-scala-tuning.md`.
+- **Log VGM** is a toggle button: starts a `VgmLogger` that captures every YM2612 + SN76489 register write to a `.vgm`-format file in `<userAppData>/GenVst/logs/`. If implementation runs long, **stub the button to a `"Coming soon — see Task 27"` toast** and stamp `docs/tasks/mvp/27-vgm-logging.md`.
+- **Import Tuning** opens a `.scl` Scala file picker, parses the tuning, and applies it to MidiRouter's note→frequency table. If implementation runs long, stub to toast + stamp `docs/tasks/mvp/28-scala-tuning.md`.
 - **Toast feedback** for every action: success, failure, "nothing loaded" (Save State with empty rack still saves; Export Bank with empty rack toasts and aborts).
 
 ## Scope
@@ -57,7 +57,7 @@ Promote the right column's IMPORT tab to Genny's full action stack: eight button
 - `src/BankIO/BankIO.{h,cpp}` — new.
 - `tests/BankIOTests.cpp` — new.
 - `src/CMakeLists.txt`, `tests/CMakeLists.txt` — updated.
-- `docs/tasks/27-vgm-logging.md`, `docs/tasks/28-scala-tuning.md` — if stubbed.
+- `docs/tasks/mvp/27-vgm-logging.md`, `docs/tasks/mvp/28-scala-tuning.md` — if stubbed.
 - `docs/design/04-patch-system.md` — append a "Bank bundle format" subsection.
 
 ## Verification

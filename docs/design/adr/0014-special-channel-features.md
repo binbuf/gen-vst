@@ -1,8 +1,9 @@
 # ADR-0014: Special-channel features under the one-channel-per-instance model
 
-- **Status:** Accepted
+- **Status:** Superseded for DAC (2026-05-24); Channel 3 deferral still in force.
 - **Date:** 2026-05-21
-- **Related:** [01-architecture.md](../01-architecture.md), [02-fm-synthesis.md](../02-fm-synthesis.md), [07-feature-spec.md](../07-feature-spec.md), [ADR-0010](0010-ymfm-instance-model.md), [ADR-0013](0013-multitimbral-voice-model.md)
+- **Related:** [ADR-0021](0021-three-mode-single-engine-ui.md), [ADR-0024](0024-hardware-filter-toggles.md), [ADR-0010](0010-ymfm-instance-model.md), [ADR-0013](0013-multitimbral-voice-model.md)
+- **Supersession note (2026-05-24):** Under [ADR-0021](0021-three-mode-single-engine-ui.md), D mode is an **audio FX** (PCM2612-style decimator) and **does not use a ymfm DAC instance at all** — the dedicated 17th `ymfm::ym2612` instance described below is **deleted**, along with `src/DACPlayer.{h,cpp}` and `src/DACKit.{h,cpp}`. The YM2612 DAC's characteristic sound is reproduced in v2 by the pure-DSP `src/DspDecimator.{h,cpp}` + the Ladder Effect ([ADR-0024](0024-hardware-filter-toggles.md)). The only part of this ADR still in force is the **Channel 3 special-mode deferral** (per-operator independent pitch), which remains post-MVP.
 
 ## Context
 
