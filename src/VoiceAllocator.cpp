@@ -334,6 +334,18 @@ std::uint32_t VoiceAllocator::activeVoiceMask() const noexcept
     return m;
 }
 
+bool VoiceAllocator::hasActiveVoiceUsingChannel3() const noexcept
+{
+    for (const auto& v : voices)
+    {
+        if (v.isIdle()) continue;
+        const auto m = v.currentMode();
+        if (m == Voice::FreqCtrlMode::FloatMul || m == Voice::FreqCtrlMode::AutoRetrig)
+            return true;
+    }
+    return false;
+}
+
 std::uint16_t VoiceAllocator::fmPartSoundingMask() const noexcept
 {
     std::uint16_t m = 0;

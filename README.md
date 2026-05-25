@@ -2,7 +2,7 @@
 
 # Gen VST
 
-Sega Genesis sound chip emulator — YM2612 FM synthesis, SN76489 PSG, and 8-bit DAC — as a VST3/AU instrument plugin.
+Sega Genesis sound chip emulator — YM2612 FM synthesis, SN76489 PSG, and 8-bit DAC — as a modern VST3/AU VST instrument plugin.
 
 ## Features
 
@@ -70,12 +70,6 @@ The plugin ships with ~39 factory patches sourced from the Furnace `tfilib` set 
 | Linux | `~/.local/share/GenVst/patches` |
 
 Additional patches can be loaded through the plugin's Import tab or by dragging a folder into the plugin window.
-
----
-
-## Notes
-
-Gen VST was inspired from **Genny VST** user interface but uses none of its source code, assets, or patch data from that project. This project wanted to make a modernized cross platform VST3.
 
 ### Factory patches
 

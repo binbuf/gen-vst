@@ -143,6 +143,20 @@ namespace
         const double centred = static_cast<double> (bend14bit - 8192) / 8192.0;
         return static_cast<float> (juce::jlimit (-1.0, 1.0, centred));
     }
+
+    // Carrier-operator bitmask per YM2612 algorithm (02-fm-synthesis.md
+    // *FM Algorithms* Carriers column). Bit i = operator i+1 is a carrier.
+    // ALG 0..3 → S4; ALG 4 → S2, S4; ALG 5,6 → S2, S3, S4; ALG 7 → all four.
+    constexpr std::uint8_t kCarrierMaskForAlg[8] = {
+        0b1000,   // 0: S4
+        0b1000,   // 1: S4
+        0b1000,   // 2: S4
+        0b1000,   // 3: S4
+        0b1010,   // 4: S2 + S4
+        0b1110,   // 5: S2 + S3 + S4
+        0b1110,   // 6: S2 + S3 + S4
+        0b1111,   // 7: S1 + S2 + S3 + S4
+    };
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::createParameterLayout()
@@ -443,6 +457,8 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     noteModeParam        = apvts.getRawParameterValue ("note_mode");
     polyVoicesParam      = apvts.getRawParameterValue ("poly_voices");
     velocityToTlParam    = apvts.getRawParameterValue ("velocity_to_tl");
+    hardwareStrictParam  = apvts.getRawParameterValue ("hardware_strict");
+    aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
 }
 
 GenVstAudioProcessor::~GenVstAudioProcessor()
@@ -627,8 +643,16 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // already applied inside renderDBlock for D mode (before dry/wet blend),
     // so it must NOT be re-applied to the buffer post-blend. SQ skips ladder
     // entirely (the PSG bypasses the YM2612 DAC on real hardware — ADR-0024).
-    const bool ladderOn = ladderEffectParam != nullptr && ladderEffectParam->load() > 0.5f;
-    const bool filterOn = outputFilterParam != nullptr && outputFilterParam->load() > 0.5f;
+    // HARDWARE STRICT forces both toggles on regardless of their apvts value
+    // (Settings view 6 — the UI greys + locks the header toggles, the audio
+    // path enforces it here so a stale apvts read can't bypass strict
+    // semantics).
+    const bool hwStrict = hardwareStrictParam != nullptr
+                            && hardwareStrictParam->load() > 0.5f;
+    const bool ladderOn = hwStrict
+                            || (ladderEffectParam != nullptr && ladderEffectParam->load() > 0.5f);
+    const bool filterOn = hwStrict
+                            || (outputFilterParam != nullptr && outputFilterParam->load() > 0.5f);
 
     if (mode == Mode::FM)
         ladder.process (buffer, ladderOn);
@@ -695,6 +719,39 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
             juce::jlimit (0, 7, static_cast<int> (currentPatch.pms) + pmsAdd));
     }
 
+    // AFTERTOUCH routing (Settings view 6): channel pressure either rides
+    // PMS (vibrato depth) or attenuates the carrier op(s) per the active
+    // algorithm's carrier set. Off = no contribution.
+    const int atTarget = aftertouchTargetParam != nullptr
+                           ? juce::jlimit (0, 2, juce::roundToInt (aftertouchTargetParam->load()))
+                           : 1;
+    const float atPressure = channelPressureNorm.load (std::memory_order_relaxed);
+    if (atPressure > 0.0f)
+    {
+        if (atTarget == 1)   // LFO PMS — layered on top of any MW contribution.
+        {
+            const int atPmsAdd = juce::roundToInt (7.0f * atPressure);
+            currentPatch.pms = static_cast<std::uint8_t> (
+                juce::jlimit (0, 7, static_cast<int> (currentPatch.pms) + atPmsAdd));
+        }
+        else if (atTarget == 2)   // Carrier TL — only attenuate carrier ops.
+        {
+            const int algIdx = juce::jlimit (0, 7, static_cast<int> (currentPatch.alg));
+            const std::uint8_t mask = kCarrierMaskForAlg[algIdx];
+            // currentPatch.tl[op] is hardware attenuation here (0 = loudest;
+            // readPatch already inverted from apvts level). Pressure pushes
+            // it up toward silence (127).
+            const int addAtten = juce::roundToInt (127.0f * atPressure);
+            for (int op = 0; op < FmParamCache::kNumOps; ++op)
+            {
+                if ((mask & (1u << op)) == 0) continue;
+                const int cur = static_cast<int> (currentPatch.tl[op]);
+                currentPatch.tl[op] = static_cast<std::uint8_t> (
+                    juce::jlimit (0, 127, cur + addAtten));
+            }
+        }
+    }
+
     const bool velToTl = velocityToTlParam != nullptr && velocityToTlParam->load() > 0.5f;
     voiceAllocator.updateActiveVoicesForPart (0, currentPatch, velToTl);
 
@@ -726,9 +783,14 @@ void GenVstAudioProcessor::pushPolyphonyParameters()
 {
     // poly_voices clamps the active pool size; note_mode toggles RETRIG /
     // LEGATO. mono = poly_voices == 1 (07-feature-spec.md *Polyphony*).
+    // HARDWARE STRICT (Settings → view 6) clamps the upper end to 6 to
+    // match the YM2612's hardware channel count.
+    const bool hwStrict   = hardwareStrictParam != nullptr
+                              && hardwareStrictParam->load() > 0.5f;
+    const int  polyCeil   = hwStrict ? 6 : 16;
     const int  polyVoices = polyVoicesParam != nullptr
-                              ? juce::jlimit (1, 16, juce::roundToInt (polyVoicesParam->load()))
-                              : 16;
+                              ? juce::jlimit (1, polyCeil, juce::roundToInt (polyVoicesParam->load()))
+                              : polyCeil;
     const bool legato     = noteModeParam   != nullptr && noteModeParam->load() > 0.5f;
 
     voiceAllocator.setVoiceCount (polyVoices);
@@ -826,8 +888,21 @@ void GenVstAudioProcessor::dispatchMidi (const juce::MidiMessage& msg)
         handleNoteOff (msg.getNoteNumber());
     else if (msg.isPitchWheel())
         handlePitchBend (msg.getPitchWheelValue());
+    else if (msg.isChannelPressure())
+        handleChannelPressure (msg.getChannelPressureValue());
     else if (msg.isController())
         handleControlChange (msg.getControllerNumber(), msg.getControllerValue());
+}
+
+void GenVstAudioProcessor::handleChannelPressure (int value)
+{
+    // Snapshot the latest 0..127 pressure value, normalised. The actual
+    // routing (LFO PMS vs Carrier TL vs Off) is read in renderFmBlock so
+    // a single block applies whatever is currently selected — flipping the
+    // Settings choice mid-hold takes effect on the next render block.
+    const float norm = juce::jlimit (0.0f, 1.0f,
+                                     static_cast<float> (value) / 127.0f);
+    channelPressureNorm.store (norm, std::memory_order_relaxed);
 }
 
 void GenVstAudioProcessor::handleNoteOn (int note, int velocity)
@@ -849,8 +924,23 @@ void GenVstAudioProcessor::handleNoteOn (int note, int velocity)
             paramCache.readPatch (currentPatch);
             const bool velToTl = velocityToTlParam != nullptr
                                    && velocityToTlParam->load() > 0.5f;
+
+            // HARDWARE STRICT — FLOAT_MUL / AUTO_RETRIG drive the YM2612's
+            // channel-3 special features and the chip only has ONE such
+            // channel. With strict on, the second voice asking for those
+            // modes silently falls back to INT_MUL
+            // (07-feature-spec.md *Hardware strict*).
+            Patch noteOnPatch = currentPatch;
+            const bool hwStrict = hardwareStrictParam != nullptr
+                                    && hardwareStrictParam->load() > 0.5f;
+            if (hwStrict
+                && (noteOnPatch.freq_ctrl_mode == 1 || noteOnPatch.freq_ctrl_mode == 2)
+                && voiceAllocator.hasActiveVoiceUsingChannel3())
+            {
+                noteOnPatch.freq_ctrl_mode = 0;
+            }
             voiceAllocator.noteOn (0, note, velocity, /*bend*/ 0.0,
-                                   velToTl, currentPatch);
+                                   velToTl, noteOnPatch);
             telemetry.setNoteOn (true);
             break;
         }
@@ -1043,6 +1133,28 @@ void GenVstAudioProcessor::handleControlChange (int cc, int value)
             return;
         }
     }
+}
+
+void GenVstAudioProcessor::resetAllParametersToDefaults()
+{
+    // Walk every managed parameter and snap it to its juce::AudioParameter
+    // default. setValueNotifyingHost takes the [0..1] normalised value, which
+    // is what `getDefaultValue` returns — apvts already wraps the
+    // RangedAudioParameters so they all expose the same protocol.
+    // 08-ui-views.md view 6 *RESET ALL TO DEFAULTS*.
+    for (auto* p : getParameters())
+    {
+        if (p == nullptr) continue;
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->getDefaultValue());
+        p->endChangeGesture();
+    }
+
+    // Clear the active patch path on every multitimbral slot so the
+    // header LCD reads as empty again (Task 09 will surface the patch path
+    // through the LCD; for v0.2 the browser just owns it).
+    for (int part = 0; part < genvst::PatchBrowser::kNumPartSlots; ++part)
+        patchBrowser.clearActivePatchPath (part);
 }
 
 juce::AudioProcessorEditor* GenVstAudioProcessor::createEditor()

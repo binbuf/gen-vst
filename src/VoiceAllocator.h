@@ -124,6 +124,13 @@ public:
     // (08-ui-views.md view 1; ADR-0010).
     std::uint32_t activeVoiceMask() const noexcept;
 
+    // True iff any non-Idle voice is currently using FLOAT_MUL or AUTO_RETRIG
+    // (the two FREQ CTRL modes that drive channel-3 special features on the
+    // YM2612). Used by the HARDWARE STRICT enforcement — when the option is
+    // on and a second voice asks for a ch3-special mode, the second voice
+    // silently falls back to INT_MUL (07-feature-spec.md *Hardware strict*).
+    bool hasActiveVoiceUsingChannel3() const noexcept;
+
     // Task 34 — 6-bit per-FM-part "sounding" bitmap: bit p = at least one
     // voice serving FM part p is non-Idle (Active or Released). Released
     // voices count as on until their envelope reaches silence so the per-row

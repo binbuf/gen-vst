@@ -1,34 +1,62 @@
-// v2 production entry. Mounts the chassis skeleton — the persistent
-// header + an empty mode-panel host that Tasks 05-07 fill with the
-// FM / SQ / D panels. Also mounts the global notification-toast host and
-// fires the `uiReady` event so the C++ editor knows the page is alive.
+// v2 production entry. Mounts the persistent header + an empty mode-panel
+// host that Tasks 05-07 fill with the FM / SQ / D panels. Also mounts the
+// global notification-toast host and fires the `uiReady` event so the C++
+// editor knows the page is alive.
+//
+// Header (Task 08) carries the mode pill, patch-name LCD, output filter /
+// ladder toggles, stacked L/R meters, DAC PRESC + VOL + TIPS, and the gear /
+// wordmark click handlers that open the Settings / About modals.
 //
 // Mode dispatch: subscribes to `mode_select` and swaps the panel contents.
-// FM (Task 05), SQ (Task 06), and D (Task 07) views are all wired.
 
 import "./styles/design-system.css";
 
 import { mount as mountToast } from "./widgets/notification-toast.js";
 import { installTooltips }     from "./widgets/tooltip.js";
 import { bindCombo }            from "./binding.js";
+import { mount as mountHeader } from "./header.js";
 import { mount as mountFmView } from "./views/fm-view.js";
 import { mount as mountSqView } from "./views/sq-view.js";
 import { mount as mountDView }  from "./views/d-view.js";
+import { open as openSettings } from "./modals/settings.js";
+import { open as openAbout }    from "./modals/about.js";
 
 const MODE_FM = 0;
 const MODE_SQ = 1;
 const MODE_D  = 2;
 
 function init() {
-  // Notification toast — global, lives over the chassis.
+  // Notification toast — global, lives over the chassis (and above modals,
+  // per 08-ui-views.md *Modal behaviour (shared)*; the toast host's
+  // z-index 100 > modal-host z-index 80).
   const toastHost = document.createElement("div");
   document.body.appendChild(toastHost);
   mountToast(toastHost);
 
-  // Tooltips installed against the chassis frame. Once Tasks 05-07 wire up
-  // their widgets, the same handler picks up every control inside.
+  // Tooltips installed against the chassis frame. The handler picks up
+  // every interactive control in the header + per-mode panels.
   const frame = document.querySelector(".frame");
   if (frame) installTooltips(frame);
+
+  // Persistent header — Task 08. Wires gear → Settings, wordmark → About,
+  // and the 📂 button to a no-op stub until Task 09 supplies the browser.
+  const headerHost = document.querySelector(".hdr");
+  if (headerHost) {
+    mountHeader(headerHost, {
+      onOpenSettings: () => openSettings(),
+      onOpenAbout:    () => openAbout(),
+      onOpenBrowser:  () => {
+        // Task 09 wires this to the real preset-browser modal. Until then,
+        // a toast keeps the user informed.
+        if (window.__JUCE__ && window.__JUCE__.backend) {
+          window.__JUCE__.backend.emitByBackend("notify", JSON.stringify({
+            level: "info",
+            message: "Preset browser — coming in Task 09.",
+          }));
+        }
+      },
+    });
+  }
 
   // Mount the active mode panel into #mode-panel; subscribe to mode_select
   // and swap the panel contents on every change. Each mount returns a

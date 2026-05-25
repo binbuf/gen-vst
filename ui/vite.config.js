@@ -16,6 +16,14 @@ export default defineConfig({
   // root (https://juce.backend/...) without depending on the host path.
   base: "./",
 
+  // About modal surfaces the version + source URL — pulled in via Vite's
+  // `define` so build / CI can override without touching JS. The defaults
+  // here track the current MVP; CI overrides via `--define ...` if needed.
+  define: {
+    __GENVST_VERSION__:    JSON.stringify("0.2.0"),
+    __GENVST_SOURCE_URL__: JSON.stringify("https://github.com/binbuf/gen-vst"),
+  },
+
   build: {
     outDir: "dist",
     emptyOutDir: true,

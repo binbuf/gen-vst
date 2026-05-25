@@ -34,6 +34,50 @@ export const TOOLTIPS = {
     name: "MODE",
     desc: "Switch between FM (YM2612), SQ (SN76489 PSG) and D (sample decimator).",
   },
+  "wordmark": {
+    name: "ABOUT",
+    desc: "Open the About / credits panel — version, license attributions and source link.",
+  },
+  "patch_prev": {
+    name: "PREV PATCH",
+    desc: "Step to the previous patch in the active mode's sorted list.",
+  },
+  "patch_next": {
+    name: "NEXT PATCH",
+    desc: "Step to the next patch in the active mode's sorted list.",
+  },
+  "patch_browse": {
+    name: "BROWSE PATCHES",
+    desc: "Open the preset browser. Greyed in D mode — that mode has no presets.",
+  },
+  "dac_prescaler": {
+    name: "DAC PRESCALER",
+    desc: "FM DAC clock divider in FM; sample-rate prescaler in D. Bypassed in SQ.",
+  },
+  "settings": {
+    name: "SETTINGS",
+    desc: "Open the Settings panel — hardware strict, UI scale, aftertouch routing.",
+  },
+  "hardware_strict": {
+    name: "HARDWARE STRICT",
+    desc: "Clamp to YM2612-faithful limits — 6 voices, single FLOAT_MUL/AUTO_RETRIG, filter/ladder forced on.",
+  },
+  "velocity_to_tl": {
+    name: "VELOCITY → TL",
+    desc: "Global MIDI velocity → carrier TL scaling. Per-op vel[op] depth still applies when off.",
+  },
+  "aftertouch_target": {
+    name: "AFTERTOUCH",
+    desc: "Channel pressure routing — off, LFO PMS (vibrato depth), or Carrier TL (per-algorithm carriers).",
+  },
+  "ui_scale": {
+    name: "UI SCALE",
+    desc: "Whole-window integer zoom: 1× / 2× / 3×. Persisted across plugin loads.",
+  },
+  "reset_all": {
+    name: "RESET ALL TO DEFAULTS",
+    desc: "Snap every parameter to its default and clear the active patch path. Requires confirmation.",
+  },
 
   // --- D mode panel --------------------------------------------------
   "dry_wet": {

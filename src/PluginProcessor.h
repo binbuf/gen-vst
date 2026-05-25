@@ -80,6 +80,14 @@ public:
     juce::AudioProcessorValueTreeState& getValueTreeState() { return apvts; }
 
     Telemetry& getTelemetry() noexcept { return telemetry; }
+    genvst::PatchBrowser& getPatchBrowser() noexcept { return patchBrowser; }
+
+    // Reset every apvts parameter to its juce::AudioParameter default. Used
+    // by the Settings → RESET ALL TO DEFAULTS confirmation flow
+    // (08-ui-views.md view 6). Also clears the active patch path on the
+    // PatchBrowser — see Task 09 for the persisted-path side; for v0.2 the
+    // patch path is purely a UI label, but the browser owns it.
+    void resetAllParametersToDefaults();
 
     // Public so unit tests can build the layout standalone (no AudioProcessor
     // instance required).
@@ -99,6 +107,7 @@ private:
     void handleNoteOff (int note);
     void handlePitchBend (int bend14bit);
     void handleControlChange (int cc, int value);
+    void handleChannelPressure (int value);
 
     Mode currentMode() const noexcept;
 
@@ -120,6 +129,8 @@ private:
     std::atomic<float>* noteModeParam      = nullptr;
     std::atomic<float>* polyVoicesParam    = nullptr;
     std::atomic<float>* velocityToTlParam  = nullptr;
+    std::atomic<float>* hardwareStrictParam = nullptr;
+    std::atomic<float>* aftertouchTargetParam = nullptr;
 
     FmParamCache         paramCache;
     VoiceAllocator       voiceAllocator;
@@ -144,6 +155,11 @@ private:
     // mode, the new mode renders normally and the entire output is multiplied
     // by a 0 → 1 ramp across the block to hide the boundary.
     Mode lastMode = Mode::FM;
+
+    // Latest channel-pressure value, normalised [0, 1]. Updated from the MIDI
+    // dispatch (handleChannelPressure); read once per FM render block to drive
+    // the AFTERTOUCH routing (LFO PMS or Carrier TL) per Settings view 6.
+    std::atomic<float> channelPressureNorm { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

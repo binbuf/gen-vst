@@ -46,6 +46,18 @@ private:
 
     juce::WebToggleButtonRelay tooltipsEnabledRelay { "tooltips_enabled" };
 
+    // --- Header + Settings relays (Task 08) ---------------------------------
+    juce::WebComboBoxRelay      modeSelectRelay      { "mode_select" };
+    juce::WebToggleButtonRelay  outputFilterRelay    { "output_filter" };
+    juce::WebToggleButtonRelay  ladderEffectRelay    { "ladder_effect" };
+    juce::WebSliderRelay        masterVolumeRelay    { "master_volume" };
+    juce::WebSliderRelay        fmDacPrescalerRelay  { "fm_dac_prescaler" };
+    juce::WebSliderRelay        prescalerRelay       { "prescaler" };
+    juce::WebToggleButtonRelay  hardwareStrictRelay  { "hardware_strict" };
+    juce::WebToggleButtonRelay  velocityToTlRelay    { "velocity_to_tl" };
+    juce::WebComboBoxRelay      aftertouchTargetRelay { "aftertouch_target" };
+    juce::WebComboBoxRelay      uiScaleRelay         { "ui_scale" };
+
     // Gallery scratch relays (Task 04). One per widget kind in
     // ui/src/widgets/. Bound to gallery_* params declared in
     // createParameterLayout. Always present (storage cost trivial); the
@@ -72,6 +84,27 @@ private:
     // Attachments -- created alongside webView; reset together with it so the
     // relay <-> apvts wiring tears down cleanly.
     std::unique_ptr<juce::WebToggleButtonParameterAttachment> tooltipsAttachment;
+
+    // --- Header + Settings attachments (Task 08) ---------------------------
+    std::unique_ptr<juce::WebComboBoxParameterAttachment>     modeSelectAtt;
+    std::unique_ptr<juce::WebToggleButtonParameterAttachment> outputFilterAtt;
+    std::unique_ptr<juce::WebToggleButtonParameterAttachment> ladderEffectAtt;
+    std::unique_ptr<juce::WebSliderParameterAttachment>       masterVolumeAtt;
+    std::unique_ptr<juce::WebSliderParameterAttachment>       fmDacPrescalerAtt;
+    std::unique_ptr<juce::WebSliderParameterAttachment>       prescalerAtt;
+    std::unique_ptr<juce::WebToggleButtonParameterAttachment> hardwareStrictAtt;
+    std::unique_ptr<juce::WebToggleButtonParameterAttachment> velocityToTlAtt;
+    std::unique_ptr<juce::WebComboBoxParameterAttachment>     aftertouchTargetAtt;
+    std::unique_ptr<juce::WebComboBoxParameterAttachment>     uiScaleAtt;
+
+    // UI scale apvts parameter listener — resizes the editor host on change.
+    // Held via a juce::ParameterAttachment so its lifetime tracks the editor.
+    std::unique_ptr<juce::ParameterAttachment> uiScaleListener;
+
+    // Apply integer scale `n` (1, 2, or 3) to the WebView host bounds. The
+    // base canvas is 1200x560 at 1x (ADR-0023); 2x and 3x grow the host so
+    // the WebView naturally upscales the page bitmap.
+    void applyUiScale (int n);
     std::unique_ptr<juce::WebSliderParameterAttachment>       galleryKnobAAtt;
     std::unique_ptr<juce::WebSliderParameterAttachment>       galleryKnobBAtt;
     std::unique_ptr<juce::WebSliderParameterAttachment>       galleryKnobCAtt;
