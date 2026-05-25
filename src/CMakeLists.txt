@@ -60,6 +60,9 @@ target_sources(GenVst PRIVATE
     VgmLogger.cpp         VgmLogger.h
     SN76489Wrapper.cpp    SN76489Wrapper.h
     SN76489Engine.cpp     SN76489Engine.h
+    DspDecimator.cpp      DspDecimator.h
+    OutputFilter.cpp      OutputFilter.h
+    LadderEffect.cpp      LadderEffect.h
     Telemetry.cpp         Telemetry.h
     Tuning.cpp            Tuning.h
     GenVstYmfmInterface.h)

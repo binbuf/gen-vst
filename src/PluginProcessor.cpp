@@ -318,6 +318,7 @@ void FmParamCache::readPatch (Patch& dest) const noexcept
 
 GenVstAudioProcessor::GenVstAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
+        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
         .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
@@ -328,6 +329,9 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     pitchBendRangeParam  = apvts.getRawParameterValue ("pitch_bend_range");
     modWheelMirrorParam  = apvts.getRawParameterValue ("mod_wheel_value");
     pitchBendMirrorParam = apvts.getRawParameterValue ("pitch_bend_value");
+    prescalerParam       = apvts.getRawParameterValue ("prescaler");
+    monoParam            = apvts.getRawParameterValue ("mono");
+    dryWetParam          = apvts.getRawParameterValue ("dry_wet");
 }
 
 GenVstAudioProcessor::~GenVstAudioProcessor()
@@ -342,6 +346,19 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     psgEngine.prepare (sampleRate, samplesPerBlock);
     telemetry.prepare (sampleRate);
     monoScratch.allocate ((size_t) juce::jmax (1, samplesPerBlock), true);
+
+    decimator.prepare    (sampleRate, samplesPerBlock);
+    outputFilter.prepare (sampleRate);
+    ladder.prepare       (sampleRate);
+
+    // D mode dry-signal scratch — stereo, sized to the host's max block.
+    inputCopyBuffer.setSize (2, juce::jmax (1, samplesPerBlock),
+                             /*keepExistingContent*/ false,
+                             /*clearExtraSpace*/    true,
+                             /*avoidReallocating*/  false);
+    inputCopyBuffer.clear();
+
+    lastMode = currentMode();
 
     voiceAllocator.setVgmLogger (&vgmLogger);
     psgEngine.setVgmLogger      (&vgmLogger);
@@ -361,8 +378,18 @@ void GenVstAudioProcessor::releaseResources()
 bool GenVstAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto& mainOut = layouts.getMainOutputChannelSet();
-    return mainOut == juce::AudioChannelSet::mono()
-        || mainOut == juce::AudioChannelSet::stereo();
+    const auto& mainIn  = layouts.getMainInputChannelSet();
+
+    // D mode needs an audio input bus (ADR-0021); FM and SQ ignore it but the
+    // bus must still be declared so the host treats us as instrument-with-input.
+    // Accept mono+mono and stereo+stereo only; reject anything else.
+    if (mainOut == juce::AudioChannelSet::mono()
+        && (mainIn == juce::AudioChannelSet::mono() || mainIn == juce::AudioChannelSet::disabled()))
+        return true;
+    if (mainOut == juce::AudioChannelSet::stereo()
+        && (mainIn == juce::AudioChannelSet::stereo() || mainIn == juce::AudioChannelSet::disabled()))
+        return true;
+    return false;
 }
 
 GenVstAudioProcessor::Mode GenVstAudioProcessor::currentMode() const noexcept
@@ -388,6 +415,30 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         return;
     }
 
+    const Mode mode = currentMode();
+
+    // D mode: snapshot the input bus BEFORE any rendering overwrites it. The
+    // snapshot drives both the wet path (decimator/ladder) and the dry path
+    // (dry/wet blend). For FM/SQ the input is unread, so we skip the copy.
+    // Also drives the D-mode signal-presence threshold for the NOTE ON LED.
+    float dInputPeak = 0.0f;
+    if (mode == Mode::D)
+    {
+        const int copyChannels = juce::jmin (
+            juce::jmin (numChannels, inputCopyBuffer.getNumChannels()),
+            getTotalNumInputChannels());
+        for (int ch = 0; ch < copyChannels; ++ch)
+        {
+            inputCopyBuffer.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+            const float chPeak = inputCopyBuffer.getMagnitude (ch, 0, numSamples);
+            if (chPeak > dInputPeak) dInputPeak = chPeak;
+        }
+        // Zero any input channels we don't have host data for so the dry mix
+        // for missing channels reads as silence rather than uninitialised.
+        for (int ch = copyChannels; ch < inputCopyBuffer.getNumChannels(); ++ch)
+            inputCopyBuffer.clear (ch, 0, numSamples);
+    }
+
     // Drain the patch-delivery queue (one queue serves the single FM patch).
     // The browser is wired into FM mode; Task 09 introduces the per-mode
     // routing with a Tag enum. For now any queued patch maps into the FM
@@ -411,7 +462,6 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     vgmLogger.recordWaitSamples (numSamples);
 
     // Sample-accurate iteration: render gaps between MIDI events, then dispatch.
-    const Mode mode = currentMode();
     const auto renderGap = [this, &buffer, mode] (int start, int n)
     {
         if (n <= 0) return;
@@ -441,6 +491,33 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (int ch = 2; ch < numChannels; ++ch)
         buffer.clear (ch, 0, numSamples);
 
+    // Whole-block DSP. Ladder applies to FM (over the summed voices) and was
+    // already applied inside renderDBlock for D mode (before dry/wet blend),
+    // so it must NOT be re-applied to the buffer post-blend. SQ skips ladder
+    // entirely (the PSG bypasses the YM2612 DAC on real hardware — ADR-0024).
+    const bool ladderOn = ladderEffectParam != nullptr && ladderEffectParam->load() > 0.5f;
+    const bool filterOn = outputFilterParam != nullptr && outputFilterParam->load() > 0.5f;
+
+    if (mode == Mode::FM)
+        ladder.process (buffer, ladderOn);
+
+    outputFilter.process (buffer, filterOn);
+
+    // Mode-change crossfade: ramp the whole output 0 -> 1 across the block on
+    // the first block where the mode differs from the previous block's mode.
+    if (mode != lastMode)
+    {
+        const int rampChannels = juce::jmin (2, numChannels);
+        const float denom = static_cast<float> (juce::jmax (1, numSamples - 1));
+        for (int ch = 0; ch < rampChannels; ++ch)
+        {
+            float* data = buffer.getWritePointer (ch);
+            for (int i = 0; i < numSamples; ++i)
+                data[i] *= static_cast<float> (i) / denom;
+        }
+        lastMode = mode;
+    }
+
     // Apply master volume + soft-clip across the whole block.
     const float gain = masterVolumeParam != nullptr ? masterVolumeParam->load() : 1.0f;
     for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
@@ -450,10 +527,14 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             data[i] = softClip (data[i] * gain);
     }
 
-    // Telemetry: L/R VU.
+    // Telemetry: L/R VU + noteOn signal-presence flag. In D mode the LED
+    // tracks input-level above -60 dBFS (~0.001) so the user sees "audio
+    // present" without needing a MIDI trigger.
     const float* L = buffer.getReadPointer (0);
     const float* R = numChannels > 1 ? buffer.getReadPointer (1) : L;
     telemetry.pushSamples (L, R, numSamples);
+    if (mode == Mode::D)
+        telemetry.setNoteOn (dInputPeak > 0.001f);
     telemetry.finishBlock();
 }
 
@@ -498,11 +579,55 @@ void GenVstAudioProcessor::renderDBlock (juce::AudioBuffer<float>& buffer,
                                          int startSample, int numSamples)
 {
     if (numSamples <= 0) return;
-    // D mode (audio input pass-through + decimator) arrives in Task 03 — for
-    // now the output is silent so the plugin still produces a valid signal.
-    const int numChannels = buffer.getNumChannels();
-    for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
-        std::fill_n (buffer.getWritePointer (ch) + startSample, numSamples, 0.0f);
+
+    const int numChannels = juce::jmin (2, buffer.getNumChannels());
+    if (numChannels <= 0) return;
+
+    // 1. Seed the wet path from the dry input snapshot captured at the top of
+    //    processBlock. We work in `buffer` (output) and read from
+    //    `inputCopyBuffer` (dry).
+    for (int ch = 0; ch < numChannels; ++ch)
+        buffer.copyFrom (ch, startSample, inputCopyBuffer, ch, startSample, numSamples);
+
+    // 2. Optional MONO collapse — average L/R into both channels.
+    const bool mono = monoParam != nullptr && monoParam->load() > 0.5f;
+    if (mono && numChannels >= 2)
+    {
+        float* L = buffer.getWritePointer (0) + startSample;
+        float* R = buffer.getWritePointer (1) + startSample;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float m = 0.5f * (L[i] + R[i]);
+            L[i] = m;
+            R[i] = m;
+        }
+    }
+
+    // Sub-block view so the in-place DSP modules see only this slice.
+    juce::AudioBuffer<float> subView (buffer.getArrayOfWritePointers(),
+                                      numChannels, startSample, numSamples);
+
+    // 3. Decimator (sample-and-hold + 8-bit quantise).
+    const float prescaler01 = prescalerParam != nullptr ? prescalerParam->load() : 0.0f;
+    decimator.process (subView, prescaler01);
+
+    // 4. Ladder Effect on the wet path (gated by the global toggle). Applied
+    //    here rather than in processBlock so the dry signal blended below is
+    //    the unprocessed input — design pipeline in 01-architecture.md
+    //    *Render Pipeline (D mode)*.
+    const bool ladderOn = ladderEffectParam != nullptr && ladderEffectParam->load() > 0.5f;
+    ladder.process (subView, ladderOn);
+
+    // 5. DRY/WET blend. `wet = 0` -> pure input; `wet = 1` -> pure processed.
+    const float wet = dryWetParam != nullptr ? juce::jlimit (0.0f, 1.0f, dryWetParam->load()) : 1.0f;
+    const float dry = 1.0f - wet;
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float*       outData = buffer.getWritePointer      (ch) + startSample;
+        const float* dryData = inputCopyBuffer.getReadPointer (ch) + startSample;
+        for (int i = 0; i < numSamples; ++i)
+            outData[i] = dry * dryData[i] + wet * outData[i];
+    }
 }
 
 void GenVstAudioProcessor::dispatchMidi (const juce::MidiMessage& msg)

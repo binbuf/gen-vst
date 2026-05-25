@@ -5,6 +5,9 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "DspDecimator.h"
+#include "LadderEffect.h"
+#include "OutputFilter.h"
 #include "PatchBrowser.h"
 #include "PatchSystem.h"
 #include "SN76489Engine.h"
@@ -93,6 +96,9 @@ private:
     std::atomic<float>* pitchBendRangeParam = nullptr;
     std::atomic<float>* modWheelMirrorParam = nullptr;
     std::atomic<float>* pitchBendMirrorParam = nullptr;
+    std::atomic<float>* prescalerParam       = nullptr;
+    std::atomic<float>* monoParam            = nullptr;
+    std::atomic<float>* dryWetParam          = nullptr;
 
     FmParamCache         paramCache;
     VoiceAllocator       voiceAllocator;
@@ -101,11 +107,21 @@ private:
     Telemetry            telemetry;
     VgmLogger            vgmLogger;
 
+    DspDecimator decimator;
+    OutputFilter outputFilter;
+    LadderEffect ladder;
+
     bool patchBrowserInitialised = false;
 
     // Pre-allocated processBlock scratch — never allocated on the audio thread.
-    Patch                  currentPatch;
-    juce::HeapBlock<float> monoScratch;
+    Patch                    currentPatch;
+    juce::HeapBlock<float>   monoScratch;
+    juce::AudioBuffer<float> inputCopyBuffer;   // D mode dry signal (stereo).
+
+    // Mode-change fade: when `mode_select` differs from the previous block's
+    // mode, the new mode renders normally and the entire output is multiplied
+    // by a 0 → 1 ramp across the block to hide the boundary.
+    Mode lastMode = Mode::FM;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

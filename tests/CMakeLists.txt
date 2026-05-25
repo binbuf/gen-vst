@@ -24,6 +24,9 @@ add_executable(GenVstTests
     PsgEnvelopeTests.cpp
     AlgoMappingTests.cpp
     TuningTests.cpp
+    DspDecimatorTests.cpp
+    OutputFilterTests.cpp
+    LadderEffectTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
@@ -34,6 +37,9 @@ add_executable(GenVstTests
     "${CMAKE_SOURCE_DIR}/src/VoiceAllocator.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Wrapper.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Engine.cpp"
+    "${CMAKE_SOURCE_DIR}/src/DspDecimator.cpp"
+    "${CMAKE_SOURCE_DIR}/src/OutputFilter.cpp"
+    "${CMAKE_SOURCE_DIR}/src/LadderEffect.cpp"
     "${CMAKE_SOURCE_DIR}/src/Tuning.cpp")
 
 # The ymfm OPN2 core — VoiceAllocatorTests drives real ymfm::ym2612 instances
