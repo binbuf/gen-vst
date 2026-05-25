@@ -60,8 +60,9 @@ stretch of unverifiable work.
 | 06 | **SQ mode plays** | SQ mode plays MIDI through the 3 tone + 1 noise SN76489 panel UI |
 | 07 | **D mode plays** | D mode processes audio input through the spartan D panel UI (DRY/WET + MONO); the header's mode-aware DAC PRESCALER drives decimation |
 | 08 | **Header + Settings** | Header mode selector / patch LCD / Output Filter + Ladder Effect toggles / VOL / NOTE ON LED; Settings + About modals open from the gear icon |
-| 09 | **Tagged preset browser** | One unified browser shows FM and SQ presets; loading auto-switches mode; `.psg` format works. D mode has no preset format (per ADR-0025) — header patch chrome is greyed in D |
-| 10 | **Release-ready** | DAW state save/restore works; v2 parity audit clean; pluginval passes cross-platform |
+| 09 | **Tagged preset browser** | One unified browser shows FM and SQ presets; loading auto-switches mode; `.psg` format works; 3 smoke-test SQ presets in factory. D mode has no preset format (per ADR-0025) — header patch chrome is greyed in D |
+| 10 | **SQ preset ecosystem** | DMP PSG instruments import as SQ presets (ADR-0026); full 12-preset factory SQ library tuned by ear |
+| 11 | **Release-ready** | DAW state save/restore works; v2 parity audit clean; pluginval passes cross-platform |
 
 ## Task index
 
@@ -76,7 +77,8 @@ stretch of unverifiable work.
 | 07 | [D panel](07-d-panel.md) | D mode plays | 04 |
 | 08 | [Header, Settings & About modals](08-header-and-modals.md) | Header + Settings | 05, 06, 07 |
 | 09 | [Tagged preset browser & .psg format](09-preset-browser.md) | Tagged preset browser | 08 |
-| 10 | [State persistence & v2 parity audit](10-state-and-qa.md) | Release-ready | 09 |
+| 10 | [SQ preset ecosystem: DMP PSG import + factory library](10-sq-preset-library.md) | SQ preset ecosystem | 09, 06 |
+| 11 | [State persistence & v2 parity audit](11-state-and-qa.md) | Release-ready | 10 |
 
 ## Task file structure
 

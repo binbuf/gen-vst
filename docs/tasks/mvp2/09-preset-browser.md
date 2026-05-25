@@ -213,9 +213,16 @@ built-in DAW audio FX.
 
 ## Implementation steps
 
-1. **`PatchSystem` extension** — add `Tag` enum (`{ FM, SQ }`),
-   `tagFromExtension`, `kSupportedPatchExtensions`. Update the
-   folder-scan to bucket by tag.
+1. **`PatchSystem` extension** — add `Tag` enum (`{ FM, SQ, Pending }`),
+   `tagFromExtension` (extension-only, used by the folder-scan path),
+   `tagFromFile` (used by load / file-picker / drag-drop; calls
+   `tagFromExtension` for all extensions except `.dmp`),
+   `kSupportedPatchExtensions`. Update the folder-scan to bucket by tag;
+   `.dmp` files get `Tag::Pending` at scan time — see ADR-0026.
+   **DMP PSG support (`.dmp` mode 0 → `Tag::SQ`) is deferred to Task
+   10.** In this task `tagFromFile` for `.dmp` treats any mode byte as FM
+   (identical to the existing FM loader rejection path for non-FM DMP);
+   Task 10 upgrades it to the full content-peek logic of ADR-0026.
 2. **`PsgPreset.{h,cpp}`** — load + save JSON parsers using
    `juce::JSON`. Define a `PsgPreset` struct mirroring the schema.
    Apply-to-apvts helper: given a `PsgPreset` and the apvts, write
@@ -229,7 +236,7 @@ built-in DAW audio FX.
      (single typed queue with `Tag` discriminator is simpler at this
      scope).
    - On `loadPatch(path)`: parse on the message thread, pick the
-     correct loader by `tagFromExtension`, flip `mode_select` to
+     correct loader by `tagFromFile`, flip `mode_select` to
      match the tag if different, push the envelope.
 4. **Native functions** (`PluginEditor`): implement
    `getPatchList / loadPatch / savePatch / importPatch /
@@ -260,11 +267,14 @@ built-in DAW audio FX.
      `extern/patches/sq/default.psg`).
    - If switching to **D**, do nothing — the host owns the D apvts
      values per ADR-0021.
-9. **Seed factory presets** — write the small starter set under
+9. **Seed factory presets** — write 3 smoke-test stubs under
    `extern/patches/sq/` (`default.psg`, `pulse-arp.psg`,
-   `soft-lead.psg`). Update CMake's factory-patch staging to include
-   the `sq/` subtree recursively, excluding the gitignored
-   `extern/patches/extra/` set.
+   `soft-lead.psg`). These exist solely to verify that the browser
+   wiring, the CMake staging, and the `.psg` load path all work
+   end-to-end. Approximate values are fine — Task 10 tunes all three
+   and adds the remaining 9 presets of the full factory library.
+   Update CMake's factory-patch staging to include the `sq/` subtree
+   recursively, excluding the gitignored `extern/patches/extra/` set.
 
 ## Deliverables
 

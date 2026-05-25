@@ -1,6 +1,6 @@
 # Patch System
 
-## Tagging — file extension is the tag
+## Tagging — extension is the tag, with one content-peek exception
 
 Under [ADR-0025](adr/0025-tagged-preset-browser.md), every patch file is
 tagged with the mode it belongs to, and the tag is derived from the file's
@@ -10,9 +10,10 @@ patch is loaded.
 
 | Extension | Tag | Format |
 |---|---|---|
-| `.tfi`, `.vgi`, `.dmp`, `.y12`, `.opm` | **FM** | See FM format sections below |
+| `.tfi`, `.vgi`, `.y12`, `.opm` | **FM** | See FM format sections below |
+| `.dmp` | **FM** or **SQ** | DMP version 11; tag derived from byte 2 (mode field), not the extension alone — see *DMP Format* + *DMP PSG Mode* sections and [ADR-0026](adr/0026-dmp-psg-import.md) |
 | `.vgm`, `.vgz` | **FM** | VGM bank import (extracts FM patches) |
-| `.psg` | **SQ** | New v2 JSON — schema below |
+| `.psg` | **SQ** | Native v2 JSON preset format — schema below |
 
 D mode has no preset extension — its 3 apvts params (`prescaler`,
 `mono`, `dry_wet`) persist only via the host's project state. See the
@@ -22,9 +23,20 @@ D mode has no preset extension — its 3 apvts params (`prescaler`,
 `.wav` is **not** a recognised patch tag in v2 — D mode is an audio FX,
 not a sampler ([ADR-0021](adr/0021-three-mode-single-engine-ui.md)).
 
-The lookup table lives in `src/PatchSystem.{h,cpp}` as `tagFromExtension()`
-and `kSupportedPatchExtensions`. Both the file picker and the drag-and-drop
-handler consume them so the supported set stays in one place.
+**Tag resolution API** in `src/PatchSystem.{h,cpp}`:
+
+- `tagFromExtension(ext)` — extension-only lookup for all formats except
+  `.dmp`; used by the fast folder-scan path (no file I/O).
+- `tagFromFile(path)` — used by the file picker, drag-and-drop handler,
+  and load path for all extensions. For `.dmp` it peeks byte 2 and returns
+  `Tag::FM` (mode 1), `Tag::SQ` (mode 0), or an error. For all other
+  extensions it delegates to `tagFromExtension`.
+- `Tag::Pending` — placeholder emitted by the folder-scan for `.dmp` files;
+  resolved lazily on folder-expand or on load attempt (see ADR-0026).
+
+`kSupportedPatchExtensions` lists `{ .tfi, .vgi, .dmp, .y12, .opm, .psg }`.
+Both the file picker and the drag-and-drop handler consume it so the
+supported set stays in one place.
 
 ---
 
@@ -195,10 +207,9 @@ Total file size for v11 Genesis FM: **7 header + 44 operator = 51 bytes.**
   `DT2` is OPM-only and is discarded for YM2612.
 - `D2R` corresponds to the patch model's `sr` (second decay / sustain rate, 0–31).
 
-Reject files where byte 0 ≠ `0x0B`, byte 1 ∉ {`0x02`, `0x42`}, or byte 2 ≠ 1.
-The byte-2 sense is **opposite** of DefleMask's UI labelling — in the on-disk
-format, mode 1 means FM and mode 0 means STD/PSG. The PSG-instrument body has
-an entirely different structure and is never parsed by the FM loader.
+The FM loader rejects byte 2 ≠ 1. The byte-2 sense is **opposite** of
+DefleMask's UI labelling — in the on-disk format, mode 1 means FM and mode 0
+means STD/PSG.
 
 > **Furnace reference.** Byte offsets above were verified against
 > `tildearrow/furnace`'s `DivEngine::loadDMP` in
@@ -206,6 +217,62 @@ an entirely different structure and is never parsed by the FM loader.
 > `src/format/dmp.cpp`). Furnace is consulted as a **local, gitignored
 > reference checkout only** — never committed to the repo or added as a
 > build dependency.
+
+---
+
+## DMP PSG Mode (v11, mode 0 — SQ import)
+
+DMP version 11 with byte 2 = 0 (STD/PSG) is accepted as an **SQ import**
+via a lossy macro → ADSR approximation. See
+[ADR-0026](adr/0026-dmp-psg-import.md) for the full rationale.
+
+**Header bytes** (identical to the FM DMP header):
+
+| Byte | Field | Notes |
+|------|-------|-------|
+| 0 | Version (`0x0B`) | Reject if not exactly 11 |
+| 1 | System (`0x02` or `0x42`) | Reject anything else |
+| 2 | Mode (`0` = STD/PSG) | The FM loader rejects this; the PSG loader accepts only this |
+
+**Body** — macro data follows the header. Byte layout verified against
+`tildearrow/furnace`'s `DivEngine::loadDMP` (same Furnace reference
+checkout as the FM loader; see ADR-0012 pattern). Key fields:
+
+- **Volume macro** — finite sequence of 4-bit attenuation values (0 = loudest,
+  15 = silent), plus a loop point. This is the primary source for ADSR
+  approximation.
+- **Arpeggio macro** — sequence of pitch offsets in semitones. **Dropped on
+  import** — the `.psg` format's `detune` field is a static offset, not a
+  sequence. A notification toast warns the user.
+- **Pitch macro** — fine pitch offsets. **Dropped on import** for the same
+  reason.
+- **Noise macro** — noise type (periodic / white) and shift rate. Maps
+  directly to `noise.type` and `noise.rate` in the `PsgPreset`.
+
+**Macro → ADSR approximation.** `loadDmpPsg()` in `src/DmpLoader.{h,cpp}`
+derives `PsgPreset` fields from the volume macro as follows:
+
+1. Convert the attenuation sequence to a level sequence (15 − atten).
+2. `atk` — steps from the first sample to the peak level; scaled to the
+   `SN76489Engine` ADSR atk range.
+3. `dr1` — steps from peak to the first stable plateau; scaled.
+4. `sus` — the sustained plateau level; converted to the ADSR sustain range.
+5. `dr2` — 0 unless a second decay below the plateau is detected.
+6. `rr` — steps from plateau to silence in the loop tail; mid-range default
+   if the sequence does not terminate in a fade-out.
+7. `vol` = 1.0, `pan` = 0.0, `detune` = 0 for all channels.
+
+A successful PSG DMP load emits the toast: "Imported as SQ preset (DMP PSG
+approximation)." If the arpeggio or pitch macro is non-empty the toast
+additionally reads: "DMP PSG arpeggio / pitch macro ignored — only volume
+envelope imported."
+
+> **Furnace reference** — byte layout for the DMP PSG body (macro lengths,
+> loop-point encoding) must be verified against
+> `tildearrow/furnace`'s `DivEngine::loadDMP` in
+> `src/engine/fileOpsIns.cpp` using the gitignored local Furnace checkout.
+> The PSG body structure differs from the FM body; do not assume the FM byte
+> offsets carry over.
 
 ---
 
@@ -376,8 +443,30 @@ Loader/writer live in `src/PsgPreset.{h,cpp}`. Out-of-range or missing
 fields are clamped to defaults; an unparseable file raises a notification
 toast and does not load.
 
-Default `.psg` presets ship under `extern/patches/sq/` (a handful of
-bass / lead / arp tones — Task v2/05 seeds them).
+Factory `.psg` presets ship under `extern/patches/sq/` — a curated set of
+12 original presets covering the full SN76489 idiom palette (Task 10).
+Task 09 seeds 3 smoke-test stubs (`default.psg`, `pulse-arp.psg`,
+`soft-lead.psg`) sufficient to verify the browser wiring; Task 10 tunes
+them and adds the remaining 9. The full target set:
+
+| File | Character |
+|------|-----------|
+| `default.psg` | Neutral single-tone lead (basis for default-on-mode-switch) |
+| `square-bass.psg` | Punchy single-channel bass |
+| `pulse-arp.psg` | Short envelope suitable for rapid arpeggio re-triggers |
+| `soft-lead.psg` | Two detuned tone channels, gentle chorusing |
+| `detuned-chord.psg` | All three tone channels spread ±7 semitones across the stereo field |
+| `bright-pluck.psg` | Fast attack / fast decay staccato; single tone |
+| `retro-beep.psg` | Instant attack/release pure square tone |
+| `chip-melody.psg` | Tone1 + tone2 one octave apart, half-volume harmony |
+| `noise-snare.psg` | White noise percussion, tight envelope |
+| `periodic-bass.psg` | Periodic noise, low rate, sustained bass rumble |
+| `noise-hats.psg` | White noise, high rate, very tight envelope |
+| `title-screen.psg` | Tone1 melody + tone2 harmony (+5 semitones) + soft noise texture |
+
+All 12 files are original works (no values derived from game ROMs, SMPS
+drivers, or other copyrighted sources). See Task 10 for the authoring
+process and the JSON starting points for each preset.
 
 ---
 
@@ -781,13 +870,15 @@ install(FILES ${FACTORY_PATCHES} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
 |-------|---------|---------|
 | ymfm library | BSD-3-Clause | Compatible with GPL project |
 | JUCE | GPL v3 | Plugin must be GPL v3 |
-| Furnace `tfilib` preset data | GPL | Shipped as the factory bank — include Furnace attribution |
+| Furnace `tfilib` preset data | GPL | Shipped as the factory FM bank — include Furnace attribution |
+| Factory `.psg` presets (`extern/patches/sq/`) | Original works by project authors | No external attribution required |
 | Game-derived `.tfi` library | Derivative of copyrighted game audio | **Not shipped, not committed** — local developer test material only |
+| DMP PSG community presets (user-imported) | Varies per file | Import-only path; not bundled; user responsibility |
 
-Only the Furnace factory bank is distributed. The game-derived collection is never
-part of the repo or any release artifact, so the project carries no game-audio
-redistribution exposure. Any bank added later must have a clear license before it
-can be committed or shipped.
+Only the Furnace FM factory bank and the original-work `.psg` factory presets
+are distributed. The game-derived FM collection and any user-imported DMP PSG
+presets are never part of the repo or any release artifact. Any bank added
+later must have a clear license before it can be committed or shipped.
 
 ---
 

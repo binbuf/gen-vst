@@ -1,11 +1,11 @@
-# Task 10 — State persistence & v2 parity audit
+# Task 11 — State persistence & v2 parity audit
 
 > **Milestone:** Release-ready — every apvts parameter round-trips
 > through the DAW project; the active patch path and registered custom
 > roots survive save / load; the v2 parity checklist from
 > `07-feature-spec.md` is clean; pluginval and the CI matrix pass on
 > Windows, macOS, and Linux.
-> **Depends on:** Task 09.
+> **Depends on:** Task 10.
 > **Design references:** `docs/design/04-patch-system.md`
 > (*Plugin state file `.gnvst`*), `docs/design/01-architecture.md`
 > (*State Persistence*), `docs/design/07-feature-spec.md` (*State*,
