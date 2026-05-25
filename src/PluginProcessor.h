@@ -27,11 +27,23 @@ struct FmParamCache
     void connect (juce::AudioProcessorValueTreeState& apvts);
 
     // Snapshot the current parameter values into `dest`. Audio-thread safe —
-    // atomic loads only; dest.name is left untouched.
+    // atomic loads only; dest.name is left untouched. TL/SL are stored as
+    // *level* in apvts (02-fm-synthesis.md *UI level vs hardware attenuation*);
+    // this routine inverts them back to hardware *attenuation* on the way out.
     void readPatch (Patch& dest) const noexcept;
 
     std::atomic<float>* opParam[kNumOpParams][kNumOps] {};
     std::atomic<float>* partParam[kNumPartParams]      {};
+
+    // v2 — per-op float / bool / float-Hz fields, plus per-part floats / enums.
+    std::atomic<float>* mulFloatParam   [kNumOps] {};
+    std::atomic<float>* fixedParam      [kNumOps] {};
+    std::atomic<float>* freqFixedHzParam[kNumOps] {};
+    std::atomic<float>* velParam        [kNumOps] {};
+    std::atomic<float>* channelTlParam     = nullptr;
+    std::atomic<float>* fmDacPrescalerParam = nullptr;
+    std::atomic<float>* freqCtrlModeParam   = nullptr;
+    std::atomic<float>* retrigRateParam     = nullptr;
 };
 
 class GenVstAudioProcessor : public juce::AudioProcessor
@@ -78,6 +90,10 @@ private:
     void renderSqBlock  (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void renderDBlock   (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
 
+    // Push the v2 polyphony / legato apvts state into the voice allocator. Run
+    // each FM render block so the user's panel edits flow through.
+    void pushPolyphonyParameters();
+
     void dispatchMidi (const juce::MidiMessage& msg);
     void handleNoteOn  (int note, int velocity);
     void handleNoteOff (int note);
@@ -89,16 +105,21 @@ private:
     juce::AudioProcessorValueTreeState apvts;
 
     // Cached raw pointers — all touched on the audio thread.
-    std::atomic<float>* modeSelectParam     = nullptr;
-    std::atomic<float>* masterVolumeParam   = nullptr;
-    std::atomic<float>* outputFilterParam   = nullptr;
-    std::atomic<float>* ladderEffectParam   = nullptr;
-    std::atomic<float>* pitchBendRangeParam = nullptr;
-    std::atomic<float>* modWheelMirrorParam = nullptr;
+    std::atomic<float>* modeSelectParam      = nullptr;
+    std::atomic<float>* masterVolumeParam    = nullptr;
+    std::atomic<float>* outputFilterParam    = nullptr;
+    std::atomic<float>* ladderEffectParam    = nullptr;
+    std::atomic<float>* pitchBendRangeParam  = nullptr;
+    std::atomic<float>* modWheelMirrorParam  = nullptr;
     std::atomic<float>* pitchBendMirrorParam = nullptr;
     std::atomic<float>* prescalerParam       = nullptr;
     std::atomic<float>* monoParam            = nullptr;
     std::atomic<float>* dryWetParam          = nullptr;
+
+    // v2 — polyphony / legato / velocity-to-TL globals.
+    std::atomic<float>* noteModeParam      = nullptr;
+    std::atomic<float>* polyVoicesParam    = nullptr;
+    std::atomic<float>* velocityToTlParam  = nullptr;
 
     FmParamCache         paramCache;
     VoiceAllocator       voiceAllocator;
@@ -107,7 +128,8 @@ private:
     Telemetry            telemetry;
     VgmLogger            vgmLogger;
 
-    DspDecimator decimator;
+    DspDecimator decimator;    // D mode bitcrush (input bus)
+    DspDecimator fmDecimator;  // FM mode DAC-prescaler decimator (voice-sum bus)
     OutputFilter outputFilter;
     LadderEffect ladder;
 

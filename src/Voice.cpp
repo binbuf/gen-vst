@@ -38,6 +38,7 @@ void Voice::reset()
     glideCurrentMidi        = 0.0;
     glideTargetMidi         = 0.0;
     glideRateNotesPerSample = 0.0;
+    freqCtrlMode            = FreqCtrlMode::IntMul;
 }
 
 std::uint32_t Voice::nativeSampleRate()
@@ -58,6 +59,22 @@ void Voice::writeReg (std::uint8_t reg, std::uint8_t value)
         vgmLogger->recordYm2612VoiceWrite (partIndex, reg, value);
 }
 
+namespace
+{
+    // Translate the Patch's freq_ctrl_mode byte (0..2) to the strongly-typed
+    // Voice::FreqCtrlMode enum. Anything out of range clamps to INT_MUL — the
+    // safe, always-supported path that matches the v1 register sequence.
+    Voice::FreqCtrlMode resolveMode (std::uint8_t raw) noexcept
+    {
+        switch (raw)
+        {
+            case 1:  return Voice::FreqCtrlMode::FloatMul;
+            case 2:  return Voice::FreqCtrlMode::AutoRetrig;
+            default: return Voice::FreqCtrlMode::IntMul;
+        }
+    }
+} // namespace
+
 void Voice::noteOn (int part, int note, int velocity, double bend,
                     bool velToTl, const Patch& patch, std::uint64_t timestamp,
                     double voiceDetuneSemitones)
@@ -65,13 +82,48 @@ void Voice::noteOn (int part, int note, int velocity, double bend,
     // Apply the full note-on sequence unconditionally — a stolen voice's chip
     // still holds the previous patch — and seed the shadow with every param
     // register so later dirty-diffs have a baseline. The two 0x28 key writes
-    // are never shadowed: they are events, not state.
+    // are never shadowed: they are events, not state. Same for 0x27 in
+    // AUTO_RETRIG (TimerA LOAD must re-fire on every retrigger).
+    const FreqCtrlMode mode = resolveMode (patch.freq_ctrl_mode);
+    freqCtrlMode            = mode;
+
     const FmRegisterMap::NoteParams np { velocity, velToTl, bend + voiceDetuneSemitones };
-    for (const auto& w : FmRegisterMap::buildNoteOn (patch, note, np))
+
+    switch (mode)
     {
-        writeReg (w.reg, w.value);
-        if (w.reg != 0x28)
-            shadow[w.reg] = w.value;
+        case FreqCtrlMode::IntMul:
+        {
+            for (const auto& w : FmRegisterMap::buildNoteOn (patch, note, np))
+            {
+                writeReg (w.reg, w.value);
+                if (w.reg != 0x28)
+                    shadow[w.reg] = w.value;
+            }
+            break;
+        }
+        case FreqCtrlMode::FloatMul:
+        {
+            for (const auto& w : FmRegisterMap::buildNoteOnFloatMul (patch, note, np))
+            {
+                writeReg (w.reg, w.value);
+                if (w.reg != 0x28)
+                    shadow[w.reg] = w.value;
+            }
+            break;
+        }
+        case FreqCtrlMode::AutoRetrig:
+        {
+            for (const auto& w : FmRegisterMap::buildNoteOnAutoRetrig (patch, note, np))
+            {
+                writeReg (w.reg, w.value);
+                // 0x27 carries timer LOAD/EN/RST that must fire on every
+                // retrigger — leave it un-shadowed so updateRegisters() does
+                // not "skip" the LOAD bit on a parameter edit.
+                if (w.reg != 0x28 && w.reg != 0x27)
+                    shadow[w.reg] = w.value;
+            }
+            break;
+        }
     }
 
     voiceState              = State::Active;
@@ -171,8 +223,33 @@ void Voice::writeFreqRegistersForMidi (double effectiveMidi)
 
 void Voice::noteOff()
 {
-    const RegWrite off = FmRegisterMap::buildKeyOff();
-    writeReg (off.reg, off.value);
+    switch (freqCtrlMode)
+    {
+        case FreqCtrlMode::IntMul:
+        {
+            const RegWrite off = FmRegisterMap::buildKeyOff();
+            writeReg (off.reg, off.value);
+            break;
+        }
+        case FreqCtrlMode::FloatMul:
+        {
+            const RegWrite off = FmRegisterMap::buildKeyOffCh3();
+            writeReg (off.reg, off.value);
+            break;
+        }
+        case FreqCtrlMode::AutoRetrig:
+        {
+            // Clear TimerA LOAD so the auto-retrigger stops, then key-off ch3
+            // so the envelopes drop to release.
+            for (const auto& w : FmRegisterMap::buildKeyOffAutoRetrig())
+                writeReg (w.reg, w.value);
+            // Re-seed 0x27 shadow with the cleared-timer value so a later
+            // dirty-diff doesn't try to short-circuit the next note-on's
+            // LOAD-bit write.
+            shadow[0x27] = -1;
+            break;
+        }
+    }
     voiceState = State::Released;
     sustained  = false;
 }
@@ -188,20 +265,40 @@ void Voice::updateRegisters (const Patch& patch, bool velToTl)
     // (glideCurrentMidi != midiNote) the frequency line follows the
     // interpolated pitch so a patch / TL / bend edit doesn't snap the audible
     // frequency back to the target mid-glide.
-    const int intPart  = static_cast<int> (std::floor (glideCurrentMidi));
-    const double frac  = glideCurrentMidi - static_cast<double> (intPart);
+    const int    intPart = static_cast<int> (std::floor (glideCurrentMidi));
+    const double frac    = glideCurrentMidi - static_cast<double> (intPart);
     const FmRegisterMap::NoteParams np {
         noteVelocity, velToTl, bendSemitones + voiceDetune + frac };
-    for (const auto& w : FmRegisterMap::buildNoteOn (patch, intPart, np))
-    {
-        if (w.reg == 0x28)
-            continue;
 
-        if (shadow[w.reg] != w.value)
+    // The dirty-diff path uses the voice's *current* FREQ CTRL MODE, not the
+    // patch's. A mid-note mode-switch is a fresh key-on (handled by
+    // VoiceAllocator); for a static voice the diff stays on the channel the
+    // voice was keyed on.
+    const auto applyDiff = [this] (auto&& writes)
+    {
+        for (const auto& w : writes)
         {
-            writeReg (w.reg, w.value);
-            shadow[w.reg] = w.value;
+            if (w.reg == 0x28) continue;            // never re-key
+            if (w.reg == 0x27) continue;            // never re-fire timer LOAD
+            if (shadow[w.reg] != w.value)
+            {
+                writeReg (w.reg, w.value);
+                shadow[w.reg] = w.value;
+            }
         }
+    };
+
+    switch (freqCtrlMode)
+    {
+        case FreqCtrlMode::IntMul:
+            applyDiff (FmRegisterMap::buildNoteOn (patch, intPart, np));
+            break;
+        case FreqCtrlMode::FloatMul:
+            applyDiff (FmRegisterMap::buildNoteOnFloatMul (patch, intPart, np));
+            break;
+        case FreqCtrlMode::AutoRetrig:
+            applyDiff (FmRegisterMap::buildNoteOnAutoRetrig (patch, intPart, np));
+            break;
     }
 }
 

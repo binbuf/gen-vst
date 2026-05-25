@@ -31,6 +31,16 @@ public:
     Voice (const Voice&)            = delete;
     Voice& operator= (const Voice&) = delete;
 
+    // FREQ CTRL MODE (02-fm-synthesis.md *FREQ Control Mode*). Snapshotted on
+    // each note-on from the apvts patch; selects which YM2612 channel +
+    // register path the voice uses.
+    enum class FreqCtrlMode : std::uint8_t
+    {
+        IntMul      = 0,   // channel 0, shared F-number per voice, MUL per op
+        FloatMul    = 1,   // channel 3 special, per-op F-numbers from mul_float
+        AutoRetrig  = 2,   // channel 3 CSM + TimerA-driven auto-retrigger
+    };
+
     // Hard reset: silence the chip immediately, clear the shadow, mark Idle.
     // Used at prepare time and for all-sound-off.
     void reset();
@@ -41,18 +51,25 @@ public:
     // current pitch-wheel offset for the part. `voiceDetuneSemitones` is the
     // per-voice cents offset used by Unison mode — added to bend before the
     // F-number calculation. Pass 0.0 (default) outside of Unison.
+    //
+    // The FREQ CTRL MODE is taken from `patch.freq_ctrl_mode` at this call;
+    // each note-on can use a different mode on the same voice (e.g. the user
+    // flips the panel selector mid-playback). The voice retains the mode
+    // snapshot so the matching key-off / dirty-diff path runs.
     void noteOn (int part, int note, int velocity, double bendSemitones,
                  bool velToTl, const Patch& patch, std::uint64_t timestamp,
                  double voiceDetuneSemitones = 0.0);
 
     // Key off: release the envelope. The voice keeps sounding its release tail
-    // and stays allocated (State::Released) until it is reused.
+    // and stays allocated (State::Released) until it is reused. Routes to the
+    // matching key-off register sequence for the voice's currentMode (ch3 in
+    // FLOAT_MUL / AUTO_RETRIG; ch0 in INT_MUL — the v1 path).
     void noteOff();
 
     // Mono legato: update the voice's serving note / velocity / bend and
     // refresh its frequency registers via the dirty-diff path — skipping the
     // key-off / key-on, so the envelope continues from its current level.
-    // 07-feature-spec.md Mono "Legato".
+    // 07-feature-spec.md Mono "Legato"; 02-fm-synthesis.md *Voice handling*.
     //
     // glideTimeSamples > 0 (Task 28): instead of snapping the frequency to the
     // new note, leave the voice's "current" pitch where it was and walk it
@@ -62,6 +79,10 @@ public:
     void legatoTo (int note, int velocity, double bendSemitones, bool velToTl,
                    const Patch& patch, std::uint64_t timestamp,
                    double glideTimeSamples = 0.0);
+
+    // Voice's last-snapshotted FREQ CTRL MODE (read-only). Used by the
+    // VoiceAllocator's key-off path so the matching ch3 / ch0 sequence runs.
+    FreqCtrlMode currentMode() const noexcept { return freqCtrlMode; }
 
     // Advance the per-voice glide (Task 28) by `numSamples` native-rate samples
     // and re-write the YM2612 F-number registers via the dirty-diff path when
@@ -152,6 +173,12 @@ private:
     // -1 means "never written". Diffed each block by updateRegisters so only
     // changed registers are re-sent (01-architecture.md "Parameter System").
     std::array<int, 256> shadow {};
+
+    // The FREQ CTRL MODE this voice is running under right now — set at
+    // every note-on from the patch snapshot. Determines which YM2612 channel
+    // the voice writes to (0 for INT_MUL; 3 for FLOAT_MUL / AUTO_RETRIG) and
+    // therefore which key-off / dirty-diff path runs.
+    FreqCtrlMode freqCtrlMode = FreqCtrlMode::IntMul;
 
     // Task 29 — VGM logger pointer (owned by PluginProcessor). Set once at
     // prepare time; read by writeReg on every chip write. nullptr-safe.

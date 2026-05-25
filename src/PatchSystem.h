@@ -11,6 +11,14 @@
 // All YM2612 parameters for ONE FM part, stored as plain integers matching the
 // hardware register ranges (04-patch-system.md "Patch Data Model"). The final
 // processor holds one Patch per part; Task 04 drives a single part.
+//
+// TL / SL semantics. The fields below carry **hardware attenuation** (0 =
+// loudest, max = silent) — the on-disk TFI/VGI/DMP/Y12/OPM round-trip target.
+// The v2 UI / apvts surface exposes the *inverted* level (0 = silent, max =
+// loudest) per 02-fm-synthesis.md § *UI level vs hardware attenuation*; the
+// apvts ↔ Patch boundary (FmParamCache::readPatch and the patch-browser drain
+// handler in PluginProcessor.cpp) does the flip via
+// FmRegisterMap::levelToAttenuation.
 struct Patch
 {
     // Channel-level parameters.
@@ -27,15 +35,48 @@ struct Patch
     // 3 = OP4/S4 — the operator's number, not its register order.
     uint8_t mul[4]  {};       // 0-15:  frequency multiple
     uint8_t dt[4]   {};       // 0-6:   detune (TFI encoding; converted in FmRegisterMap)
-    uint8_t tl[4]   {};       // 0-127: total level
+    uint8_t tl[4]   {};       // 0-127: total level (attenuation; see header note)
     uint8_t ks[4]   {};       // 0-3:   key scale
     uint8_t ar[4]   {};       // 0-31:  attack rate
     uint8_t dr[4]   {};       // 0-31:  first decay rate
     uint8_t sr[4]   {};       // 0-31:  second decay / sustain rate
     uint8_t rr[4]   {};       // 0-15:  release rate
-    uint8_t sl[4]   {};       // 0-15:  sustain level
+    uint8_t sl[4]   {};       // 0-15:  sustain level (attenuation; see header note)
     uint8_t ssg[4]  {};       // 0 or 8-15: SSG-EG (values 1-7 are invalid)
     uint8_t amon[4] {};       // 0/1:   amplitude mod enable per operator
+
+    // --- v2 additions (02-fm-synthesis.md *FREQ Control Mode*, RYM2612-style
+    //                   *Velocity → TL layering*, *Channel TL*, *DAC Prescaler*)
+    //
+    // These do not round-trip through legacy TFI/VGI/DMP/Y12/OPM formats; the
+    // loaders default them so a legacy patch behaves identically to v1. The
+    // v2-native .gnpat format (Task 09) will persist them explicitly.
+
+    // 0 = INT_MUL (channel 0, shared F-number, MUL field per op) — the v1 path,
+    // default. 1 = FLOAT_MUL (channel 3 special, per-op F-numbers from
+    // note × mul_float[op] or freq_fixed_hz[op]). 2 = AUTO_RETRIG (channel 3
+    // CSM + TimerA per retrig_rate).
+    uint8_t  freq_ctrl_mode = 0;
+
+    // 10-bit TimerA value, written split across 0x24 / 0x25 in AUTO_RETRIG.
+    uint16_t retrig_rate    = 500;
+
+    float mul_float[4]      { 1.0f, 1.0f, 1.0f, 1.0f }; // FLOAT_MUL multiplier
+    bool  fixed[4]          {};                          // per-op fixed-Hz toggle
+    float freq_fixed_hz[4]  { 440.0f, 440.0f, 440.0f, 440.0f };
+
+    // Per-op velocity → TL depth (0 = no effect, 1 = full). Stacks additively
+    // with the global `velocity_to_tl` toggle (02-fm-synthesis.md § *Velocity
+    // → TL layering*).
+    float vel[4]            {};
+
+    // UI master TL multiplier folded into every op's TL register write.
+    // 1.0 = patch played verbatim; 0.0 = silent.
+    float channel_tl        = 1.0f;
+
+    // 0..1 sweep of the YM2612 DAC clock prescaler (DspDecimator hold count).
+    // 0 = bypass; non-zero engages decimation between voice sum and ladder.
+    float fm_dac_prescaler  = 0.0f;
 
     std::string name;         // display name (filename stem)
 };

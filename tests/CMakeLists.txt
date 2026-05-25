@@ -27,6 +27,9 @@ add_executable(GenVstTests
     DspDecimatorTests.cpp
     OutputFilterTests.cpp
     LadderEffectTests.cpp
+    FmFreqCtrlModeTests.cpp
+    FmLegatoTests.cpp
+    FmTlInversionTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
