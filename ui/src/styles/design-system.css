@@ -234,6 +234,50 @@ canvas {
 }
 
 /* ============================================================== */
+/* Layout chrome — chassis frame, header, mode panel              */
+/* ============================================================== */
+/* Structural sizing for the 1200x560 chassis (ADR-0023). The visual
+ * recipes for the chassis surface itself live further down (.chassis,
+ * .inset); these rules just slot the chassis into the window and lay
+ * out the persistent header / mode-panel rows. */
+
+.frame {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+  position: relative;
+  isolation: isolate;
+}
+
+.hdr {
+  height: 88px;
+  display: grid;
+  /* note-on | wordmark | mode pill | patch LCD (1fr) | filter | ladder |
+   *   DAC PRESCALER | L/R meters | VOL | TIPS | gear  — established in
+   * the mvp2/01 mockup pages; Tasks 08+ fill in the inner cells. */
+  grid-template-columns: auto auto auto 1fr auto auto auto auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.mode-panel {
+  flex: 1;
+  padding: 14px;
+  position: relative;
+}
+
+.mode-title {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  z-index: 1;
+}
+
+/* ============================================================== */
 /* CSS recipes — chassis & inset                                  */
 /* ============================================================== */
 

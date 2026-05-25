@@ -291,6 +291,52 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "tooltips_enabled", 1 }, "Tooltips", true));
 
+    // --- Gallery scratch params (Task 04 widget gallery) --------------------
+    // Bound by ui/gallery.html so every widget kind can be developed and
+    // verified against a live apvts parameter. Storage cost is trivial; left
+    // unguarded so the host's generic editor can drive them too. Visible as
+    // "GALLERY ..." in the host parameter list — irrelevant for end users.
+    for (char id : { 'a', 'b', 'c', 'd' })
+    {
+        const juce::String suffix = juce::String::charToString (id);
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { "gallery_knob_" + suffix, 1 },
+            "GALLERY Knob " + suffix.toUpperCase(),
+            juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f));
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { "gallery_toggle_" + suffix, 1 },
+            "GALLERY Toggle " + suffix.toUpperCase(),
+            false));
+    }
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "gallery_combo_a", 1 }, "GALLERY Combo A",
+        juce::StringArray { "Alpha", "Beta", "Gamma", "Delta" }, 0));
+    // Algorithm picker scratch — 0..7 selects an algo-grid button.
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "gallery_algo", 1 }, "GALLERY Algorithm",
+        0, 7, 0));
+    // Stepper scratch — wide integer range so click-and-hold repeat is
+    // visible.
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "gallery_stepper", 1 }, "GALLERY Stepper",
+        0, 999, 0));
+    // Level-meter scratch — slider-driven amplitude so the gallery can
+    // exercise the meter without needing live audio.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "gallery_level", 1 }, "GALLERY Level",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+    // Note-on LED scratch — bound to a toggle so the gallery can light the
+    // LED without needing a key-on event.
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "gallery_noteon", 1 }, "GALLERY Note On",
+        false));
+    // MIDI-wheel scratch — one shared float, the PB widget reads it ±1
+    // (mapping to 0..1) and the MW widget reads it 0..1 directly so a
+    // single drag exercises both variants.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "gallery_wheel", 1 }, "GALLERY Wheel",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f));
+
     return layout;
 }
 

@@ -22,16 +22,15 @@ export default defineConfig({
     target: "es2020",
     assetsInlineLimit: 0, // keep fonts as real files — never inline as data URIs
     rollupOptions: {
-      // v1 production UI (index.html) and gallery (gallery.html) were deleted
-      // in mvp2/02-strip-v1; only the throwaway v2 visual-lockdown mockup pages
-      // survive (docs/tasks/mvp2/01-static-ui-mockup.md). Task 04 reintroduces
-      // a real entry point; until then the mockup pages are the only build
-      // surface, reachable in dev with `npm run dev`.
+      // Two entry points (mvp2/04-widget-library.md):
+      //   - main    -> index.html      (the v2 production UI — empty chassis
+      //                                 in Task 04; Tasks 05-07 fill in the
+      //                                 per-mode panels)
+      //   - gallery -> gallery.html    (the developer widget showroom, bound
+      //                                 against the gallery_* scratch params)
       input: {
-        mockupChassis:  resolve(here, "mockup-chassis.html"),
-        mockupFm:       resolve(here, "mockup-fm.html"),
-        mockupSq:       resolve(here, "mockup-sq.html"),
-        mockupD:        resolve(here, "mockup-d.html"),
+        main:    resolve(here, "index.html"),
+        gallery: resolve(here, "gallery.html"),
       },
     },
   },
