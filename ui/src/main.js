@@ -4,7 +4,7 @@
 // fires the `uiReady` event so the C++ editor knows the page is alive.
 //
 // Mode dispatch: subscribes to `mode_select` and swaps the panel contents.
-// FM (Task 05) and SQ (Task 06) views are wired; D lands in Task 07.
+// FM (Task 05), SQ (Task 06), and D (Task 07) views are all wired.
 
 import "./styles/design-system.css";
 
@@ -13,6 +13,7 @@ import { installTooltips }     from "./widgets/tooltip.js";
 import { bindCombo }            from "./binding.js";
 import { mount as mountFmView } from "./views/fm-view.js";
 import { mount as mountSqView } from "./views/sq-view.js";
+import { mount as mountDView }  from "./views/d-view.js";
 
 const MODE_FM = 0;
 const MODE_SQ = 1;
@@ -47,8 +48,7 @@ function init() {
           currentDisposer = mountSqView(modePanel);
           break;
         case MODE_D:
-          // D view lands in Task 07.
-          modePanel.appendChild(makePlaceholder("D"));
+          currentDisposer = mountDView(modePanel);
           break;
         default:
           modePanel.appendChild(makePlaceholder("?"));

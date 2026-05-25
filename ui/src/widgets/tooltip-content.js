@@ -35,6 +35,16 @@ export const TOOLTIPS = {
     desc: "Switch between FM (YM2612), SQ (SN76489 PSG) and D (sample decimator).",
   },
 
+  // --- D mode panel --------------------------------------------------
+  "dry_wet": {
+    name: "DRY / WET",
+    desc: "Blend between unprocessed input (0) and fully decimated signal (1).",
+  },
+  "mono": {
+    name: "MONO",
+    desc: "Sum L+R after decimation so both output channels carry the same signal.",
+  },
+
   // --- Gallery scratch params ---------------------------------------
   "gallery_knob_a": {
     name: "GALLERY KNOB A",
