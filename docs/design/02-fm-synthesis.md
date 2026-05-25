@@ -493,6 +493,53 @@ stores it explicitly.
 
 ---
 
+## Velocity → TL layering
+
+Two independent velocity surfaces touch the operator TL register write,
+and they **layer additively** — either can be zero, both can stack:
+
+- **Global `velocity_to_tl`** (Settings, default on) — the v1
+  velocity-scales-TL behaviour applied to every operator using the
+  Genny-era formula. Drives the *global* velocity term.
+- **Per-op `vel[op]`** (0..1, default 0.0) — RYM2612 manual page 10
+  per-operator velocity-into-TL depth. Drives the *per-op* velocity
+  term, scoped to the single operator.
+
+Combined register write at key-on / velocity-change:
+
+```
+tl_register[op] = clamp(127
+                        - (tl_level[op] × channel_tl)
+                        + (velocity_to_tl ? v1_global_vel_term : 0)
+                        + (127 × vel[op] × (127 − velocity) / 127),
+                        0, 127)
+```
+
+The two velocity terms are computed independently and summed — the
+global term is the project-wide "velocity affects loudness" preference,
+the per-op term is per-patch character. A user can leave the global
+toggle on for everything and additionally dial in per-op velocity
+character on a specific operator; or turn the global toggle off and
+sculpt velocity entirely from the per-op knobs.
+
+Recomputation runs on each key-on (using the latched velocity) and on
+each per-op `vel[op]` change while a voice is active; the global toggle
+is a per-block read at the top of `processBlock`. `vel[op] = 0`
+(default for legacy-format patches) collapses the per-op term to zero,
+so a TFI load with the global toggle on behaves identically to v1.
+
+### Aftertouch — Carrier TL routing
+
+When `aftertouch_target == "Carrier TL"`, channel pressure subtracts
+from the carrier operator's effective TL on the current channel. The
+set of carrier operators per algorithm is the *Carriers* column of the
+*FM Algorithms* table above (ALG 0–3 → S4 only; ALG 4 → S2, S4; ALG 5
+and 6 → S2, S3, S4; ALG 7 → S1, S2, S3, S4). The aftertouch dispatch
+looks up the carrier set for the active `alg` and recomputes the TL
+register write for each carrier op only; modulators are untouched.
+
+---
+
 ## DAC Prescaler (FM mode)
 
 The YM2612's nine-bit DAC is fed by an internal **clock prescaler** that

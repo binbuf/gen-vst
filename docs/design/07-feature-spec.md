@@ -73,11 +73,14 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] `pitch_bend_range` apvts param — ±1..±12 semitones (default ±2);
   surfaced as the `RANGE` stepper on the FM panel (promoted from
   Settings)
-- [ ] `unison_detune_cents` apvts param — 0..50 ¢ unison spread applied
-  to voices triggered by the same note; lives in Settings (replaces the
-  earlier draft Unison sub-mode)
 - [ ] LRU voice stealing across the pool; release-phase voices preferred
   for stealing
+- [ ] `mod_wheel_value` and `pitch_bend_value` apvts params — display-only
+  mirrors of the live MIDI stream, written by `PluginProcessor` on every
+  inbound CC 1 / pitch-bend message. The FM `GLOBAL IN` PB + MW wheels
+  and the SQ `GLOBAL IN` PB wheel bind to these via the normal relay
+  layer (no separate telemetry event — see `05-ui-ux.md` *C++→JS
+  telemetry push*).
 
 ### FM Features
 - [ ] Channel 3 special mode (per-operator pitch as a top-level UI editor) — *post-MVP ([ADR-0014](adr/0014-special-channel-features.md))*
@@ -239,25 +242,12 @@ F-number each block; bend rides on top of the interpolated pitch.
   configured time.
 - **PSG noise** has no pitch; no glide param exists for it.
 
-### Unison
-
-All N voices play the same pitch simultaneously, each detuned by a per-voice
-**F-number offset**. (Not the YM2612 DT register — DT is a coarse 3-bit
-detune and cannot express cents; fine unison spread must be applied to the
-F-number.) Offsets fan out symmetrically:
-
-```
-Voice 0: no offset
-Voice 1: +spread × 1
-Voice 2: -spread × 1
-Voice 3: +spread × 2
-Voice 4: -spread × 2
-...
-```
-
-Spread is a plugin parameter in cents (0–50); each voice's F-number is
-computed for its detuned pitch. Larger spread = a wider, more chorused
-unison.
+**Unison** as a per-note voice fan-out mode is **not in v2 MVP** — the
+RYM2612 reference has no unison feature, and dropping the standalone
+Settings detune slider removed an ambiguous semantic. See
+`docs/tasks/mvp2/README.md` *Post-MVP backlog* for the carry-forward
+notes; a future unison feature needs its own enable toggle and a
+re-think of POLY voice allocation when one note grabs N voices.
 
 ---
 
@@ -358,18 +348,18 @@ Most former open questions are now resolved by ADRs (see
 1. **CPU profiling pass** — confirm 16 ymfm instances at 44,100 Hz are
    affordable; revisit the instance layout if not ([ADR-0010](adr/0010-ymfm-instance-model.md)).
    A post-skeleton implementation check.
-2. **Mono / Unison defaults** — Mono exposes both retrigger and legato;
-   pick the shipped default (proposed: retrigger). Pick the default Unison
-   spread value.
-3. **Aftertouch routing default** — channel pressure is a configurable
-   routing (LFO depth or carrier TL); default = **LFO depth (PMS)**
-   (carried over from Task 06).
-4. **Host quirks for instrument-with-audio-input** — Logic, Pro Tools,
+2. **Host quirks for instrument-with-audio-input** — Logic, Pro Tools,
    and some older hosts may need special handling for the audio input bus
    on what they classify as an instrument plugin. Verified in v2/02 task.
-5. **Ladder effect curve calibration** — the lookup table in
+3. **Ladder effect curve calibration** — the lookup table in
    `src/LadderEffect.{h,cpp}` needs final calibration against measured
    YM2612 reference clips during Task v2/08.
+
+Resolved during the post-mockup review (no longer open):
+- *Mono default*: `note_mode = RETRIG`; the LEGATO/RETRIG toggle on the FM
+  panel exposes both.
+- *Unison*: dropped from v2 MVP (no RYM2612 reference); see post-MVP backlog.
+- *Aftertouch routing default*: LFO PMS.
 
 Former v1 open items (multitimbral allocation, PSG layer mode, DAC
 loop/one-shot semantics, etc.) are no longer relevant under the v2

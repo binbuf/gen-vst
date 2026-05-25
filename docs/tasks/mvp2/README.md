@@ -99,13 +99,26 @@ proposed default and instructs the implementer to verify against the cited
 reference.
 
 1. CPU profiling pass for 16 ymfm instances at 44.1 kHz — Task 10.
-2. Mono / Unison defaults (proposed: Mono retrigger, Unison spread 0 ¢) — Task 05 / Task 08.
-3. Aftertouch default routing (proposed: LFO depth / PMS) — Task 08.
-4. Instrument-with-audio-input host quirks (Logic, Pro Tools) — Task 03 verification.
-5. Ladder effect curve calibration vs measured YM2612 clips — Task 03.
+2. Instrument-with-audio-input host quirks (Logic, Pro Tools) — Task 03 verification.
+3. Ladder effect curve calibration vs measured YM2612 clips — Task 03.
+
+Resolved during the post-mockup review (no longer open):
+- *Mono default*: `note_mode = RETRIG`; the LEGATO/RETRIG toggle on the FM
+  panel exposes both.
+- *Unison*: dropped from v2 MVP (no RYM2612 reference); see *Post-MVP
+  backlog* below.
+- *Aftertouch routing default*: LFO PMS.
 
 ## Post-MVP backlog (not scheduled here)
 
+- **UNISON DETUNE (FM mode)** — per-note voice fan-out with cents detune
+  spread across the active poly stack. Not present on the RYM2612
+  reference (`docs/design/reference/RYM2612-User-Manual.pdf`); dropped
+  from v2 MVP during the post-mockup review. Bringing it back needs:
+  an enable toggle on the FM panel (the v2-draft UNISON sub-mode was
+  removed and not replaced), a re-think of POLY voice allocation when
+  one MIDI note grabs N voices (chord behaviour, stealing rules), and
+  probably its own ADR for the semantic.
 - Resizable window (ADR-0023 fixes 1200×560).
 - Multi-instrument OPM bank import (Task 05 ports the first `@:` block only).
 - Per-channel independent tuning tables, `.kbm`, MTS Sysex (07-feature-spec

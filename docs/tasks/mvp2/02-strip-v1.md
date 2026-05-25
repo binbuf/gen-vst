@@ -88,18 +88,34 @@ A single source of truth, no `_part<n>` suffix:
   `04-patch-system.md` *Defaults on legacy-format load*): `freq_ctrl_mode`
   (choice, default INT_MUL), `retrig_rate` (int 0..1023, default 500),
   `mul_float[0..3]` (float 0.5..15.99), `fixed[0..3]` (bool),
-  `freq_fixed_hz[0..3]` (float 20..20000), `mw[0..3]` (float 0..1),
-  `vel[0..3]` (float 0..1),
+  `freq_fixed_hz[0..3]` (float 20..20000),
+  `vel[0..3]` (float 0..1, default 0.0 — per-op velocity→TL depth;
+  modwheel is global-only in v2, no per-op `mw[op]` column),
+  `channel_tl` (float 0..1, default 1.0 — UI-only master multiplier
+  across all 4 operator TLs; see `02-fm-synthesis.md` *Channel TL*),
+  `fm_dac_prescaler` (float 0..1, default 0.0 — FM-mode DAC prescaler
+  bound from the header DAC PRESC knob; shares the `DspDecimator`
+  code path with D mode's `prescaler` but stores state independently),
+  `mod_wheel_value` (float 0..1, default 0.0 — **display-only** mirror
+  of the live MIDI CC 1 stream; written by `handleControlChange`,
+  read by the FM/SQ `GLOBAL IN` `midi-wheel-mw` widget via the relay
+  layer; see `05-ui-ux.md` *C++→JS telemetry push*),
+  `pitch_bend_value` (float −1..+1, default 0.0 — **display-only**
+  mirror of the live pitch-bend stream; written by the pitch-bend
+  handler, read by the FM/SQ `GLOBAL IN` `midi-wheel-pb` widget),
   `note_mode` (choice 0=RETRIG/1=LEGATO, default RETRIG),
   `poly_voices` (int 1..16, default 16), `pitch_bend_range`
-  (int 1..12, default 2), `unison_detune_cents` (float 0..50,
-  default 0), `hardware_strict` (bool, default false).
+  (int 1..12, default 2),
+  `hardware_strict` (bool, default false).
 - **SQ** — per-channel `psg_atk[0..3]`, `psg_dr1[0..3]`, `psg_sus[0..3]`,
-  `psg_dr2[0..3]`, `psg_rr[0..3]`, `psg_vel[0..3]`, `psg_vol[0..3]`,
-  `psg_pan[0..3]`, `psg_detune[0..2]` (no detune on noise),
-  `psg_glide[0..2]` (no glide on noise), `psg_bend[0..3]` (bool);
+  `psg_dr2[0..3]`, `psg_rr[0..3]`, `psg_vel[0..3]` (engine /
+  automation-only; no v2 UI surface), `psg_vol[0..3]`, `psg_pan[0..3]`,
+  `psg_detune[0..2]` (no detune on noise), `psg_glide[0..2]`
+  (engine / automation-only; no v2 UI surface — see view 3 rationale);
   `psg_noise_type` (choice white/periodic), `psg_noise_rate`
   (choice low/mid/high/ch2), `psg_noise_auto` (bool, default false).
+  The v1 per-channel `psg_bend[0..3]` toggle is **dropped** — v2 PSG
+  pitch-bend is engine-global via `SN76489Engine::pitchBend()`.
 - **D** — `prescaler` (float 0..1, default 0), `mono` (bool, default
   false), `dry_wet` (float 0..1, default 1).
 - **Settings-bound globals** — `aftertouch_target` (choice off/LFO/TL,
@@ -227,9 +243,18 @@ reconnected in Task 05 (FM) / Task 06 (SQ).
 8. `grep -rn DACKit src/ tests/` — no matches.
 9. `grep -rn BankIO src/ tests/` — no matches.
 10. `grep -rn _part0 src/` — no matches (`_part<n>` suffix retired).
-11. The Settings → Preferences in the host shows the new apvts layout:
+11. `grep -rn '\bmw\[' src/` — no matches (per-op modwheel column was
+    removed during the post-mockup review; only the global
+    `mod_wheel_value` mirror exists in v2).
+12. `grep -rn unison_detune_cents src/` — no matches (Unison Detune is
+    deferred to post-MVP; see `docs/tasks/mvp2/README.md` *Post-MVP
+    backlog*).
+13. `grep -rn psg_bend src/` — no matches (per-channel PSG bend toggle
+    was vestigial v1 carryover; v2 PSG bend is engine-global).
+14. The Settings → Preferences in the host shows the new apvts layout:
     a single `alg`/`fb`/`mode_select`/etc. without `_part<n>` suffix
-    on any parameter ID.
+    on any parameter ID, plus the new `channel_tl`, `fm_dac_prescaler`,
+    `mod_wheel_value`, and `pitch_bend_value` entries.
 
 ## Done when
 

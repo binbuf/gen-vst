@@ -4,7 +4,7 @@
 > output-character toggles, VOL knob, NOTE ON LED + visible text label,
 > stacked L/R output meters, settings gear in the header; Settings +
 > About modals open from the gear icon and reach the Hardware Strict /
-> Unison Detune / Aftertouch / UI Scale / Velocity→TL / Tooltips /
+> Aftertouch / UI Scale / Velocity→TL / Tooltips /
 > Reset All controls.
 > **Depends on:** Tasks 05, 06, 07.
 > **Design references:** `docs/design/08-ui-views.md` views 1 (header),
@@ -114,12 +114,6 @@ attributions and the version string.
     (additional voices fall back to `INT_MUL` silently); force
     `output_filter = true` and `ladder_effect = true` and lock their
     header toggles. Off by default.
-  - `UNISON DETUNE (FM)` — slider 0..50 ¢ bound to
-    `unison_detune_cents`. Applied to voices triggered by the same MIDI
-    note (the v1 unison-spread code provides the F-number offset
-    mechanism; if it was removed in Task 02, re-implement: per-note
-    detune offset across the active poly stack, symmetric fan-out
-    pattern per `07-feature-spec.md` *Unison*).
   - `UI SCALE` — choice 1× / 2× / 3× (ADR-0017). On change, the editor
     resizes the WebView (HTML CSS transform: `scale(N)` on the body, or
     update the WebView's host bounds to `1200*N × 560*N`).
@@ -130,7 +124,10 @@ attributions and the version string.
     velocity-into-TL depth, while this is the global velocity→TL
     scaling on the carrier).
   - `AFTERTOUCH` — choice off / LFO depth (PMS) / Carrier TL, default
-    **LFO depth (PMS)**. Bound to `aftertouch_target`.
+    **LFO depth (PMS)**. Bound to `aftertouch_target`. *Carrier TL*
+    routing uses the carrier-op set per the active `algorithm` — see
+    `02-fm-synthesis.md` *FM Algorithms* table (Carriers column) and
+    § *Aftertouch — Carrier TL routing*.
   - `TOOLTIPS` — bound to `tooltips_enabled`. The widget library reads
     this to show/hide hover tooltips (`installTooltips()` from Task 04).
     The **same** boolean is also exposed as a `TIPS` toggle in the
@@ -286,13 +283,13 @@ attributions and the version string.
      + Ladder toggles disable in the header and visually show
      "forced on" (lit, not interactable). Audio path forces both on
      regardless of any prior apvts value.
-   - UNISON DETUNE — sweep 0 → 50 ¢ with `poly_voices = 8` and play
-     a held note; symmetric unison spread is audible.
    - UI SCALE — pick 2×; the WebView grows to 2400×1120; everything
      scales crisply.
    - AFTERTOUCH = Off — channel pressure has no effect. = LFO depth
      — channel pressure rides PMS. = Carrier TL — channel pressure
-     attenuates the carrier op(s).
+     attenuates the carrier op(s) only; modulator ops are untouched.
+     Verify under ALG 0 (S4 attenuates only), ALG 4 (S2 + S4 both
+     attenuate), and ALG 7 (all four ops attenuate).
    - VELOCITY → TL on → soft notes are quieter; off → soft notes are
      the same level as hard.
    - TOOLTIPS off → hover tooltips do not appear.

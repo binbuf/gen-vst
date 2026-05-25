@@ -111,11 +111,14 @@ SQ panel control.
    `unmountSqView()`. Build the `GLOBAL IN` block (left edge) + the
    four-strip layout (three tone strips + one noise strip). Use the
    `design-system.css` chassis/inset/knob/lcd/midi-wheel recipes.
-2. **`GLOBAL IN` block** — mount one `midi-wheel-pb` widget. Subscribe
-   it to the `midiState` telemetry event (the same one the FM
-   panel's PB widget uses); set its thumb `bottom` from the live
-   pitch-bend value (0.5 = center). Caption: `PB`. No bound apvts
-   param — the widget is read-only.
+2. **`GLOBAL IN` block** — mount one `midi-wheel-pb` widget bound to
+   the apvts `pitch_bend_value` param via `bindSlider` (the same
+   binding the FM panel's PB wheel uses). The widget is read-only —
+   no drag handler; the binding maps the param's normalised value
+   into the thumb's `bottom` CSS percent (50% = center). Caption:
+   `PB`. `PluginProcessor` mirrors live pitch-bend into the apvts
+   from the MIDI buffer (Task 05 § *MIDI state mirror*); no new
+   telemetry event in this task.
 3. Each tone strip:
    - Mount an `envelope-curve` widget at the top, fed by `bindSlider`
      for the 5 envelope params (`psg_atk[ch]` … `psg_rr[ch]`) — on

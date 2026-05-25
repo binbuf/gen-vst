@@ -34,7 +34,10 @@ selects it; the placeholder editor from Task 02 is gone.
   `button`, `stepper`, `lcd-readout`, `toggle-switch`, `slider`,
   `algo-grid`, `algorithm-mini`, `envelope-curve`, `note-on-led`, `level-meter`,
   `decimator-knob` (a variant of `knob`), `patch-name-lcd` (a variant
-  of `lcd-readout`), `op-badge`, `notification-toast`.
+  of `lcd-readout`), `op-badge`, `midi-wheel` (variants `midi-wheel-pb`
+  and `midi-wheel-mw`; read-only, no drag handler — binds inbound only
+  through `bindSlider` against `pitch_bend_value` / `mod_wheel_value`),
+  `notification-toast`.
 - **Rendering split** (`05-ui-ux.md` *Asset Strategy*):
   - **HTML + CSS** — `button`, `toggle-switch`, `slider`, `op-badge`,
     `note-on-led` (CSS animation on apvts-bound state),
@@ -179,7 +182,10 @@ selects it; the placeholder editor from Task 02 is gone.
      `bindToggle`, flips and writes the param.
    - **`stepper.js`** — CSS frame with an inner canvas LCD-readout for
      the value, plus two `<button>` arrows. Click / hold / scroll
-     increments via `bindSlider`.
+     increments via `bindSlider`. The CSS recipe is `.stepper-readout`
+     (per `09-visual-spec.md`); POLY/RANGE in the FM LFO block use the
+     compact `.is-mini` size modifier (smaller LCD min-width and tighter
+     button padding), RETRIG RATE uses the default size.
    - **`lcd-readout.js`** — canvas-only widget; takes `value` (number
      or string), draws background + two-pass glowing text per the
      `09-visual-spec.md` recipe.
@@ -216,6 +222,16 @@ selects it; the placeholder editor from Task 02 is gone.
      gallery.
    - **`op-badge.js`** — CSS-only badge. `setActive(bool)` toggles the
      outer-glow state.
+   - **`midi-wheel.js`** — CSS recess + thin DOM thumb per the
+     `09-visual-spec.md` *MIDI wheel* recipe. Mount with `variant: 'pb'`
+     (center-detent with centerline) or `variant: 'mw'` (bottom-rest, no
+     centerline). **Read-only** — no drag handler; the widget exists to
+     visualise live MIDI state pushed through `mod_wheel_value` /
+     `pitch_bend_value` apvts params. The host element wraps with the
+     `midi-wheel-cell` label cluster; the binding sets the thumb's
+     `bottom` CSS percent from the inbound `setNormalised(v)` call
+     (mapping `v ∈ [0..1]` to the recess track, with PB centered at 0.5
+     and MW at 0.0).
    - **`notification-toast.js`** — listens for the `notify` event
      `{ level, message }`; renders a toast that auto-dismisses after
      4 s; stacks up to 2 at a time, queues more.
@@ -269,8 +285,9 @@ selects it; the placeholder editor from Task 02 is gone.
 ## Deliverables
 
 - `ui/src/widgets/{knob,button,stepper,lcd-readout,patch-name-lcd,
-  toggle-switch,slider,algorithm-mini,envelope-curve,note-on-led,
-  level-meter,decimator-knob,op-badge,notification-toast}.js`.
+  toggle-switch,slider,algo-grid,algorithm-mini,envelope-curve,note-on-led,
+  level-meter,decimator-knob,op-badge,midi-wheel,notification-toast,
+  tooltip}.js`.
 - `ui/src/binding.js`, `ui/src/main.js`, `ui/src/gallery.js`.
 - `ui/index.html`, `ui/gallery.html` (re-introduced).
 - Updated `ui/vite.config.js` (multi-page = main + gallery only;
@@ -324,6 +341,10 @@ selects it; the placeholder editor from Task 02 is gone.
          gallery; segment colour shifts to `--led-on-warm` on the last
          2 segments at peak.
    - [ ] Op-badge `setActive(true)` lights the outer glow.
+   - [ ] `midi-wheel` widgets (both `pb` and `mw` variants) render
+         correctly with the recess + thumb chrome; the thumb position
+         updates from a slider-driven scratch param; the widgets do
+         **not** respond to drag (read-only).
    - [ ] Notification toast: pushing a fake `notify` event from the
          gallery slides a toast in; it auto-dismisses after ~4 s;
          clicking dismisses immediately; stacking caps at 2.

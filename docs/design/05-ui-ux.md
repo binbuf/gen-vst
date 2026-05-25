@@ -162,7 +162,7 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 |-----------|------|---|
 | `knob` | Skeuomorphic rotary; gradient body, white indicator line; ~270° sweep, rest at 7 o'clock; vertical click-drag (up = increase), shift = fine, double-click = reset | CSS body + Canvas indicator arc |
 | `button` | Pill / square buttons with depressed-on-click feedback; LED-illuminated when active | CSS only |
-| `stepper` | Compact LCD numeric readout flanked by ▲/▼ buttons; click-and-hold to repeat; scroll-wheel increment. Used for the `POLY` and `RANGE` fields on the FM panel and the `RETRIG RATE` field. | CSS + Canvas LCD readout |
+| `stepper` | Compact LCD numeric readout flanked by ▲/▼ buttons; click-and-hold to repeat; scroll-wheel increment. JS module is `ui/src/widgets/stepper.js`; the CSS recipe is `.stepper-readout` (see `09-visual-spec.md`). The `POLY` and `RANGE` fields on the FM panel use the `is-mini` size modifier; the `RETRIG RATE` field uses the default size. | CSS + Canvas LCD readout |
 | `lcd-readout` | Patch-name LCD (header) and per-knob numeric readouts; flat dark base + glowing text | Canvas |
 | `toggle-switch` | Two- and three-position toggle (e.g., `CRYSTAL CLEAR / LEGACY`); physical-slider feel | CSS + a Canvas highlight |
 | `slider` | Horizontal slider with chunky cap, soft groove shadow | CSS only |
@@ -305,7 +305,12 @@ no parts, so no per-part rebinding is needed.
 | `savePatch()` | Save current mode's patch to the user-saved root |
 | `importPatch()` / `exportPatch()` | File-chooser based import/export |
 | `addPatchRoot()` | Native directory-chooser for registering a new custom root |
-| `midiPanic()` | All-sound-off (FM + SQ) |
+| `expandFolder(path)` | Lazy folder-scan for the preset browser tree; returns `{ children, perChildPatchCount }` |
+| `deletePatch(path)` | Remove a patch from a writable root; refused for the Factory root |
+| `patchNav(direction)` | Prev/next navigation within the active mode's sorted patch list |
+
+MIDI panic is covered by the standard CCs (`120` All Sound Off, `123` All
+Notes Off) handled in `processBlock`; no dedicated native function.
 
 The v1 `selectChannel(n)` and `selectSection(s)` native functions are
 **removed** (no parts; mode switching goes through the apvts).
@@ -324,6 +329,16 @@ message thread and pushes one combined event —
 side subscribes with `addEventListener("meterData", …)`. Telemetry is
 processor-owned so the editor can be opened/closed independently of
 audio.
+
+**Live MIDI state (modwheel + pitch-bend) does not use telemetry.** The
+FM panel's `GLOBAL IN` PB / MW wheels and the SQ panel's `GLOBAL IN` PB
+wheel bind to the apvts parameters `mod_wheel_value` and
+`pitch_bend_value` through the normal relay layer. `PluginProcessor`
+mirrors every inbound CC 1 and pitch-bend message into those params via
+`setValueNotifyingHost` so the widgets repaint through the same
+`valueChangedEvent` path every other knob uses — no extra event, no
+extra timer. The widgets are read-only (no drag handler); the apvts
+params are display-only mirrors of the live MIDI stream.
 
 The v1 oscilloscope, 16-voice LED bank, and clip LED are removed —
 they belonged to the v1 chassis.

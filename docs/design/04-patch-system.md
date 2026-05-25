@@ -41,7 +41,7 @@ struct Patch {
     // Channel-level (per voice)
     uint8_t alg;          // 0–7: algorithm
     uint8_t fb;           // 0–7: S1 self-feedback
-    uint8_t lr;           // bits: bit1=L, bit0=R (stereo output enables)
+    uint8_t lr;           // bits: bit1=L, bit0=R (stereo output enables; no v2 UI surface — defaults to 3 = both)
     uint8_t ams;          // 0–3: amplitude mod sensitivity
     uint8_t pms;          // 0–7: phase mod sensitivity (vibrato depth)
     uint8_t lfo_enable;   // 0/1: LFO on (stored per-patch, applied globally)

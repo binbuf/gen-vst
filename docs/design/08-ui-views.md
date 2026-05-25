@@ -249,9 +249,10 @@ was removed), but doesn't carry an independent per-op depth knob.
 
 The v2-only MONO and UNISON sub-modes that an earlier draft of this
 view exposed are not present on the RYM2612 reference and have been
-dropped from the FM panel. A standalone `UNISON DETUNE` knob in
-Settings (view 6) covers the unison-spread use case without cluttering
-the main panel.
+dropped from the FM panel. Mono behaviour is covered by the
+LEGATO/RETRIG toggle in the LFO/global block paired with `poly_voices
+= 1`; Unison is **deferred to post-MVP** (no RYM2612 reference for the
+feature — see `docs/tasks/mvp2/README.md` *Post-MVP backlog*).
 
 **Top-centre — envelope curve with segment labels**
 
@@ -573,7 +574,6 @@ Global plugin preferences. Opened from the header gear icon.
 ```
 ┌─ SETTINGS ──────────────────────────────────────────────────── [X] ┐
 │  HARDWARE STRICT (FM)   [ off ]                                      │
-│  UNISON DETUNE (FM)     [▌  0 ¢ ▐]   0..50 cents                     │
 │  UI SCALE               [(1×)· 2× · 3×]                              │
 │  VELOCITY → TL (FM)     [ on ]                                       │
 │  AFTERTOUCH             [ Off ·(LFO depth)· Carrier TL ]             │
@@ -594,11 +594,6 @@ Global plugin preferences. Opened from the header gear icon.
   their header toggles. Off by default — Gen VST's extended polyphony
   and free filter switches are the expected starting point. Bound to
   apvts param `hardware_strict`.
-- `UNISON DETUNE` (FM mode) — small detune spread in cents applied to
-  voices triggered by the same MIDI note. 0 ¢ = off (default); up to
-  50 ¢ = pronounced unison. Bound to apvts param `unison_detune_cents`.
-  This replaces the v2-draft UNISON sub-mode on the FM panel; the
-  effect now layers freely with the numeric `POLY` count.
 - `UI SCALE` — integer presets ([ADR-0017](adr/0017-hidpi-display-scaling.md)).
 - `VELOCITY → TL` — FM mode velocity → TL scaling toggle.
 - `AFTERTOUCH` — channel pressure routing: Off / LFO depth / Carrier TL.

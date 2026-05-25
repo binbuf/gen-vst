@@ -115,15 +115,25 @@ LCD on the panel is bound and audible.
   skipped — the voice writes operator/channel/frequency registers
   fresh but does **not** issue the key-off/key-on pair, so the
   envelope keeps running.
-- **Per-op VEL → TL** (`02-fm-synthesis.md` *RYM2612 manual page 10*):
-  on key-on, the effective TL written to the register is
-  `tl_register = clamp(127 - tl_level + (127 × vel_depth ×
-  (127-velocity)/127), 0, 127)`. The `vel_depth` here is the per-op
-  `vel[op]` apvts param. There is **no per-op MW route** — the earlier
-  draft's `mw[op]` term was removed during the post-mockup review to
-  match the RYM2612 reference. Recompute on velocity changes during
-  voice retrigger; no need to rewrite on CC 1 changes (modwheel
-  doesn't affect per-op TL anymore).
+- **Velocity → TL layering** (`02-fm-synthesis.md` § *Velocity → TL
+  layering*) — two independent velocity terms layer additively into
+  the per-op TL register write:
+
+  ```
+  tl_register[op] = clamp(127
+                          - (tl_level[op] × channel_tl)
+                          + (velocity_to_tl ? v1_global_vel_term : 0)
+                          + (127 × vel[op] × (127 − velocity) / 127),
+                          0, 127)
+  ```
+
+  The global `velocity_to_tl` toggle is the project-wide preference;
+  the per-op `vel[op]` knob (RYM2612 manual page 10) is per-patch
+  character. Either can be zero; both stack. There is **no per-op MW
+  route** — the earlier draft's `mw[op]` term was removed during the
+  post-mockup review to match the RYM2612 reference. Recompute on
+  velocity changes during voice retrigger; no need to rewrite on CC 1
+  changes (modwheel doesn't affect per-op TL anymore).
 - **Global MW → PMS** — modwheel CC writes to the `PMS` field in
   `0xB4` per channel at fixed full depth (no `mw_to_pms` scaler in
   v2). The base PMS apvts param is the patch's value; MW adds on top,
@@ -133,10 +143,14 @@ LCD on the panel is bound and audible.
   (Task 08), this clamps to 6 — but that lives in Task 08; this task
   just binds the param.
 - **RANGE stepper** binds `pitch_bend_range` (1..12).
-- **Global PB / MW level meters** are read-only — the editor's
-  telemetry timer pushes raw CC values; the meters render against
-  `0..1`. MW is *only* a global meter in v2; there is no per-operator
-  MW knob anywhere on the FM panel.
+- **Global PB / MW `midi-wheel` widgets** are read-only — they bind
+  to the apvts params `pitch_bend_value` / `mod_wheel_value` through
+  the normal relay layer (`bindSlider`); they are not telemetry-event
+  subscribers. `PluginProcessor` mirrors every inbound pitch-bend
+  message into `pitch_bend_value` and every inbound CC 1 message into
+  `mod_wheel_value` via `setValueNotifyingHost` (see implementation
+  step *MIDI state mirror* below). MW is *only* a global wheel in v2;
+  there is no per-operator MW knob anywhere on the FM panel.
 - **DAC PRESCALER** binds `fm_dac_prescaler` (0.0..1.0). Wired into the
   FM render pipeline between the FM voice sum and the ladder /
   output-filter stages (see `02-fm-synthesis.md` § *DAC Prescaler (FM
@@ -152,9 +166,12 @@ LCD on the panel is bound and audible.
 - C++:
   - `Voice` and / or `VoiceAllocator` gain a per-voice
     `freq_ctrl_mode` snapshot + per-voice `mul_float[4]`, `fixed[4]`,
-    `freq_fixed_hz[4]`, `vel[4]`, and `fm_dac_prescaler` snapshots.
-    (No per-op `mw[4]` — modwheel is global-only in v2. No `mw_to_pms`
-    scaler — modwheel routes to LFO PMS at fixed full depth.)
+    `freq_fixed_hz[4]`, `vel[4]`, `channel_tl`, and `fm_dac_prescaler`
+    snapshots. (No per-op `mw[4]` — modwheel is global-only in v2.
+    No `mw_to_pms` scaler — modwheel routes to LFO PMS at fixed full
+    depth.) The `channel_tl` snapshot folds into each operator's TL
+    register write per `02-fm-synthesis.md` § *Channel TL* and the
+    layering formula in § *Velocity → TL layering*.
   - New `FmRegisterMap` helpers for: writing channel-3 special mode
     + per-op F-numbers; writing CSM mode + TimerA; resolving an
     operator's pitch (in Hz, then to F-number+BLK) under each mode.
@@ -201,8 +218,9 @@ LCD on the panel is bound and audible.
 
 - HARDWARE STRICT enforcement (poly_voices clamp to 6, FLOAT_MUL
   single-voice fallback, force filter/ladder on) — Task 08.
-- UNISON DETUNE param drive — Task 08 (the param exists from Task 02;
-  this task does **not** add unison spread to the voice allocator).
+- Unison spread / `unison_detune_cents` — **dropped from v2 MVP** (no
+  RYM2612 reference; see `docs/tasks/mvp2/README.md` *Post-MVP backlog*).
+  No voice-allocator unison work in this task.
 - Header / Settings — Task 08. (No separate status bar — the v2
   first-pass status bar was removed during the post-mockup review.)
 - Output Filter / Ladder Effect UI binding — Task 08 (the apvts params
@@ -272,6 +290,19 @@ LCD on the panel is bound and audible.
    `freq_ctrl_mode`, `retrig_rate`. The per-op TL / MUL / DT / AR /
    DR / SR / RR / SL / KS / AMON CCs already exist — ensure they
    don't carry `_part<n>` lookups (Task 02 removed those).
+7a. **MIDI state mirror** — display-only apvts mirrors so the FM/SQ
+    `GLOBAL IN` `midi-wheel` widgets can bind through the normal
+    relay layer (no extra telemetry event; see `05-ui-ux.md` § *C++→JS
+    telemetry push*):
+    - In `handleControlChange`, after the existing CC 1 → MW → PMS
+      dispatch, call
+      `modWheelValueParam->setValueNotifyingHost(static_cast<float>(cc) / 127.0f)`.
+    - In the MIDI event loop where pitch-bend is handled, call
+      `pitchBendValueParam->setValueNotifyingHost((static_cast<float>(bend14) - 8192.0f) / 8192.0f)`
+      (clamped to `[-1, +1]`).
+    Both params are cached as raw pointers in `prepareToPlay` exactly
+    like the per-op TL pointer cache; writes happen on the message
+    thread (CC + bend arrive via the host MIDI buffer).
 8. **`fm-view.js`** — build the panel HTML following view 2 verbatim.
    Mount and bind every widget. Wire the op-badge active-row selection
    to the `envelope-curve` widget. Wire FREQ-CTRL-MODE-dependent
@@ -324,13 +355,21 @@ LCD on the panel is bound and audible.
 7. **TL / SL inversion** — set `tl[0]` = 127 (level) — the operator
    plays at full attenuation 0 (loudest). Set `tl[0]` = 0 — silent.
    Same direction on `sl[0]`.
-8. **MW → TL** — set `mw[3] = 1.0` (carrier op modulation depth 100 %).
-   Hold a note; ride CC 1 from 0 to 127. The note loudness drops as
-   the modwheel rises (depth applied to the carrier's TL).
-9. **VEL → TL** — set `vel[3] = 1.0`. Play soft (vel ~32) vs hard
-   (vel ~120). Soft is much quieter; with `vel[3] = 0` (default) there
-   is no velocity effect (assuming the global `velocity_to_tl` toggle
-   is off — that's Settings/Task 08).
+8. **Global MW → PMS** — set patch `PMS = 0`; ride CC 1 from 0 to 127.
+   The vibrato depth rises smoothly — modwheel writes the `PMS` field
+   on `0xB4` per channel at fixed full depth (no scaler). The header
+   `GLOBAL IN` MW wheel tracks the live CC 1 value through the
+   `mod_wheel_value` apvts mirror.
+9. **VEL → TL (per-op)** — set `vel[3] = 1.0`. Play soft (vel ~32) vs
+   hard (vel ~120). Soft is much quieter on operator 4; with
+   `vel[3] = 0` (default) there is no per-op velocity effect (the
+   global `velocity_to_tl` toggle layers additively per
+   `02-fm-synthesis.md` § *Velocity → TL layering* — disable it in
+   Settings to isolate the per-op term).
+9a. **PB visualizer** — hold a note; ride the host's pitch wheel from
+    min to max. The header `GLOBAL IN` PB wheel tracks the live bend
+    through the `pitch_bend_value` apvts mirror; the held note bends
+    audibly by `pitch_bend_range` semitones at the extremes.
 10. **POLY stepper** — set 16, play a chord; ramp to 1 (mono). Voice
     stealing should engage at the new cap.
 11. **RANGE stepper** — set ±2, then ±12. A full-up bend in the host
