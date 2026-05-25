@@ -106,8 +106,8 @@ inline constexpr std::size_t kY12FileSize = 128;
 //
 // Extensions are stored lower-case with the leading dot. Callers comparing
 // against them must lower-case their own input first.
-inline constexpr std::array<std::string_view, 5> kSupportedPatchExtensions {
-    ".tfi", ".vgi", ".dmp", ".y12", ".opm"
+inline constexpr std::array<std::string_view, 6> kSupportedPatchExtensions {
+    ".tfi", ".vgi", ".dmp", ".y12", ".opm", ".psg"
 };
 
 // True if `ext` (a file extension like ".tfi", case-insensitive, must include
@@ -117,11 +117,35 @@ inline constexpr std::array<std::string_view, 5> kSupportedPatchExtensions {
 bool isSupportedPatchExtension (std::string_view ext);
 
 // Build the juce::FileChooser filter literal from kSupportedPatchExtensions —
-// e.g. "*.tfi;*.vgi;*.dmp;*.y12;*.opm". Returned as std::string so this header
-// stays JUCE-free; the caller wraps it in juce::String. PluginEditor.cpp's
-// import file chooser uses this so widening the supported-format list is a
-// one-line change to kSupportedPatchExtensions.
+// e.g. "*.tfi;*.vgi;*.dmp;*.y12;*.opm;*.psg". Returned as std::string so this
+// header stays JUCE-free; the caller wraps it in juce::String.
+// PluginEditor.cpp's import file chooser uses this so widening the
+// supported-format list is a one-line change to kSupportedPatchExtensions.
 std::string buildPatchExtensionFilter();
+
+// The mode a preset belongs to. The browser uses Tag to filter the visible
+// patches and to auto-switch the instance's mode when a patch loads
+// (ADR-0025). D mode has no preset format, so it never appears as a Tag.
+// `Pending` is the placeholder emitted by the folder-scan for `.dmp` files;
+// resolved lazily on folder-expand or load attempt via tagFromFile
+// (ADR-0026). Task 09 treats every `.dmp` as FM at scan and load time; the
+// full content-peek arrives in Task 10.
+enum class Tag : std::uint8_t { FM, SQ, Pending };
+
+// Extension-only tag derivation. Used by the fast folder-scan path (no file
+// I/O). `ext` is case-insensitive and must include the leading dot. Returns
+// `Tag::Pending` for `.dmp` (the tag depends on byte 2 — ADR-0026), or
+// `Tag::FM` / `Tag::SQ` for every other supported extension, or std::nullopt
+// for an unrecognised extension.
+std::optional<Tag> tagFromExtension (std::string_view ext);
+
+// File-aware tag derivation. Used by the file picker, drag-and-drop handler
+// and load path. For `.dmp` files this would peek byte 2 to choose between
+// FM and SQ; Task 09 defers that to Task 10 and returns `Tag::FM` for every
+// `.dmp` (matching the existing FM-only DMP loader). For all other
+// extensions delegates to `tagFromExtension` (its `Pending` is never returned
+// from here). Returns std::nullopt for an unrecognised extension.
+std::optional<Tag> tagFromFile (const std::filesystem::path& path);
 
 // Result of a patch load. C++20, so no std::expected — a std::optional patch
 // plus an error string. On success `patch` holds the data and `error` is

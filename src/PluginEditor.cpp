@@ -1,10 +1,18 @@
 #include "PluginEditor.h"
 
+#include <algorithm>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+#include "PatchSystem.h"
+#include "PsgPreset.h"
+#include "VgmExtract.h"
+
 #if ! GENVST_DEV_SERVER
  #include <memory>
  #include <optional>
  #include <unordered_map>
- #include <vector>
 
  #include "GenVstWebData.h"
 #endif
@@ -125,11 +133,18 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& p)
     // peakL/peakR/noteOn to the meterData event listeners. The webView pointer
     // can be null (fallback mode) -- emitEventIfBrowserIsVisible guards itself.
     startTimerHz (30);
+
+    // Task 09 — patch-loaded callback. The processor invokes this on the
+    // message thread after a preset has been applied; we relay it into the
+    // WebView so the header LCD picks up the new name.
+    processor.setPatchLoadedNotifier (
+        [this] (const PatchLoadedNotifier& note) { emitPatchLoaded (note); });
 }
 
 GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
 {
     stopTimer();
+    processor.setPatchLoadedNotifier ({});
 }
 
 juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
@@ -182,18 +197,47 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 processor.resetAllParametersToDefaults();
                 completion (juce::var{});
             })
-        // Task 08 — patch navigation stub. Task 09 supplies the real
-        // PatchSystem extension; for this task the function returns the
-        // current patch path unchanged (a blank string for v0.2) so the
-        // header buttons' click handlers resolve without surprising the UI.
+        // Task 09 — tagged preset browser native API.
         .withNativeFunction ("patchNav",
-            [this] (const juce::Array<juce::var>& /*args*/,
+            [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
-            {
-                // Active path for FM part 0 — the only part the v0.2 UI surfaces.
-                const auto path = processor.getPatchBrowser().activePatchPath (0);
-                completion (juce::var (path));
-            });
+            { doPatchNav (args, std::move (completion)); })
+        .withNativeFunction ("loadPatch",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doLoadPatch (args, std::move (completion)); })
+        .withNativeFunction ("savePatch",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doSavePatch (args, std::move (completion)); })
+        .withNativeFunction ("importPatch",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doImportPatch (args, std::move (completion)); })
+        .withNativeFunction ("exportPatch",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doExportPatch (args, std::move (completion)); })
+        .withNativeFunction ("addPatchRoot",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doAddPatchRoot (args, std::move (completion)); })
+        .withNativeFunction ("deletePatch",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doDeletePatch (args, std::move (completion)); })
+        .withNativeFunction ("expandFolder",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doExpandFolder (args, std::move (completion)); })
+        .withNativeFunction ("getPatchList",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doGetPatchList (args, std::move (completion)); })
+        .withNativeFunction ("getPatchRoots",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doGetPatchRoots (args, std::move (completion)); });
 
    #if ! GENVST_DEV_SERVER
     options = options.withResourceProvider (
@@ -416,4 +460,344 @@ void GenVstAudioProcessorEditor::timerCallback()
     obj->setProperty ("peakR",  t.vuRight());
     obj->setProperty ("noteOn", t.noteOn());
     webView->emitEventIfBrowserIsVisible ("meterData", juce::var (obj));
+}
+
+// =============================================================================
+// Task 09 — preset browser native API + drag-and-drop
+// =============================================================================
+
+void GenVstAudioProcessorEditor::emitPatchLoaded (const PatchLoadedNotifier& note)
+{
+    if (webView == nullptr) return;
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty ("name", note.name);
+    obj->setProperty ("tag",  juce::String (note.tag == Tag::SQ ? "SQ" : "FM"));
+    obj->setProperty ("path", note.path);
+    webView->emitEventIfBrowserIsVisible ("patchLoaded", juce::var (obj));
+}
+
+void GenVstAudioProcessorEditor::emitToast (const juce::String& level,
+                                            const juce::String& message)
+{
+    if (webView == nullptr) return;
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty ("level",   level);
+    obj->setProperty ("message", message);
+    webView->emitEventIfBrowserIsVisible ("notify", juce::var (obj));
+}
+
+namespace
+{
+    juce::String stringArg (const juce::Array<juce::var>& args, int idx)
+    {
+        return idx < args.size() ? args[idx].toString() : juce::String{};
+    }
+
+    int intArg (const juce::Array<juce::var>& args, int idx, int fallback)
+    {
+        if (idx >= args.size()) return fallback;
+        const auto& v = args.getReference (idx);
+        if (v.isInt() || v.isInt64() || v.isDouble()) return static_cast<int> (v);
+        if (v.isString())
+        {
+            const auto s = v.toString();
+            if (s == "prev" || s == "-1") return -1;
+            if (s == "next" || s == "+1" || s == "1") return 1;
+            return s.getIntValue();
+        }
+        return fallback;
+    }
+
+    juce::var resultObject (bool ok, const juce::String& error = {},
+                            const juce::String& path = {})
+    {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty ("ok",    ok);
+        obj->setProperty ("error", error);
+        if (path.isNotEmpty()) obj->setProperty ("path", path);
+        return juce::var (obj);
+    }
+}
+
+void GenVstAudioProcessorEditor::doLoadPatch (const juce::Array<juce::var>& args,
+                                              juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const auto path = stringArg (args, 0);
+    const auto err  = processor.loadPresetFromPath (path);
+    if (err.isNotEmpty())
+        emitToast ("error", err);
+    completion (resultObject (err.isEmpty(), err, path));
+}
+
+void GenVstAudioProcessorEditor::doSavePatch (const juce::Array<juce::var>& args,
+                                              juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    auto name = stringArg (args, 0);
+    if (name.isEmpty()) name = "preset";
+
+    juce::String saveErr;
+    const auto savedPath = processor.savePresetForCurrentMode (name, saveErr);
+    if (savedPath.isEmpty())
+    {
+        emitToast ("error", saveErr);
+        completion (resultObject (false, saveErr));
+        return;
+    }
+    emitToast ("info", "Saved " + name);
+    completion (resultObject (true, {}, savedPath));
+}
+
+void GenVstAudioProcessorEditor::doImportPatch (const juce::Array<juce::var>& /*args*/,
+                                                juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const auto filter = juce::String (buildPatchExtensionFilter());
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Import patch", juce::File{}, filter);
+
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+        [this, completion = std::move (completion)] (const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (file == juce::File{}) { completion (resultObject (false, "cancelled")); return; }
+
+            const auto err = processor.getPatchBrowser().importPatchFile (file.getFullPathName());
+            if (! err.empty())
+            {
+                emitToast ("error", juce::String (err));
+                completion (resultObject (false, juce::String (err)));
+                return;
+            }
+            emitToast ("info", "Imported " + file.getFileName());
+            completion (resultObject (true, {}, file.getFullPathName()));
+        });
+}
+
+void GenVstAudioProcessorEditor::doExportPatch (const juce::Array<juce::var>& args,
+                                                juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    // `format` is "tfi" / "vgi" / "psg". The chooser default extension drives
+    // the suggested filename.
+    const auto format = stringArg (args, 0).toLowerCase();
+    if (format.isEmpty())
+    {
+        completion (resultObject (false, "missing export format"));
+        return;
+    }
+
+    juce::String filter;
+    if      (format == "tfi") filter = "*.tfi";
+    else if (format == "vgi") filter = "*.vgi";
+    else if (format == "psg") filter = "*.psg";
+    else
+    {
+        completion (resultObject (false, "unsupported format: " + format));
+        return;
+    }
+
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Export patch", juce::File{}, filter);
+
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, format, completion = std::move (completion)] (const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File{}) { completion (resultObject (false, "cancelled")); return; }
+
+            // Ensure the chosen file has the right extension (some platforms
+            // skip auto-appending).
+            const auto dotExt = juce::String (".") + format;
+            if (! file.hasFileExtension (dotExt))
+                file = file.withFileExtension (dotExt);
+
+            const auto err = processor.exportPresetForCurrentMode (file.getFullPathName());
+            if (err.isNotEmpty())
+            {
+                emitToast ("error", err);
+                completion (resultObject (false, err));
+                return;
+            }
+            emitToast ("info", "Exported " + file.getFileName());
+            completion (resultObject (true, {}, file.getFullPathName()));
+        });
+}
+
+void GenVstAudioProcessorEditor::doAddPatchRoot (const juce::Array<juce::var>& /*args*/,
+                                                  juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Add patch folder", juce::File{}, "*");
+
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectDirectories,
+        [this, completion = std::move (completion)] (const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (file == juce::File{} || ! file.isDirectory())
+            {
+                completion (resultObject (false, "cancelled"));
+                return;
+            }
+            const auto id = processor.getPatchBrowser().addCustomRoot (file.getFullPathName());
+            if (id.isEmpty())
+            {
+                emitToast ("warn", "Folder already registered or not a directory");
+                completion (resultObject (false, "addCustomRoot failed"));
+                return;
+            }
+            emitToast ("info", "Added folder " + file.getFileName());
+            completion (resultObject (true, {}, file.getFullPathName()));
+        });
+}
+
+void GenVstAudioProcessorEditor::doDeletePatch (const juce::Array<juce::var>& args,
+                                                juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const auto path = stringArg (args, 0);
+    if (path.isEmpty())
+    {
+        completion (resultObject (false, "empty path"));
+        return;
+    }
+    const auto err = processor.getPatchBrowser().deletePatchFile (path);
+    if (! err.empty())
+    {
+        emitToast ("warn", juce::String (err));
+        completion (resultObject (false, juce::String (err)));
+        return;
+    }
+    completion (resultObject (true, {}, path));
+}
+
+void GenVstAudioProcessorEditor::doPatchNav (const juce::Array<juce::var>& args,
+                                              juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const int dir = intArg (args, 0, 0);
+    const auto err = processor.patchNavigate (dir);
+    if (err.isNotEmpty())
+    {
+        // No-op cases (D mode, empty pool) shouldn't toast — just return.
+        completion (resultObject (false, err));
+        return;
+    }
+    completion (resultObject (true));
+}
+
+void GenVstAudioProcessorEditor::doExpandFolder (const juce::Array<juce::var>& args,
+                                                  juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const auto path = stringArg (args, 0);
+    completion (processor.getPatchBrowser().folderAsJson (path));
+}
+
+void GenVstAudioProcessorEditor::doGetPatchList (const juce::Array<juce::var>& /*args*/,
+                                                  juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    completion (processor.listAllPresetsAsJson());
+}
+
+void GenVstAudioProcessorEditor::doGetPatchRoots (const juce::Array<juce::var>& /*args*/,
+                                                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    completion (processor.getPatchBrowser().rootsAsJson());
+}
+
+// -----------------------------------------------------------------------------
+// FileDragAndDropTarget (Task 09 — drag-and-drop import)
+// -----------------------------------------------------------------------------
+
+bool GenVstAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    namespace fs = std::filesystem;
+    for (const auto& f : files)
+    {
+        const fs::path p { f.toRawUTF8() };
+        std::error_code ec;
+        if (fs::is_directory (p, ec)) return true;
+        const auto ext = juce::String (p.extension().string()).toLowerCase();
+        if (isSupportedPatchExtension (ext.toRawUTF8())) return true;
+        if (ext == ".vgm" || ext == ".vgz") return true;
+    }
+    return false;
+}
+
+void GenVstAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    std::vector<juce::String> paths;
+    paths.reserve ((std::size_t) files.size());
+    for (const auto& f : files) paths.push_back (f);
+    handleDroppedPaths (paths);
+}
+
+void GenVstAudioProcessorEditor::handleDroppedPaths (const std::vector<juce::String>& paths)
+{
+    namespace fs = std::filesystem;
+    auto& browser = processor.getPatchBrowser();
+
+    int importedFiles  = 0;
+    int importedBanks  = 0;
+    int importedFolders = 0;
+    int skipped        = 0;
+    std::vector<std::string> errors;
+
+    for (const auto& path : paths)
+    {
+        const fs::path p { path.toRawUTF8() };
+        std::error_code ec;
+
+        if (fs::is_directory (p, ec))
+        {
+            // Folder drop: recursive import into the user-imported root
+            // (ADR-0025 + v2 spec — "register as custom root" was the v1
+            // behaviour; v2 imports every supported file).
+            const auto res = browser.importPatchFolder (path);
+            importedFiles += res.imported;
+            skipped       += res.skipped;
+            for (const auto& e : res.errors) errors.push_back (e);
+            ++importedFolders;
+            continue;
+        }
+
+        const auto extLower = juce::String (p.extension().string()).toLowerCase();
+        if (extLower == ".vgm" || extLower == ".vgz")
+        {
+            // Import Bank — extract every patch and write to the user-imported root.
+            std::string vgmErr;
+            const auto patches = extractFmPatches (p, vgmErr);
+            if (! vgmErr.empty())
+            {
+                errors.push_back (vgmErr);
+                continue;
+            }
+            const auto saveResult = browser.saveExtractedPatches (patches);
+            importedBanks += saveResult.saved;
+            for (const auto& e : saveResult.errors) errors.push_back (e);
+            (void) browser.rescanWritableRoots();
+            continue;
+        }
+
+        if (isSupportedPatchExtension (extLower.toRawUTF8()))
+        {
+            const auto err = browser.importPatchFile (path);
+            if (! err.empty()) errors.push_back (err);
+            else               ++importedFiles;
+            continue;
+        }
+
+        // Unrecognised extension — silently ignored per the task spec.
+        ++skipped;
+    }
+
+    // Summary toast.
+    juce::StringArray pieces;
+    if (importedFiles  > 0) pieces.add (juce::String (importedFiles)  + " file(s)");
+    if (importedBanks  > 0) pieces.add (juce::String (importedBanks)  + " bank patch(es)");
+    if (importedFolders> 0) pieces.add (juce::String (importedFolders)+ " folder(s)");
+    if (! pieces.isEmpty())
+        emitToast ("info", "Imported " + pieces.joinIntoString (", "));
+    if (! errors.empty())
+        emitToast ("warn",
+                   juce::String ((int) errors.size()) + " drop error(s); first: "
+                       + juce::String (errors.front()));
 }

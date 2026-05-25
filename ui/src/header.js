@@ -18,6 +18,7 @@ import {
   bindSlider,
   bindToggle,
   bindCombo,
+  onBackendEvent,
 } from "./binding.js";
 
 import { mount as mountNoteOn }       from "./widgets/note-on-led.js";
@@ -185,10 +186,10 @@ export function mount(host, opts = {}) {
   const browseBtn = el("button", { className: "icon-btn", text: "📂" });
   browseBtn.type = "button";
 
-  // Patch nav stubs — Task 09 supplies the real PatchSystem extension. For
-  // now wire the buttons to the native `patchNav` function (which returns
-  // the current path unchanged in this task) and to the browser opener (a
-  // no-op toast until Task 09).
+  // Patch nav — calls the native `patchNav` function with -1/+1 to walk the
+  // current mode's sorted preset list. The 📂 button opens the unified
+  // preset browser modal via the caller's onOpenBrowser hook (main.js mounts
+  // the browser).
   let patchNavFn = null;
   try {
     patchNavFn = getNativeFunction("patchNav");
@@ -320,13 +321,18 @@ export function mount(host, opts = {}) {
 
   // --- Greying + lock subscriptions -------------------------------------
 
+  // Most-recently-loaded patch name across FM + SQ. Restored into the LCD
+  // when leaving D mode (the C++ side pushes `patchLoaded` events on every
+  // successful load — see PluginEditor::emitPatchLoaded).
+  let lastPatchName = IDLE_LCD_PLACEHOLDER;
+
   // D-mode patch cluster greying. When mode_select == D the entire ◀ LCD ▶
   // 📂 cluster becomes non-interactive and the LCD displays AUDIO FX.
   // Mirrors the SQ/D greying rules in view 1.
   const applyModeGrey = (modeIdx) => {
     const isD = (modeIdx === MODE_D);
     patchWrap.classList.toggle("is-disabled", isD);
-    patchLcd.setText(isD ? D_LCD_PLACEHOLDER : IDLE_LCD_PLACEHOLDER);
+    patchLcd.setText(isD ? D_LCD_PLACEHOLDER : lastPatchName);
     // Ladder greyed in SQ (no audible effect on the PSG path).
     const isSq = (modeIdx === MODE_SQ);
     ladderWrap.classList.toggle("is-disabled", isSq);
@@ -338,6 +344,21 @@ export function mount(host, opts = {}) {
     applyModeGrey(idx);
     // Visual highlighting of the active pill segment.
     modeBtns.forEach((btn, i) => btn.classList.toggle("is-active", i === idx));
+  });
+
+  // patchLoaded event — fired by the C++ side after a successful preset
+  // load (FM or SQ). Updates the LCD unless we're sitting in D mode, in
+  // which case the placeholder stays put until the user leaves D.
+  const unsubPatch = onBackendEvent("patchLoaded", (payload) => {
+    let data = payload;
+    if (typeof payload === "string") {
+      try { data = JSON.parse(payload); } catch (_e) { data = {}; }
+    }
+    const name = (data && data.name) ? String(data.name) : IDLE_LCD_PLACEHOLDER;
+    lastPatchName = name;
+    if (modeCombo.getIndex() !== MODE_D) {
+      patchLcd.setText(name);
+    }
   });
 
   // HARDWARE STRICT lock: when on, both the Output Filter switch and Ladder
@@ -359,10 +380,14 @@ export function mount(host, opts = {}) {
   });
 
   return {
-    setLcdText(text) { patchLcd.setText(String(text ?? IDLE_LCD_PLACEHOLDER)); },
+    setLcdText(text) {
+      lastPatchName = String(text ?? IDLE_LCD_PLACEHOLDER);
+      if (modeCombo.getIndex() !== MODE_D) patchLcd.setText(lastPatchName);
+    },
     dispose() {
       if (unsubMode)   unsubMode();
       if (unsubStrict) unsubStrict();
+      if (unsubPatch)  unsubPatch();
       noteOn.dispose();
       if (dacKnob) dacKnob.dispose();
       host.innerHTML = "";

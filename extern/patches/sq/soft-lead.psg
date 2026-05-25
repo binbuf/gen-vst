@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "soft-lead",
+  "channels": {
+    "tone1": { "atk": 8, "dr1": 4, "sus": 12, "dr2": 0, "rr": 6,
+               "vol": 0.8, "pan": -0.3, "detune": 0 },
+    "tone2": { "atk": 8, "dr1": 4, "sus": 12, "dr2": 0, "rr": 6,
+               "vol": 0.8, "pan": 0.3, "detune": 7 },
+    "tone3": { "atk": 0, "dr1": 0, "sus": 15, "dr2": 0, "rr": 0,
+               "vol": 0.0, "pan": 0.0, "detune": 0 },
+    "noise": { "atk": 0, "dr1": 0, "sus": 15, "dr2": 0, "rr": 0,
+               "vol": 0.0, "pan": 0.0,
+               "type": "white", "rate": "mid" }
+  }
+}

@@ -2,6 +2,8 @@
 
 #include <array>
 #include <atomic>
+#include <filesystem>
+#include <string>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -10,10 +12,22 @@
 #include "OutputFilter.h"
 #include "PatchBrowser.h"
 #include "PatchSystem.h"
+#include "PsgPreset.h"
 #include "SN76489Engine.h"
 #include "Telemetry.h"
 #include "VgmLogger.h"
 #include "VoiceAllocator.h"
+
+// Notifier callback signature for patchLoaded → editor. The processor
+// invokes the registered callback on the message thread after a preset
+// has been applied so the editor can push a `patchLoaded` event into the
+// WebView (which updates the header LCD).
+struct PatchLoadedNotifier
+{
+    juce::String name;             // display name (filename stem or preset.name)
+    Tag          tag = Tag::FM;    // FM or SQ — auto-switch destination
+    juce::String path;             // absolute path of the loaded patch
+};
 
 // Raw std::atomic<float>* views of the v2 single-engine FM parameters, cached
 // so the audio thread reads parameters with no map lookups, locks or allocation
@@ -46,7 +60,9 @@ struct FmParamCache
     std::atomic<float>* retrigRateParam     = nullptr;
 };
 
-class GenVstAudioProcessor : public juce::AudioProcessor
+class GenVstAudioProcessor : public juce::AudioProcessor,
+                             private juce::AudioProcessorValueTreeState::Listener,
+                             private juce::AsyncUpdater
 {
 public:
     // Active engine — selected by the `mode_select` apvts parameter.
@@ -89,11 +105,82 @@ public:
     // patch path is purely a UI label, but the browser owns it.
     void resetAllParametersToDefaults();
 
+    // ---- Task 09: tagged preset loading ------------------------------------
+    // Load the preset at `absolutePath`. Message thread only. Detects the
+    // file's Tag (via PatchSystem::tagFromFile), flips `mode_select` if the
+    // tag differs from the current mode, applies the preset to the apvts
+    // (FM via the patch-delivery FIFO; SQ via setValueNotifyingHost), and
+    // records the active path for the destination mode. Returns an empty
+    // string on success or a descriptive error message for the toast.
+    // On success the registered patch-loaded callback (see
+    // setPatchLoadedNotifier) is invoked with the patch name + tag + path.
+    juce::String loadPresetFromPath (const juce::String& absolutePath);
+
+    // Save the current mode's apvts state to disk in the user-saved root.
+    // Returns the absolute output path on success or empty on failure.
+    // FM writes `<name>.tfi`; SQ writes `<name>.psg`. D mode is unsavable
+    // (no preset format) — returns empty + non-empty `outError`.
+    juce::String savePresetForCurrentMode (const juce::String& name,
+                                           juce::String& outError);
+
+    // Export the current mode's apvts state to `destinationPath`. The
+    // extension determines the format; FM supports `.tfi` / `.vgi`, SQ
+    // supports `.psg`. Returns empty on success or an error string.
+    juce::String exportPresetForCurrentMode (const juce::String& destinationPath);
+
+    // Default factory preset path for `mode`. Used by the manual-mode-switch
+    // listener and by patchNav when the destination mode has no active path
+    // yet. Empty for D (no preset format).
+    juce::String defaultPresetPathForMode (Mode mode) const;
+
+    // Active patch paths, set when loadPresetFromPath succeeds. Empty
+    // strings mean "no preset has been loaded for this mode yet". Read by
+    // the manual-mode-switch listener (decides whether to load the default)
+    // and by patchNav (anchors prev/next traversal).
+    juce::String activePathForMode (Mode mode) const;
+
+    // Prev / next navigation within the active mode's sorted preset list.
+    // Direction: -1 = prev, +1 = next. Loads the resolved preset via
+    // loadPresetFromPath (so the patch-loaded callback fires). No-op in D
+    // mode (returns empty). Returns an error string on failure.
+    juce::String patchNavigate (int direction);
+
+    // Build a flat JSON-ready array describing every preset across every
+    // root with its tag (FM/SQ — Pending DMP files are resolved via
+    // tagFromFile here so the browser badge is final). Used by the
+    // getPatchList native function. Schema:
+    //   [{ name, path, tag, rootId, folderPath }, ...]
+    juce::var listAllPresetsAsJson() const;
+
+    // Register the patch-loaded callback. Called on the message thread.
+    // Pass {} to clear. Editor calls this in its constructor.
+    void setPatchLoadedNotifier (std::function<void (const PatchLoadedNotifier&)> cb);
+
     // Public so unit tests can build the layout standalone (no AudioProcessor
     // instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
+    // juce::AudioProcessorValueTreeState::Listener — called when mode_select
+    // changes (audio or message thread). We forward to the AsyncUpdater so
+    // the default-load runs on the message thread.
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+
+    // juce::AsyncUpdater — runs on the message thread after a mode_select
+    // change. Loads the default preset for the new mode if no preset is
+    // already active there (and the mode is FM or SQ).
+    void handleAsyncUpdate() override;
+
+    // Internal apply paths for the two preset formats. Both run on the
+    // message thread. The FM path enqueues into the patch-delivery FIFO and
+    // also calls setValueNotifyingHost so the host + UI see the change.
+    juce::String applyFmPatch (const Patch& patch, const juce::String& absolutePath);
+    juce::String applyPsgPreset (const PsgPreset& preset, const juce::String& absolutePath);
+
+    // Per-mode active path setters/getters (internal — apvts state-save will
+    // eventually persist these, see Task 11).
+    void setActivePathForMode (Mode mode, const juce::String& path);
+
     void renderFmBlock  (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void renderSqBlock  (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void renderDBlock   (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
@@ -160,6 +247,21 @@ private:
     // dispatch (handleChannelPressure); read once per FM render block to drive
     // the AFTERTOUCH routing (LFO PMS or Carrier TL) per Settings view 6.
     std::atomic<float> channelPressureNorm { 0.0f };
+
+    // Task 09: per-mode active patch paths + factory-root path cache. Empty
+    // string = "no preset has been loaded for this mode". Read by the manual
+    // mode-switch listener (decides default-load) and by patchNav.
+    juce::String                  activeFmPath;
+    juce::String                  activeSqPath;
+    mutable juce::CriticalSection activePathLock;
+
+    std::filesystem::path                 factoryRootPath;
+    std::function<void (const PatchLoadedNotifier&)> patchLoadedCallback;
+
+    // Latch the previous mode in handleAsyncUpdate so we don't load the
+    // default twice in a row (the listener can fire multiple times per
+    // change in some hosts).
+    Mode lastHandledMode = Mode::FM;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

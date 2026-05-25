@@ -19,6 +19,7 @@
 // toggle; the per-mode panel relays (FM/SQ/D) come in Tasks 05-07 and are
 // folded into makeOptions() alongside these.
 class GenVstAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                   public juce::FileDragAndDropTarget,
                                    private juce::Timer
 {
 public:
@@ -28,6 +29,12 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // juce::FileDragAndDropTarget — Task 09 drag-and-drop entry point. The
+    // editor accepts any file with a supported patch extension, a `.vgm` /
+    // `.vgz` (Import Bank), or a folder (recursive import).
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files, int x, int y) override;
+
 private:
     void timerCallback() override;
 
@@ -35,6 +42,47 @@ private:
     void showFallbackPanel();
 
     juce::WebBrowserComponent::Options makeOptions();
+
+    // Fire the `patchLoaded` event into the WebView so the header LCD
+    // updates. Called from the processor's patch-loaded callback.
+    void emitPatchLoaded (const PatchLoadedNotifier& note);
+
+    // Surface a notification toast in the UI. `level` is one of
+    // "info" / "warn" / "error".
+    void emitToast (const juce::String& level, const juce::String& message);
+
+    // Native function helpers — push results back through the
+    // NativeFunctionCompletion API.
+    void doLoadPatch     (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doSavePatch     (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doImportPatch   (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doExportPatch   (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doAddPatchRoot  (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doDeletePatch   (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doPatchNav      (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doExpandFolder  (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doGetPatchList  (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doGetPatchRoots (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+
+    // Internal helper — DnD per the rules in Task 09 *Context* §
+    // Drag-and-drop. Each file is dispatched by its extension; folders run
+    // the recursive importer.
+    void handleDroppedPaths (const std::vector<juce::String>& paths);
+
+    // Pending file-chooser used by importPatch / exportPatch / addPatchRoot.
+    // JUCE 8 requires the chooser to outlive its callback; keep it as a
+    // member so a second prompt cancels the first cleanly.
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
     GenVstAudioProcessor& processor;
 

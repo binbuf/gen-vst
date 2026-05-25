@@ -18,8 +18,9 @@ import { mount as mountHeader } from "./header.js";
 import { mount as mountFmView } from "./views/fm-view.js";
 import { mount as mountSqView } from "./views/sq-view.js";
 import { mount as mountDView }  from "./views/d-view.js";
-import { open as openSettings } from "./modals/settings.js";
-import { open as openAbout }    from "./modals/about.js";
+import { open as openSettings }      from "./modals/settings.js";
+import { open as openAbout }         from "./modals/about.js";
+import { open as openPresetBrowser } from "./modals/preset-browser.js";
 
 const MODE_FM = 0;
 const MODE_SQ = 1;
@@ -39,22 +40,13 @@ function init() {
   if (frame) installTooltips(frame);
 
   // Persistent header — Task 08. Wires gear → Settings, wordmark → About,
-  // and the 📂 button to a no-op stub until Task 09 supplies the browser.
+  // and the 📂 button to the unified preset browser modal (Task 09).
   const headerHost = document.querySelector(".hdr");
   if (headerHost) {
     mountHeader(headerHost, {
       onOpenSettings: () => openSettings(),
       onOpenAbout:    () => openAbout(),
-      onOpenBrowser:  () => {
-        // Task 09 wires this to the real preset-browser modal. Until then,
-        // a toast keeps the user informed.
-        if (window.__JUCE__ && window.__JUCE__.backend) {
-          window.__JUCE__.backend.emitByBackend("notify", JSON.stringify({
-            level: "info",
-            message: "Preset browser — coming in Task 09.",
-          }));
-        }
-      },
+      onOpenBrowser:  () => openPresetBrowser(),
     });
   }
 

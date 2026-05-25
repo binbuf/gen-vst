@@ -64,8 +64,10 @@ TEST (PatchBrowser, FactoryRootLoadsFactoryPatches)
     EXPECT_TRUE (factoryFolder.scanned);
     EXPECT_EQ ((int) factoryFolder.patches.size(), browser.numFactoryPatches());
 
-    // Subfolders count zero on a fresh repo — Furnace's tfilib is a flat dir.
-    EXPECT_EQ (factoryFolder.subfolders.size(), 0u);
+    // One subfolder: extern/patches/sq/ (the SQ factory presets shipped
+    // alongside the flat top-level Furnace tfilib). Task 09 added this.
+    EXPECT_EQ (factoryFolder.subfolders.size(), 1u);
+    EXPECT_EQ (factoryFolder.subfolders.front()->name, juce::String ("sq"));
 
     EXPECT_EQ (rootsVec[0]->id, juce::String ("factory"));
     EXPECT_EQ (rootsVec[1]->id, juce::String ("user-saved"));

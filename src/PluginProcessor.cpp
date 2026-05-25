@@ -6,9 +6,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <string_view>
+#include <system_error>
+#include <vector>
 
 #include "FmRegisterMap.h"
 #include "PluginState.h"
+#include "PsgPreset.h"
 
 namespace
 {
@@ -459,10 +462,17 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     velocityToTlParam    = apvts.getRawParameterValue ("velocity_to_tl");
     hardwareStrictParam  = apvts.getRawParameterValue ("hardware_strict");
     aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
+
+    // Task 09 — listen for `mode_select` changes to drive the default-load
+    // on manual mode switches.
+    apvts.addParameterListener ("mode_select", this);
+    lastHandledMode = currentMode();
 }
 
 GenVstAudioProcessor::~GenVstAudioProcessor()
 {
+    apvts.removeParameterListener ("mode_select", this);
+    cancelPendingUpdate();
     patchBrowser.shutdown();
 }
 
@@ -494,7 +504,8 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 
     if (! patchBrowserInitialised)
     {
-        patchBrowser.initialize (resolveFactoryRoot (wrapperType));
+        factoryRootPath = resolveFactoryRoot (wrapperType);
+        patchBrowser.initialize (factoryRootPath);
         patchBrowserInitialised = true;
     }
 }
@@ -1185,6 +1196,495 @@ void GenVstAudioProcessor::setStateInformation (const void* data, int sizeInByte
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         genvst::state::restore (*this, *xml);
+}
+
+// =============================================================================
+// Task 09 — tagged preset loading + mode-switch defaults
+// =============================================================================
+
+namespace
+{
+    // Helper: set a single apvts parameter via setValueNotifyingHost given an
+    // already-clamped value in the parameter's native range. Mirrors
+    // PsgPreset.cpp's setParamScaled.
+    void setApvtsScaled (juce::AudioProcessorValueTreeState& apvts,
+                         const juce::String& id, float scaledValue)
+    {
+        if (auto* p = apvts.getParameter (id))
+        {
+            const auto& r = p->getNormalisableRange();
+            const float n = r.convertTo0to1 (juce::jlimit (r.start, r.end, scaledValue));
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (n);
+            p->endChangeGesture();
+        }
+    }
+
+    // Convert a Mode enum to the apvts choice index.
+    int modeToChoiceIndex (GenVstAudioProcessor::Mode m) noexcept
+    {
+        return static_cast<int> (m);
+    }
+
+    // FM param IDs + per-op variants — used to push a parsed Patch into the
+    // apvts via setValueNotifyingHost (auto-mode-switch UI feedback path).
+    struct FmApplyMap
+    {
+        const char* id;
+        std::uint8_t (Patch::* field)[4];
+        int  maxAtten;        // for tl/sl inversion
+        bool invertForUi;     // tl / sl: hardware attenuation → UI level
+    };
+
+    constexpr FmApplyMap kFmOpApply[]
+    {
+        { "dt",   &Patch::dt,    6,  false },
+        { "mul",  &Patch::mul,  15,  false },
+        { "tl",   &Patch::tl,  127,  true  },
+        { "ks",   &Patch::ks,    3,  false },
+        { "ar",   &Patch::ar,   31,  false },
+        { "dr",   &Patch::dr,   31,  false },
+        { "sr",   &Patch::sr,   31,  false },
+        { "rr",   &Patch::rr,   15,  false },
+        { "sl",   &Patch::sl,   15,  true  },
+        { "ssg",  &Patch::ssg,  15,  false },
+        { "amon", &Patch::amon,  1,  false },
+    };
+
+    void applyFmPatchToApvts (juce::AudioProcessorValueTreeState& apvts, const Patch& p)
+    {
+        for (const auto& d : kFmOpApply)
+        {
+            for (int op = 0; op < 4; ++op)
+            {
+                const int raw = static_cast<int> ((p.*(d.field))[op]);
+                const int value = d.invertForUi
+                                    ? FmRegisterMap::levelToAttenuation (raw, d.maxAtten)
+                                    : raw;
+                setApvtsScaled (apvts,
+                                juce::String (d.id) + "_op" + juce::String (op + 1),
+                                static_cast<float> (value));
+            }
+        }
+        setApvtsScaled (apvts, "alg",        (float) p.alg);
+        setApvtsScaled (apvts, "fb",         (float) p.fb);
+        setApvtsScaled (apvts, "ams",        (float) p.ams);
+        setApvtsScaled (apvts, "pms",        (float) p.pms);
+        setApvtsScaled (apvts, "lr",         (float) p.lr);
+        setApvtsScaled (apvts, "lfo_enable", (float) p.lfo_enable);
+        setApvtsScaled (apvts, "lfo_rate",   (float) p.lfo_rate);
+    }
+}
+
+void GenVstAudioProcessor::parameterChanged (const juce::String& parameterID, float /*newValue*/)
+{
+    if (parameterID == "mode_select")
+        triggerAsyncUpdate();
+}
+
+void GenVstAudioProcessor::handleAsyncUpdate()
+{
+    const Mode m = currentMode();
+    if (m == lastHandledMode)
+        return;
+    lastHandledMode = m;
+
+    if (m == Mode::D)
+        return;   // D mode: host owns the apvts values (ADR-0021).
+
+    const juce::String activePath = activePathForMode (m);
+    if (activePath.isNotEmpty())
+        return;   // mode already has a real patch — don't clobber it.
+
+    const auto defaultPath = defaultPresetPathForMode (m);
+    if (defaultPath.isEmpty())
+        return;   // no default available (factory root not resolved yet).
+
+    // Loading the default may auto-switch mode (it can't here — the path
+    // matches the current mode by construction). Errors are silent: a
+    // missing default is non-fatal; the panel just starts blank.
+    loadPresetFromPath (defaultPath);
+}
+
+void GenVstAudioProcessor::setPatchLoadedNotifier (
+    std::function<void (const PatchLoadedNotifier&)> cb)
+{
+    patchLoadedCallback = std::move (cb);
+}
+
+juce::String GenVstAudioProcessor::defaultPresetPathForMode (Mode mode) const
+{
+    if (mode == Mode::D || factoryRootPath.empty())
+        return {};
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (! fs::is_directory (factoryRootPath, ec))
+        return {};
+
+    if (mode == Mode::SQ)
+    {
+        const auto sqDefault = factoryRootPath / "sq" / "default.psg";
+        if (fs::is_regular_file (sqDefault, ec))
+            return juce::String (sqDefault.string());
+        return {};
+    }
+
+    // FM — prefer extern/patches/bass.tfi, fall back to the first sorted
+    // factory .tfi file.
+    const auto bass = factoryRootPath / "bass.tfi";
+    if (fs::is_regular_file (bass, ec))
+        return juce::String (bass.string());
+
+    std::vector<fs::path> candidates;
+    for (const auto& entry : fs::directory_iterator (factoryRootPath, ec))
+    {
+        if (! entry.is_regular_file (ec)) continue;
+        const auto ext = entry.path().extension().string();
+        if (ext == ".tfi" || ext == ".TFI")
+            candidates.push_back (entry.path());
+    }
+    std::sort (candidates.begin(), candidates.end(),
+               [] (const fs::path& a, const fs::path& b)
+               { return a.filename() < b.filename(); });
+    if (! candidates.empty())
+        return juce::String (candidates.front().string());
+
+    return {};
+}
+
+juce::String GenVstAudioProcessor::activePathForMode (Mode mode) const
+{
+    const juce::ScopedLock lk (activePathLock);
+    if (mode == Mode::FM) return activeFmPath;
+    if (mode == Mode::SQ) return activeSqPath;
+    return {};
+}
+
+void GenVstAudioProcessor::setActivePathForMode (Mode mode, const juce::String& path)
+{
+    const juce::ScopedLock lk (activePathLock);
+    if      (mode == Mode::FM) activeFmPath = path;
+    else if (mode == Mode::SQ) activeSqPath = path;
+}
+
+juce::String GenVstAudioProcessor::loadPresetFromPath (const juce::String& absolutePath)
+{
+    if (absolutePath.isEmpty())
+        return "empty path";
+
+    const std::filesystem::path fsPath { absolutePath.toRawUTF8() };
+    const auto tagOpt = tagFromFile (fsPath);
+    if (! tagOpt.has_value())
+        return "unrecognised patch extension: " + fsPath.extension().string();
+
+    const Tag tag = *tagOpt;
+
+    // Step 1: parse on the message thread. If parsing fails we never touch
+    // mode_select or any apvts param — the user's current state is
+    // preserved.
+    if (tag == Tag::FM)
+    {
+        const auto extLower = juce::String (fsPath.extension().string()).toLowerCase();
+        PatchLoadResult result { std::nullopt, "unsupported FM extension" };
+        if      (extLower == ".tfi") result = loadTFI (fsPath);
+        else if (extLower == ".vgi") result = loadVGI (fsPath);
+        else if (extLower == ".dmp") result = loadDMP (fsPath);
+        else if (extLower == ".y12") result = loadY12 (fsPath);
+        else if (extLower == ".opm") result = loadOPM (fsPath);
+
+        if (! result.patch.has_value())
+            return result.error.empty() ? juce::String ("unknown FM load error")
+                                        : juce::String (result.error);
+
+        return applyFmPatch (*result.patch, absolutePath);
+    }
+
+    // Tag::SQ
+    const auto loaded = loadPsgPreset (fsPath);
+    if (! loaded.preset.has_value())
+        return loaded.error.empty() ? juce::String ("unknown PSG load error")
+                                    : juce::String (loaded.error);
+
+    return applyPsgPreset (*loaded.preset, absolutePath);
+}
+
+juce::String GenVstAudioProcessor::applyFmPatch (const Patch& patch, const juce::String& absolutePath)
+{
+    // Step 1: record the active path BEFORE flipping mode_select. The
+    // mode-switch listener (handleAsyncUpdate) checks the active path to
+    // decide whether to fall back to the default — having the path in place
+    // first prevents a default-load racing the real apply.
+    setActivePathForMode (Mode::FM, absolutePath);
+
+    // Step 2: flip mode_select if needed. Use setValueNotifyingHost so the
+    // mode pill UI updates and the host sees the automation event.
+    if (auto* modeParam = apvts.getParameter ("mode_select"))
+    {
+        const int idx = modeToChoiceIndex (Mode::FM);
+        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (modeParam))
+        {
+            if (choice->getIndex() != idx)
+            {
+                const int last = juce::jmax (0, choice->choices.size() - 1);
+                const float n  = last == 0 ? 0.0f : static_cast<float> (idx) / static_cast<float> (last);
+                modeParam->beginChangeGesture();
+                modeParam->setValueNotifyingHost (n);
+                modeParam->endChangeGesture();
+            }
+        }
+    }
+
+    // Step 3: apply the patch to apvts via setValueNotifyingHost so the FM
+    // panel's bound widgets update on screen and the host sees the
+    // automation events. The audio thread reads these values back through
+    // paramCache.readPatch each render block. The legacy FIFO drain remains
+    // wired in processBlock as a no-op for empty queues — kept dormant for
+    // a future low-latency apply path.
+    applyFmPatchToApvts (apvts, patch);
+
+    // Step 4: fire the patch-loaded callback so the editor pushes the LCD
+    // update.
+    if (patchLoadedCallback)
+    {
+        PatchLoadedNotifier note;
+        note.name = juce::String (patch.name.empty()
+                                    ? std::filesystem::path { absolutePath.toRawUTF8() }
+                                          .stem().string()
+                                    : patch.name);
+        note.tag  = Tag::FM;
+        note.path = absolutePath;
+        patchLoadedCallback (note);
+    }
+
+    return {};
+}
+
+juce::String GenVstAudioProcessor::applyPsgPreset (const PsgPreset& preset,
+                                                    const juce::String& absolutePath)
+{
+    setActivePathForMode (Mode::SQ, absolutePath);
+
+    if (auto* modeParam = apvts.getParameter ("mode_select"))
+    {
+        const int idx = modeToChoiceIndex (Mode::SQ);
+        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (modeParam))
+        {
+            if (choice->getIndex() != idx)
+            {
+                const int last = juce::jmax (0, choice->choices.size() - 1);
+                const float n  = last == 0 ? 0.0f : static_cast<float> (idx) / static_cast<float> (last);
+                modeParam->beginChangeGesture();
+                modeParam->setValueNotifyingHost (n);
+                modeParam->endChangeGesture();
+            }
+        }
+    }
+
+    applyPsgPresetToApvts (preset, apvts);
+
+    if (patchLoadedCallback)
+    {
+        PatchLoadedNotifier note;
+        note.name = juce::String (preset.name.empty()
+                                    ? std::filesystem::path { absolutePath.toRawUTF8() }
+                                          .stem().string()
+                                    : preset.name);
+        note.tag  = Tag::SQ;
+        note.path = absolutePath;
+        patchLoadedCallback (note);
+    }
+
+    return {};
+}
+
+juce::String GenVstAudioProcessor::savePresetForCurrentMode (const juce::String& name,
+                                                              juce::String& outError)
+{
+    outError.clear();
+    const Mode m = currentMode();
+    if (m == Mode::D)
+    {
+        outError = "D mode has no preset format — host owns the state";
+        return {};
+    }
+
+    if (m == Mode::FM)
+    {
+        Patch patch {};
+        paramCache.readPatch (patch);
+        patch.name = name.toStdString();
+        const auto result = patchBrowser.savePatchAsTfi (patch, name);
+        if (! result.error.empty())
+        {
+            outError = result.error;
+            return {};
+        }
+        // The save itself doesn't change the active patch path (the file is
+        // on disk for next time). Refresh the UI's notion of the loaded
+        // patch name so the LCD shows the new name immediately.
+        setActivePathForMode (Mode::FM, result.path);
+        if (patchLoadedCallback)
+        {
+            patchLoadedCallback ({ name, Tag::FM, result.path });
+        }
+        return result.path;
+    }
+
+    // SQ — write a .psg into the user-saved root.
+    const auto savedRoot = std::filesystem::path { juce::File::getSpecialLocation (
+        juce::File::SpecialLocationType::userApplicationDataDirectory)
+        .getChildFile ("GenVst").getChildFile ("patches").getChildFile ("saved")
+        .getFullPathName().toRawUTF8() };
+    std::error_code ec;
+    std::filesystem::create_directories (savedRoot, ec);
+
+    const auto safe = name.isEmpty() ? juce::String ("preset") : name;
+    const auto dest = savedRoot / (safe.toStdString() + ".psg");
+
+    const auto preset = readPsgPresetFromApvts (apvts, name.toStdString());
+    auto err = savePsgPreset (preset, dest);
+    if (! err.empty())
+    {
+        outError = err;
+        return {};
+    }
+
+    // Refresh the user-saved root so the new .psg appears in the browser.
+    (void) patchBrowser.rescanWritableRoots();
+
+    const auto destStr = juce::String (dest.string());
+    setActivePathForMode (Mode::SQ, destStr);
+    if (patchLoadedCallback)
+        patchLoadedCallback ({ name, Tag::SQ, destStr });
+    return destStr;
+}
+
+juce::String GenVstAudioProcessor::exportPresetForCurrentMode (const juce::String& destinationPath)
+{
+    const Mode m = currentMode();
+    if (m == Mode::D)
+        return "D mode has no preset format";
+    if (destinationPath.isEmpty())
+        return "empty export path";
+
+    const std::filesystem::path dest { destinationPath.toRawUTF8() };
+    const auto ext = juce::String (dest.extension().string()).toLowerCase();
+
+    if (m == Mode::FM)
+    {
+        if (ext != ".tfi" && ext != ".vgi")
+            return "FM export requires .tfi or .vgi extension";
+        Patch patch {};
+        paramCache.readPatch (patch);
+        patch.name = dest.stem().string();
+        if (ext == ".tfi") return juce::String (exportTFI (patch, dest));
+        return juce::String (exportVGI (patch, dest));
+    }
+
+    // SQ
+    if (ext != ".psg")
+        return "SQ export requires .psg extension";
+    const auto preset = readPsgPresetFromApvts (apvts, dest.stem().string());
+    return juce::String (savePsgPreset (preset, dest));
+}
+
+juce::String GenVstAudioProcessor::patchNavigate (int direction)
+{
+    const Mode m = currentMode();
+    if (m == Mode::D)
+        return "D mode has no presets to navigate";
+    if (direction == 0)
+        return {};
+
+    const Tag targetTag = (m == Mode::SQ) ? Tag::SQ : Tag::FM;
+
+    // Collect every preset across every root that matches the target tag.
+    struct Entry { juce::String name; juce::String path; };
+    std::vector<Entry> entries;
+    for (const auto& root : patchBrowser.roots())
+    {
+        if (root == nullptr || root->folder == nullptr) continue;
+        std::function<void (const genvst::PatchFolder&)> walk;
+        walk = [&] (const genvst::PatchFolder& f)
+        {
+            for (const auto& p : f.patches)
+            {
+                const std::filesystem::path fsP { p.path.toRawUTF8() };
+                const auto t = tagFromFile (fsP);
+                if (! t.has_value()) continue;
+                if (*t == targetTag) entries.push_back ({ p.name, p.path });
+            }
+            for (const auto& sub : f.subfolders)
+                if (sub != nullptr && sub->scanned)
+                    walk (*sub);
+        };
+        walk (*root->folder);
+    }
+
+    if (entries.empty())
+        return "no presets available in current mode";
+
+    // Stable sort by name for predictable prev/next traversal.
+    std::sort (entries.begin(), entries.end(),
+               [] (const Entry& a, const Entry& b)
+               { return a.name.compareIgnoreCase (b.name) < 0; });
+
+    // Find the current preset's index (by absolute path); -1 if not found.
+    const juce::String current = activePathForMode (m);
+    int idx = -1;
+    for (int i = 0; i < (int) entries.size(); ++i)
+        if (entries[(std::size_t) i].path == current) { idx = i; break; }
+
+    int nextIdx;
+    if (idx < 0)
+    {
+        // No active preset yet — direction picks first / last entry.
+        nextIdx = direction > 0 ? 0 : (int) entries.size() - 1;
+    }
+    else
+    {
+        nextIdx = idx + (direction > 0 ? 1 : -1);
+        if (nextIdx < 0) nextIdx = (int) entries.size() - 1;
+        if (nextIdx >= (int) entries.size()) nextIdx = 0;
+    }
+
+    return loadPresetFromPath (entries[(std::size_t) nextIdx].path);
+}
+
+juce::var GenVstAudioProcessor::listAllPresetsAsJson() const
+{
+    juce::Array<juce::var> out;
+    for (const auto& root : patchBrowser.roots())
+    {
+        if (root == nullptr || root->folder == nullptr) continue;
+        const auto rootId = root->id;
+
+        std::function<void (const genvst::PatchFolder&)> walk;
+        walk = [&] (const genvst::PatchFolder& f)
+        {
+            for (const auto& p : f.patches)
+            {
+                const std::filesystem::path fsP { p.path.toRawUTF8() };
+                const auto t = tagFromFile (fsP);
+                if (! t.has_value()) continue;
+                const char* tagStr = (*t == Tag::SQ) ? "SQ" : "FM";
+
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty ("name",       p.name);
+                obj->setProperty ("path",       p.path);
+                obj->setProperty ("tag",        juce::String (tagStr));
+                obj->setProperty ("rootId",     rootId);
+                obj->setProperty ("folderPath", f.path);
+                out.add (juce::var (obj));
+            }
+            for (const auto& sub : f.subfolders)
+                if (sub != nullptr && sub->scanned)
+                    walk (*sub);
+        };
+        walk (*root->folder);
+    }
+    return juce::var (out);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

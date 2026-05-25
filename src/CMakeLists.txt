@@ -95,19 +95,29 @@ else()
 endif()
 
 # --- Factory-patch delivery (ADR-0005) ----------------------------------------
-# Factory patches ship as loose .tfi files, not embedded binary data. Enumerate
-# ONLY the top-level .tfi in extern/patches/ — a recursive glob would pull in the
-# gitignored extra/ developer test set (ADR-0004).
-file(GLOB FACTORY_PATCHES "${CMAKE_SOURCE_DIR}/extern/patches/*.tfi")
+# Factory patches ship as loose files, not embedded binary data. Enumerate the
+# top-level .tfi (FM bank) PLUS the entire extern/patches/sq/ subtree (SQ
+# factory presets — Task 09). A recursive glob across extern/patches/* would
+# also pull in the gitignored extra/ developer test set (ADR-0004), so each
+# bucket is enumerated explicitly.
+file(GLOB FACTORY_FM_TFI "${CMAKE_SOURCE_DIR}/extern/patches/*.tfi")
+file(GLOB_RECURSE FACTORY_SQ_PSG "${CMAKE_SOURCE_DIR}/extern/patches/sq/*.psg")
 
-# Stage into a clean dir, then copy that tree into each plugin bundle's Resources.
+# Stage into a clean dir, then copy that tree into each plugin bundle's
+# Resources. Top-level .tfi files land at the staging root; .psg files keep
+# their `sq/` subfolder so PatchSystem's tag derivation finds them where it
+# expects (factory root contains a `sq/` subdirectory).
 set(FACTORY_STAGE "${CMAKE_BINARY_DIR}/factory-patches")
 file(MAKE_DIRECTORY "${FACTORY_STAGE}")
-file(COPY ${FACTORY_PATCHES} DESTINATION "${FACTORY_STAGE}")
+file(MAKE_DIRECTORY "${FACTORY_STAGE}/sq")
+file(COPY ${FACTORY_FM_TFI} DESTINATION "${FACTORY_STAGE}")
+file(COPY ${FACTORY_SQ_PSG} DESTINATION "${FACTORY_STAGE}/sq")
 juce_add_bundle_resources_directory(GenVst "${FACTORY_STAGE}")
 
-# Standalone has no bundle — install the factory patches to the data directory.
-install(FILES ${FACTORY_PATCHES} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
+# Standalone has no bundle — install the factory patches to the data
+# directory, preserving the sq/ subfolder.
+install(FILES ${FACTORY_FM_TFI} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
+install(FILES ${FACTORY_SQ_PSG} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}/sq")
 # ------------------------------------------------------------------------------
 
 target_sources(GenVst PRIVATE
@@ -119,6 +129,7 @@ target_sources(GenVst PRIVATE
     FmRegisterMap.cpp     FmRegisterMap.h
     PatchSystem.cpp       PatchSystem.h
     PatchBrowser.cpp      PatchBrowser.h
+    PsgPreset.cpp         PsgPreset.h
     VgmExtract.cpp        VgmExtract.h
     VgmLogger.cpp         VgmLogger.h
     SN76489Wrapper.cpp    SN76489Wrapper.h

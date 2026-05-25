@@ -720,7 +720,7 @@ An eager flat scan of tens of thousands of files would stall the UI. Instead:
 File enumeration and parsing always run on the message thread, never the audio
 thread.
 
-### Audio Thread Delivery
+### Apply Path (message thread)
 
 Patch loads must not block the audio thread. Workflow:
 
@@ -728,16 +728,36 @@ Patch loads must not block the audio thread. Workflow:
    appropriate in-memory struct (`Patch` for FM, `PsgPreset` for SQ) and
    tags it with the mode it belongs to. D mode is never selectable
    through this flow because it has no preset format.
-2. If the patch's mode differs from the current mode, the message thread
-   first flips `mode_select` via the apvts.
-3. Push the typed-patch item into a `juce::AbstractFifo`-based lock-free
-   queue (one queue per mode is sufficient; capacity 4 each).
-4. At the start of `processBlock`, drain the queue for the active mode
-   and apply.
+2. The message thread records the path as the active patch path for the
+   destination mode (FM or SQ).
+3. If the patch's tag differs from the current mode, the message thread
+   flips `mode_select` via `apvts.getParameter("mode_select")->setValueNotifyingHost(…)`.
+4. Each field of the parsed struct is written into its matching apvts
+   parameter via `setValueNotifyingHost`. This drives both the host's
+   automation graph and the UI relay attachments (the WebSlider /
+   WebToggle / WebComboBox relays only fire on the
+   `setValueNotifyingHost` path), so the panel widgets repaint with the
+   new values without a separate UI refresh step.
+5. The audio thread reads the updated values out of apvts on its next
+   render block — for FM via `FmParamCache::readPatch` (an atomic-load
+   per param), for SQ via the engine's per-block parameter snapshot.
+
+The earlier FIFO-based "audio-thread drain" sketch (one
+`juce::AbstractFifo` per mode, drained at the top of `processBlock`) was
+rejected during Task 09 implementation: it bypasses the apvts gesture
+machinery and therefore leaves the UI relays out of sync. A lock-free
+queue would still be the right answer if a future need required
+atomic-across-all-params application within a single block, but no
+user-visible artefact today requires it; per-parameter
+`setValueNotifyingHost` over a few ms is invisible.
 
 A load failure (`PatchLoadResult::error` set) never reaches the audio
 thread — it is shown to the user via the UI notification toast (see
 [05-ui-ux.md](05-ui-ux.md)).
+
+After a successful apply the processor invokes a `PatchLoadedNotifier`
+callback (path + tag + display name); the editor relays that into the
+WebView as a `patchLoaded` event so the header patch-name LCD updates.
 
 ### Folders, Import & Export
 
@@ -759,7 +779,10 @@ thread — it is shown to the user via the UI notification toast (see
 - **Drag-and-drop:** dropping any file whose extension is in
   `kSupportedPatchExtensions` imports it into the user-imported root;
   dropping a `.vgm` or `.vgz` runs Import Bank on that file; dropping a
-  *folder* registers it as a new custom root.
+  *folder* recursively imports every supported file inside it into the
+  user-imported root (ADR-0025 — the v1 behaviour of "register as a new
+  custom root" was retired with the unified browser; the user registers
+  custom roots explicitly via the browser's *Add Folder…* button).
 - **Save patch:** `savePatch()` writes the current mode's patch into the
   **user-saved root** (`…/patches/saved/`). The format depends on the mode
   (FM → TFI by default; SQ → `.psg`). D mode is not savable through this

@@ -92,6 +92,44 @@ std::string buildPatchExtensionFilter()
     return out;
 }
 
+namespace
+{
+    std::string toLowerExt (std::string_view ext)
+    {
+        std::string lower (ext.size(), '\0');
+        std::transform (ext.begin(), ext.end(), lower.begin(),
+                        [] (char c)
+                        { return static_cast<char> (std::tolower (static_cast<unsigned char> (c))); });
+        return lower;
+    }
+}
+
+std::optional<Tag> tagFromExtension (std::string_view ext)
+{
+    if (ext.empty())
+        return std::nullopt;
+    const auto lower = toLowerExt (ext);
+    if (lower == ".tfi" || lower == ".vgi" || lower == ".y12" || lower == ".opm")
+        return Tag::FM;
+    if (lower == ".psg")
+        return Tag::SQ;
+    if (lower == ".dmp")
+        return Tag::Pending;   // resolved by tagFromFile / load attempt
+    return std::nullopt;
+}
+
+std::optional<Tag> tagFromFile (const std::filesystem::path& path)
+{
+    const auto ext = toLowerExt (path.extension().string());
+    if (ext != ".dmp")
+        return tagFromExtension (ext);
+
+    // .dmp: Task 09 treats every DMP as FM (mirrors loadDMP's accept-only-
+    // mode-1 rejection path). ADR-0026 + Task 10 upgrade this to peek byte 2
+    // and route mode-0 DMPs through the new SQ loader.
+    return Tag::FM;
+}
+
 PatchLoadResult loadTFI (const std::filesystem::path& path)
 {
     std::ifstream file (path, std::ios::binary);

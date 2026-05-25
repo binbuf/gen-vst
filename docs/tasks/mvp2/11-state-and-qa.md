@@ -78,6 +78,28 @@ for a v2 release.
   - **macOS** — VST3 + AU + Standalone; `auval -v aumu Genv GnVs`.
   - **Linux** — VST3 + Standalone; `apt` deps include
     `libwebkit2gtk-4.1-dev`.
+- **Windows VST3 factory-bank packaging** (carried from Task 09):
+  `juce_add_bundle_resources_directory` only honours
+  `MACOSX_PACKAGE_LOCATION` (an Xcode-only attribute), so on Windows the
+  factory `.tfi` + `sq/*.psg` files never land in the built
+  `Gen VST.vst3/Contents/Resources/patches/` tree — local dev works only
+  because `PluginProcessor::resolveFactoryRoot` falls back to
+  `GENVST_DEV_PATCH_DIR` (the source `extern/patches/`), which is absent
+  on an end-user install. This is acceptable for local development but
+  must ship a real solution for the Windows VST3 release artefact. Pick
+  one of:
+  - **CMake POST_BUILD copy** — `add_custom_command(TARGET GenVst_VST3
+    POST_BUILD ...)` that copies `${FACTORY_STAGE}` into
+    `$<TARGET_BUNDLE_CONTENT_DIR:GenVst_VST3>/Resources/patches/` on
+    every build (matches the macOS layout `resolveFactoryRoot` already
+    walks for).
+  - **Standalone-style install rule** — write the factory bank to
+    `%LOCALAPPDATA%\GenVst\patches\` from the same `install()` call the
+    Standalone target already uses, and extend `resolveFactoryRoot` to
+    consult that path before the dev-dir fallback for plugin formats too.
+  Verify the chosen approach by uninstalling the local dev source tree
+  (or renaming `extern/patches/` temporarily) and confirming the Windows
+  VST3 still finds its factory bank.
 - **CPU profiling pass** (Open Question #1 from `07-feature-spec.md`):
   16 ymfm instances at 44,100 Hz should stay well under 30 % of one
   core on a modern desktop. Use a real DAW (Reaper) under a
@@ -127,6 +149,10 @@ for a v2 release.
 - **CI matrix verification** — push to a feature branch and confirm
   all three jobs pass. Fix any v2-introduced regressions (typically:
   Linux WebKitGTK deps; macOS code-signing for AU validation).
+- **Windows factory-bank packaging fix** — implement one of the two
+  options in *Context*, verify the factory bank loads from the installed
+  Windows VST3 bundle without the source tree's `extern/patches/` being
+  reachable.
 - **`pluginval` matrix** — Windows + macOS + Linux runs of
   `pluginval --strictness-level 8 --validate`. Record any failures
   and fix or carry forward (only fix; pluginval failures must not
@@ -219,6 +245,8 @@ for a v2 release.
    green, including the PluginState tests.
 2. **Cross-platform** — the GitHub Actions matrix is green for Windows,
    macOS, Linux. Each job's `pluginval --strictness-level 8` passes.
+   The Windows VST3 bundle resolves its factory bank without the source
+   `extern/patches/` being reachable (rename it locally to confirm).
 3. **DAW state round-trip on Windows** — save/load Reaper project
    restores the patch, the knobs, the mode, the custom roots, the
    notification toast for any unresolved path.
@@ -240,6 +268,8 @@ for a v2 release.
 - [ ] PluginStateTests pin the v2 envelope shape.
 - [ ] Three-platform CI matrix is green; `pluginval` strictness 8
       passes on each platform's bundle.
+- [ ] Windows VST3 factory bank packaged into the artefact (not
+      relying on the dev-source fallback).
 - [ ] CPU profile recorded; figure noted in `07-feature-spec.md`
       Open Questions #1.
 - [ ] Parity-checklist audit complete; every line ticked or moved to

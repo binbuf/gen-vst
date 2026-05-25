@@ -17,6 +17,7 @@ add_executable(GenVstTests
     VgmExtractTests.cpp
     VgmLoggerTests.cpp
     PatchBrowserTests.cpp
+    PsgPresetTests.cpp
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
     VoiceAllocatorTests.cpp
@@ -33,6 +34,7 @@ add_executable(GenVstTests
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
+    "${CMAKE_SOURCE_DIR}/src/PsgPreset.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmLogger.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
@@ -85,7 +87,8 @@ target_link_libraries(GenVstTests PRIVATE
     juce::juce_core
     juce::juce_events           # PatchBrowser inherits juce::Thread
     juce::juce_audio_basics
-    juce::juce_audio_formats)
+    juce::juce_audio_formats
+    juce::juce_audio_processors)   # PsgPreset uses AudioProcessorValueTreeState
 
 include(GoogleTest)
 gtest_discover_tests(GenVstTests)
