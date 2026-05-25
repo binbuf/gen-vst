@@ -124,9 +124,21 @@ std::optional<Tag> tagFromFile (const std::filesystem::path& path)
     if (ext != ".dmp")
         return tagFromExtension (ext);
 
-    // .dmp: Task 09 treats every DMP as FM (mirrors loadDMP's accept-only-
-    // mode-1 rejection path). ADR-0026 + Task 10 upgrade this to peek byte 2
-    // and route mode-0 DMPs through the new SQ loader.
+    // .dmp: peek byte 2 of the file to disambiguate FM (mode 1) vs SQ (mode 0)
+    // per ADR-0026. If the file can't be opened or is shorter than the 3-byte
+    // header, fall back to FM so loadDMP produces a descriptive error rather
+    // than this function silently swallowing a bad file.
+    std::ifstream file (path, std::ios::binary);
+    if (! file)
+        return Tag::FM;
+
+    std::array<char, 3> header {};
+    file.read (header.data(), static_cast<std::streamsize> (header.size()));
+    if (file.gcount() < static_cast<std::streamsize> (header.size()))
+        return Tag::FM;
+
+    const auto modeByte = static_cast<uint8_t> (header[2]);
+    if (modeByte == 0x00) return Tag::SQ;
     return Tag::FM;
 }
 
@@ -253,10 +265,14 @@ PatchLoadResult loadDMP (const std::filesystem::path& path)
     // Furnace stores the FM/STD selector as a single mode byte where 1 = FM
     // and 0 = STD/PSG. The design doc's table inverts these — the Furnace
     // source is authoritative for real-world files (see header comment on
-    // kDmpV11FmFileSize). Reject PSG-type instruments outright.
+    // kDmpV11FmFileSize). PSG-mode DMPs are routed through loadDmpPsg by the
+    // tag-driven dispatcher (ADR-0026); this FM loader rejects anything that
+    // is not mode 1 with a clear error for the toast.
     const uint8_t mode = bytes[2];
     if (mode != kDmpModeFm)
-        return { std::nullopt, "DMP is a PSG/STD instrument; only FM is supported" };
+        return { std::nullopt,
+                 "DMP mode " + std::to_string (static_cast<int> (mode))
+                     + " not supported by the FM loader; only mode 1 (FM) is accepted" };
 
     if (bytes.size() != kDmpV11FmFileSize)
         return { std::nullopt,

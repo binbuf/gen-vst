@@ -54,12 +54,29 @@ struct PsgPresetLoadResult
 {
     std::optional<PsgPreset> preset;
     std::string              error;
+
+    // Non-fatal warnings raised during load (e.g., a DMP PSG arpeggio or
+    // pitch macro that had to be dropped because the `.psg` schema has no
+    // sequence-valued analogue). Empty on a clean load. The caller surfaces
+    // these via the same notification-toast channel as `error`, but only
+    // alongside a successful `preset`.
+    std::string              warning;
 };
 
 // Parse a `.psg` JSON file. Message thread only. Missing or out-of-range
 // fields clamp to defaults; an unparseable or non-JSON file returns an
 // error and no preset.
 PsgPresetLoadResult loadPsgPreset (const std::filesystem::path& path);
+
+// Parse a DefleMask Preset (DMP) file in PSG mode (v11, system Genesis,
+// mode 0) into a PsgPreset via the macro → ADSR approximation defined in
+// ADR-0026. Message thread only. The volume macro shapes atk / dr1 / sus /
+// dr2 / rr on every tone channel (all three tone channels receive the same
+// envelope; noise stays silent). Arpeggio and pitch macros are dropped and
+// flagged via `result.warning`; the noise channel keeps its default white /
+// mid configuration. Files that are not version 11, not Genesis (sys 0x02 /
+// 0x42) or not mode 0 are rejected with a descriptive error.
+PsgPresetLoadResult loadDmpPsg (const std::filesystem::path& path);
 
 // Write `preset` to disk as JSON. Returns empty on success or a descriptive
 // error string on failure. Message thread only.

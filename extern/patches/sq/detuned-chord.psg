@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "Detuned Chord",
+  "channels": {
+    "tone1": { "atk": 4, "dr1": 3, "sus": 8, "dr2": 0, "rr": 7,
+               "vol": 1.0, "pan": -0.5, "detune": 0 },
+    "tone2": { "atk": 4, "dr1": 3, "sus": 8, "dr2": 0, "rr": 7,
+               "vol": 1.0, "pan": 0.0, "detune": 7 },
+    "tone3": { "atk": 4, "dr1": 3, "sus": 8, "dr2": 0, "rr": 7,
+               "vol": 1.0, "pan": 0.5, "detune": -7 },
+    "noise": { "atk": 0, "dr1": 0, "sus": 15, "dr2": 0, "rr": 0,
+               "vol": 0.0, "pan": 0.0,
+               "type": "white", "rate": "mid" }
+  }
+}

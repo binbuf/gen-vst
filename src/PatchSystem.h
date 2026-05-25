@@ -140,11 +140,13 @@ enum class Tag : std::uint8_t { FM, SQ, Pending };
 std::optional<Tag> tagFromExtension (std::string_view ext);
 
 // File-aware tag derivation. Used by the file picker, drag-and-drop handler
-// and load path. For `.dmp` files this would peek byte 2 to choose between
-// FM and SQ; Task 09 defers that to Task 10 and returns `Tag::FM` for every
-// `.dmp` (matching the existing FM-only DMP loader). For all other
-// extensions delegates to `tagFromExtension` (its `Pending` is never returned
-// from here). Returns std::nullopt for an unrecognised extension.
+// and load path. For `.dmp` files this peeks byte 2 to choose between
+// `Tag::FM` (mode 1) and `Tag::SQ` (mode 0) per ADR-0026; on read failure or
+// for any other byte-2 value the function returns `Tag::FM` so the FM loader
+// surfaces a descriptive error (matching the existing FM-only rejection
+// behaviour for malformed DMPs). For all other extensions delegates to
+// `tagFromExtension` (its `Pending` is never returned from here). Returns
+// std::nullopt for an unrecognised extension.
 std::optional<Tag> tagFromFile (const std::filesystem::path& path);
 
 // Result of a patch load. C++20, so no std::expected — a std::optional patch

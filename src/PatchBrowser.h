@@ -34,10 +34,18 @@ enum class PatchRootKind
 
 // One patch file inside a folder. `path` is the absolute filesystem path and
 // also serves as the file's stable id for the UI.
+//
+// `tag` caches the file's mode (FM / SQ / Pending) so the browser does not
+// re-derive it on every render. `tagFromExtension` fills it in at scan time;
+// for `.dmp` files the tag arrives as `Tag::Pending` and is upgraded to FM
+// or SQ by `tagFromFile` on folder-expand (ADR-0026). Loads always resolve
+// the final tag via `tagFromFile` before the patch is parsed, so a stale
+// `Pending` value here is never load-blocking — it just affects the badge.
 struct PatchEntry
 {
-    juce::String name;     // filename stem (display)
-    juce::String path;     // absolute path (stable id)
+    juce::String name;                 // filename stem (display)
+    juce::String path;                 // absolute path (stable id)
+    Tag          tag = Tag::Pending;   // cached browser badge — see comment above
 };
 
 // A node in the lazy folder tree. The root scan only walks each PatchRoot's
@@ -335,6 +343,14 @@ private:
 
     // ---- Tree management --------------------------------------------------
     void                  scanImmediateChildren (PatchFolder& folder);
+
+    // ADR-0026: upgrade up to `maxResolutions` `Tag::Pending` entries in
+    // `folder` to their resolved FM/SQ tag by calling `tagFromFile` (which
+    // does a 3-byte read per .dmp). Bounded so a folder with thousands of
+    // DMP files doesn't stall the expand animation; any leftover Pending
+    // entries resolve later on load attempt.
+    void                  resolvePendingTagsLimited (PatchFolder& folder, int maxResolutions);
+
     void                  addRoot (std::unique_ptr<PatchRoot> root);
     PatchFolder*          findFolderImpl (PatchFolder& start, const juce::String& path);
 

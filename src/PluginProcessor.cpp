@@ -1400,13 +1400,45 @@ juce::String GenVstAudioProcessor::loadPresetFromPath (const juce::String& absol
         return applyFmPatch (*result.patch, absolutePath);
     }
 
-    // Tag::SQ
-    const auto loaded = loadPsgPreset (fsPath);
+    // Tag::SQ — `.psg` loads through the native preset parser; `.dmp` in PSG
+    // mode (byte 2 = 0) goes through the macro → ADSR import bridge per
+    // ADR-0026. The bridge may produce a non-fatal warning (arpeggio / pitch
+    // macro dropped) that we forward to the toast alongside the success
+    // notification.
+    const auto extLower = juce::String (fsPath.extension().string()).toLowerCase();
+    const auto loaded = extLower == ".dmp" ? loadDmpPsg (fsPath)
+                                           : loadPsgPreset (fsPath);
     if (! loaded.preset.has_value())
         return loaded.error.empty() ? juce::String ("unknown PSG load error")
                                     : juce::String (loaded.error);
 
-    return applyPsgPreset (*loaded.preset, absolutePath);
+    auto applyError = applyPsgPreset (*loaded.preset, absolutePath);
+    if (! applyError.isEmpty())
+        return applyError;
+
+    // Surface the import-bridge toast so users know the load was lossy.
+    // applyPsgPreset has already fired the success toast via patchLoadedCallback;
+    // tack the per-load warning onto its name field so the editor's existing
+    // notifier surface picks it up (one toast per load, not two).
+    if (! loaded.warning.empty() && patchLoadedCallback)
+    {
+        PatchLoadedNotifier note;
+        note.name = juce::String ("Imported as SQ preset (DMP PSG approximation). ")
+                  + juce::String (loaded.warning);
+        note.tag  = Tag::SQ;
+        note.path = absolutePath;
+        patchLoadedCallback (note);
+    }
+    else if (extLower == ".dmp" && patchLoadedCallback)
+    {
+        PatchLoadedNotifier note;
+        note.name = "Imported as SQ preset (DMP PSG approximation).";
+        note.tag  = Tag::SQ;
+        note.path = absolutePath;
+        patchLoadedCallback (note);
+    }
+
+    return {};
 }
 
 juce::String GenVstAudioProcessor::applyFmPatch (const Patch& patch, const juce::String& absolutePath)
@@ -1600,6 +1632,9 @@ juce::String GenVstAudioProcessor::patchNavigate (int direction)
     const Tag targetTag = (m == Mode::SQ) ? Tag::SQ : Tag::FM;
 
     // Collect every preset across every root that matches the target tag.
+    // The cached PatchEntry::tag is authoritative for resolved entries; for
+    // any leftover `Pending` (a `.dmp` past the expand-time cap), peek via
+    // tagFromFile so prev/next still finds it when it matches the target.
     struct Entry { juce::String name; juce::String path; };
     std::vector<Entry> entries;
     for (const auto& root : patchBrowser.roots())
@@ -1610,10 +1645,15 @@ juce::String GenVstAudioProcessor::patchNavigate (int direction)
         {
             for (const auto& p : f.patches)
             {
-                const std::filesystem::path fsP { p.path.toRawUTF8() };
-                const auto t = tagFromFile (fsP);
-                if (! t.has_value()) continue;
-                if (*t == targetTag) entries.push_back ({ p.name, p.path });
+                Tag effective = p.tag;
+                if (effective == Tag::Pending)
+                {
+                    const std::filesystem::path fsP { p.path.toRawUTF8() };
+                    const auto t = tagFromFile (fsP);
+                    if (! t.has_value()) continue;
+                    effective = *t;
+                }
+                if (effective == targetTag) entries.push_back ({ p.name, p.path });
             }
             for (const auto& sub : f.subfolders)
                 if (sub != nullptr && sub->scanned)
@@ -1665,10 +1705,14 @@ juce::var GenVstAudioProcessor::listAllPresetsAsJson() const
         {
             for (const auto& p : f.patches)
             {
-                const std::filesystem::path fsP { p.path.toRawUTF8() };
-                const auto t = tagFromFile (fsP);
-                if (! t.has_value()) continue;
-                const char* tagStr = (*t == Tag::SQ) ? "SQ" : "FM";
+                // Prefer the cached PatchEntry::tag — scanImmediateChildren
+                // resolved any `.dmp` files via tagFromFile up to the per-
+                // expand cap (ADR-0026). Anything still Pending here is a
+                // `.dmp` that hasn't been resolved yet; surface it with a
+                // neutral "Pending" badge so the UI shows a grey chip.
+                const char* tagStr = (p.tag == Tag::SQ)      ? "SQ"
+                                   : (p.tag == Tag::Pending) ? "Pending"
+                                                              : "FM";
 
                 auto* obj = new juce::DynamicObject();
                 obj->setProperty ("name",       p.name);

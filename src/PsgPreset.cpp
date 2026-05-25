@@ -1,8 +1,13 @@
 #include "PsgPreset.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <iterator>
 #include <sstream>
+#include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
@@ -345,4 +350,263 @@ PsgPreset readPsgPresetFromApvts (const juce::AudioProcessorValueTreeState& apvt
         out.noiseRate = noiseRateFromIndex (p->getIndex());
 
     return out;
+}
+
+// =============================================================================
+// DMP PSG import (ADR-0026)
+// =============================================================================
+
+namespace
+{
+    // DMP v11 header bytes the PSG loader accepts. Mirrors the constants in
+    // PatchSystem.cpp's FM DMP loader; copied here so PsgPreset stays
+    // independent of PatchSystem's internal-namespace constants.
+    constexpr std::uint8_t kDmpVersion       = 0x0B;
+    constexpr std::uint8_t kDmpSysGenesis    = 0x02;
+    constexpr std::uint8_t kDmpSysGenesisExt = 0x42;
+    constexpr std::uint8_t kDmpModePsg       = 0x00;
+
+    // A DMP volume macro slot is a 4-byte little-endian signed int (Furnace's
+    // SafeReader::readI). On Genesis PSG the values are bounded to 0..15 by
+    // DefleMask itself, but a malformed file could put anything in here; we
+    // clamp to the SN76489 attenuation range on read.
+    constexpr std::size_t kMacroSlotBytes = 4;
+
+    struct ByteCursor
+    {
+        const std::vector<std::uint8_t>* bytes = nullptr;
+        std::size_t                       pos   = 0;
+        bool                              ok    = true;
+
+        bool readByte (std::uint8_t& out)
+        {
+            if (pos + 1 > bytes->size()) { ok = false; return false; }
+            out = (*bytes)[pos++];
+            return true;
+        }
+
+        bool readI32 (std::int32_t& out)
+        {
+            if (pos + kMacroSlotBytes > bytes->size()) { ok = false; return false; }
+            std::uint32_t v = 0;
+            // Little-endian decode — Furnace's host-endian readI on x86 / ARM.
+            v |= static_cast<std::uint32_t> ((*bytes)[pos + 0]);
+            v |= static_cast<std::uint32_t> ((*bytes)[pos + 1]) << 8;
+            v |= static_cast<std::uint32_t> ((*bytes)[pos + 2]) << 16;
+            v |= static_cast<std::uint32_t> ((*bytes)[pos + 3]) << 24;
+            pos += kMacroSlotBytes;
+            std::memcpy (&out, &v, sizeof (out));
+            return true;
+        }
+
+        bool skip (std::size_t n)
+        {
+            if (pos + n > bytes->size()) { ok = false; return false; }
+            pos += n;
+            return true;
+        }
+    };
+
+    // Read one DMP STD macro (len: signed-char count, len * 4 bytes of
+    // little-endian int values, then a 1-byte loop point if len > 0). On
+    // success appends the values to `out`. Returns false (and sets cursor.ok
+    // = false) on truncation.
+    bool readDmpStdMacro (ByteCursor& cur, std::vector<std::int32_t>& out)
+    {
+        std::uint8_t lenByte = 0;
+        if (! cur.readByte (lenByte))
+            return false;
+        const auto len = static_cast<int> (static_cast<std::int8_t> (lenByte));
+        if (len < 0)
+            return false;
+        out.resize (static_cast<std::size_t> (len));
+        for (int i = 0; i < len; ++i)
+            if (! cur.readI32 (out[(std::size_t) i]))
+                return false;
+        if (len > 0)
+        {
+            std::uint8_t loop = 0;
+            if (! cur.readByte (loop))
+                return false;
+        }
+        return true;
+    }
+
+    // Skip a DMP STD macro without retaining its values. Used for duty / wave
+    // macros that the import bridge does not consume.
+    bool skipDmpStdMacro (ByteCursor& cur)
+    {
+        std::vector<std::int32_t> discard;
+        return readDmpStdMacro (cur, discard);
+    }
+
+    // Macro → ADSR approximation per ADR-0026 *Macro → ADSR approximation*.
+    // `volMacro` carries DefleMask attenuation values (0 = loudest,
+    // 15 = silent). `tone` is populated in-place with atk / dr1 / sus / dr2 /
+    // rr in the PsgPresetChannel ranges (0..31 / 0..31 / 0..15 / 0..31 /
+    // 0..15) so the values land cleanly in the SN76489Engine PsgEnvelope
+    // (see SN76489Engine::PsgEnvelope::setRates ranges).
+    void approximateAdsr (const std::vector<std::int32_t>& volMacro,
+                          PsgPresetChannel&                tone)
+    {
+        if (volMacro.empty())
+        {
+            // No macro at all: leave a sensible default ADSR (fast attack,
+            // full sustain, short release). Mirrors the factory default.psg.
+            tone.atk = 0;
+            tone.dr1 = 0;
+            tone.sus = 0;
+            tone.dr2 = 0;
+            tone.rr  = 4;
+            return;
+        }
+
+        // Clamp each macro value into 0..15. Out-of-range values (e.g., from
+        // a chip where DMP uses a wider attenuation range) are saturated.
+        std::vector<int> atten (volMacro.size());
+        for (std::size_t i = 0; i < volMacro.size(); ++i)
+            atten[i] = std::clamp (static_cast<int> (volMacro[i]), 0, 15);
+
+        // Peak loudness = minimum attenuation, taking the FIRST occurrence
+        // so a noisy plateau after the peak doesn't shift the attack index.
+        int peakIdx   = 0;
+        int peakAtten = atten[0];
+        for (std::size_t i = 1; i < atten.size(); ++i)
+            if (atten[i] < peakAtten) { peakAtten = atten[i]; peakIdx = static_cast<int> (i); }
+
+        // Plateau: walk forward from the peak until the attenuation stops
+        // strictly increasing — that's the start of the sustain (or, if no
+        // decay, the peak itself). For a flat macro this collapses to the
+        // peak with sus = 0 (no decay).
+        int plateauIdx   = peakIdx;
+        int plateauAtten = peakAtten;
+        for (std::size_t i = static_cast<std::size_t> (peakIdx) + 1; i < atten.size(); ++i)
+        {
+            if (atten[i] <= plateauAtten) break;
+            plateauAtten = atten[i];
+            plateauIdx   = static_cast<int> (i);
+        }
+
+        // Release tail: anything past the plateau that climbs back up to a
+        // higher attenuation (closer to silence) than the plateau. A flat
+        // tail keeps the mid-range default so notes don't cut off abruptly.
+        int releaseSteps = 0;
+        for (std::size_t i = static_cast<std::size_t> (plateauIdx) + 1; i < atten.size(); ++i)
+            if (atten[i] > plateauAtten) ++releaseSteps;
+
+        const int atkSteps = peakIdx;
+        const int dr1Steps = std::max (0, plateauIdx - peakIdx);
+        const int susDrop  = std::clamp (plateauAtten - peakAtten, 0, 15);
+        const int rrSteps  = releaseSteps == 0 ? 5 : releaseSteps;
+
+        // Direct step → ADSR mapping. DMP STD volume macros at Genesis tick
+        // around 60 Hz, so a 30-step ramp ≈ 0.5 s — close enough to the
+        // SN76489Engine atk/dr/rr "0..max ≈ 2 s" curve that step counts
+        // double sensibly into the wider 0..31 ranges. The cap keeps absurd
+        // macros from saturating to maximum.
+        tone.atk = std::clamp (atkSteps,       0, 31);
+        tone.dr1 = std::clamp (dr1Steps,       0, 31);
+        tone.sus = susDrop;                                // already 0..15
+        tone.dr2 = 0;                                      // not detected — ADR-0026
+        tone.rr  = std::clamp (rrSteps,        0, 15);
+
+        // Per-channel volume/pan/detune defaults (ADR-0026 *Macro → ADSR
+        // approximation*, steps 7 & 8): vol = 1, pan = 0, detune = 0.
+        tone.vol    = 1.0f;
+        tone.pan    = 0.0f;
+        tone.detune = 0;
+    }
+}
+
+PsgPresetLoadResult loadDmpPsg (const std::filesystem::path& path)
+{
+    std::ifstream file (path, std::ios::binary);
+    if (! file)
+        return { std::nullopt, "cannot open file: " + path.string(), {} };
+
+    const std::istreambuf_iterator<char> first (file);
+    const std::istreambuf_iterator<char> last;
+    const std::vector<std::uint8_t> bytes (first, last);
+
+    if (bytes.size() < 3)
+        return { std::nullopt,
+                 "DMP file too short (" + std::to_string (bytes.size())
+                     + " bytes); need at least 3 for header",
+                 {} };
+
+    if (bytes[0] != kDmpVersion)
+        return { std::nullopt,
+                 "DMP version " + std::to_string (static_cast<int> (bytes[0]))
+                     + " not supported; only version 11 is accepted (ADR-0012)",
+                 {} };
+
+    if (bytes[1] != kDmpSysGenesis && bytes[1] != kDmpSysGenesisExt)
+        return { std::nullopt,
+                 "DMP system byte " + std::to_string (static_cast<int> (bytes[1]))
+                     + " not supported; expected 0x02 or 0x42 (Genesis)",
+                 {} };
+
+    if (bytes[2] != kDmpModePsg)
+        return { std::nullopt,
+                 "DMP mode " + std::to_string (static_cast<int> (bytes[2]))
+                     + " not supported by the PSG loader; only mode 0 (STD/PSG) is accepted",
+                 {} };
+
+    // Body: volume / arp / duty / wave macros in that order. The byte layout
+    // mirrors Furnace's DivEngine::loadDMP STD branch (see ADR-0012 pattern
+    // / Furnace `src/engine/fileOpsIns.cpp`). Tracker chip-specific tails
+    // (C64, GB) are not present for Genesis PSG (DIV_INS_STD).
+    ByteCursor cur { &bytes, 3, true };
+    std::vector<std::int32_t> volMacro, arpMacro;
+
+    if (! readDmpStdMacro (cur, volMacro))
+        return { std::nullopt, "DMP PSG: truncated volume macro", {} };
+
+    if (! readDmpStdMacro (cur, arpMacro))
+        return { std::nullopt, "DMP PSG: truncated arpeggio macro", {} };
+
+    // arpMacro.mode (1 byte) lives directly after the arp loop point in v11.
+    {
+        std::uint8_t arpMode = 0;
+        if (! cur.readByte (arpMode))
+            return { std::nullopt, "DMP PSG: missing arpeggio macro mode", {} };
+    }
+
+    if (! skipDmpStdMacro (cur))
+        return { std::nullopt, "DMP PSG: truncated duty macro", {} };
+
+    if (! skipDmpStdMacro (cur))
+        return { std::nullopt, "DMP PSG: truncated wave macro", {} };
+
+    // Build the preset. ADR-0026 step 7: vol = 1 for all channels. To make
+    // the preset audibly different from "default lead", apply the imported
+    // envelope to all three tone channels at unity volume so the user hears
+    // the macro's character immediately. Noise channel stays silent — DMP
+    // PSG instruments target tone channels.
+    PsgPreset preset;
+    preset.version = 1;
+    preset.name    = path.stem().string();
+
+    PsgPresetChannel toneTemplate {};
+    approximateAdsr (volMacro, toneTemplate);
+
+    for (int i = 0; i < PsgPreset::kNumTones; ++i)
+        preset.tones[(std::size_t) i] = toneTemplate;
+
+    // Noise channel: silent, defaults. DMP PSG does not carry a separate
+    // SN76489 noise-mode field that maps cleanly to noise.type / noise.rate
+    // (DefleMask exposes those through tracker effects, not the instrument
+    // body), so we leave the noise channel at the apvts defaults.
+    preset.noise          = PsgPresetChannel{};
+    preset.noise.vol      = 0.0f;
+    preset.noise.rr       = 4;
+    preset.noiseType      = "white";
+    preset.noiseRate      = "mid";
+
+    PsgPresetLoadResult result;
+    result.preset = std::move (preset);
+    if (! arpMacro.empty())
+        result.warning = "DMP PSG arpeggio / pitch macro ignored — only volume envelope imported.";
+
+    return result;
 }

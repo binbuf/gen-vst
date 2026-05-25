@@ -206,8 +206,17 @@ void PatchBrowser::scanImmediateChildren (PatchFolder& folder)
         }
         else if (entry.is_regular_file (itemEc) && isPatchExtension (entry.path()))
         {
-            folder.patches.push_back ({ stemString (entry.path()),
-                                        pathString (entry.path()) });
+            PatchEntry pe;
+            pe.name = stemString (entry.path());
+            pe.path = pathString (entry.path());
+            // Fast-path tag derivation: extension is enough for every format
+            // except .dmp (which needs a byte-2 peek; flagged `Pending` here
+            // and resolved by resolvePendingTagsLimited below). Unrecognised
+            // extensions never reach this branch — isPatchExtension would
+            // have filtered them out.
+            const auto t = tagFromExtension (entry.path().extension().string());
+            pe.tag = t.value_or (Tag::Pending);
+            folder.patches.push_back (std::move (pe));
         }
     }
 
@@ -226,6 +235,27 @@ void PatchBrowser::scanImmediateChildren (PatchFolder& folder)
 
     folder.scanned    = true;
     folder.patchCount = static_cast<int> (folder.patches.size());
+
+    // ADR-0026: resolve `.dmp` pending tags by peeking byte 2. Capped per
+    // call to bound the I/O burst on huge DMP folders — entries beyond the
+    // cap stay `Pending` (the UI renders a neutral chip) and resolve later
+    // on load attempt.
+    resolvePendingTagsLimited (folder, /*maxResolutions*/ 50);
+}
+
+void PatchBrowser::resolvePendingTagsLimited (PatchFolder& folder, int maxResolutions)
+{
+    int budget = maxResolutions;
+    for (auto& entry : folder.patches)
+    {
+        if (budget <= 0) break;
+        if (entry.tag != Tag::Pending) continue;
+
+        const fs::path p { entry.path.toRawUTF8() };
+        if (const auto resolved = tagFromFile (p); resolved.has_value())
+            entry.tag = *resolved;
+        --budget;
+    }
 }
 
 void PatchBrowser::expandFolder (PatchFolder& folder)

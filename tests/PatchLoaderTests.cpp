@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -5,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "PatchSystem.h"
+#include "PsgPreset.h"
 
 #ifndef GENVST_FACTORY_PATCHES_DIR
  #error "GENVST_FACTORY_PATCHES_DIR must be defined by the test build (see tests/CMakeLists.txt)"
@@ -449,4 +451,211 @@ TEST (PatchExportVgi, RoundTripPreservesAmsFmsAndAmon)
 
     ASSERT_TRUE (r.patch.has_value()) << r.error;
     expectCorePatchEqual (p, *r.patch, /*compareExtras=*/ true);
+}
+
+// =============================================================================
+// DMP PSG (ADR-0026) — loadDmpPsg + tagFromFile content-peek
+// =============================================================================
+
+namespace
+{
+    // Append a 32-bit little-endian signed int — matches Furnace SafeReader::readI
+    // on x86 / ARM hosts (see third_party/furnace/src/engine/safeReader.cpp).
+    void appendI32LE (std::vector<uint8_t>& out, std::int32_t v)
+    {
+        const auto u = static_cast<std::uint32_t> (v);
+        out.push_back (static_cast<uint8_t> (u      & 0xFF));
+        out.push_back (static_cast<uint8_t> ((u>>8) & 0xFF));
+        out.push_back (static_cast<uint8_t> ((u>>16)& 0xFF));
+        out.push_back (static_cast<uint8_t> ((u>>24)& 0xFF));
+    }
+
+    // Append a 1-byte signed-char macro length followed by its values (each 4
+    // bytes LE) and a 1-byte loop point if len > 0. Mirrors the DMP v11 STD
+    // macro on-disk layout per Furnace's DivEngine::loadDMP STD branch.
+    void appendDmpStdMacro (std::vector<uint8_t>& out,
+                            const std::vector<std::int32_t>& values,
+                            int loop)
+    {
+        out.push_back (static_cast<uint8_t> (static_cast<std::int8_t> (values.size())));
+        for (auto v : values) appendI32LE (out, v);
+        if (! values.empty())
+            out.push_back (static_cast<uint8_t> (static_cast<std::int8_t> (loop)));
+    }
+
+    // Build a minimal Genesis-PSG DMP byte buffer (version 11, sys 0x02,
+    // mode 0) carrying the given volume + arpeggio macros plus empty duty
+    // and wave macros. arpMode is the 1-byte v9+ arp mode field that lives
+    // between the arp loop point and the duty macro.
+    std::vector<uint8_t> makeDmpV11PsgFixture (const std::vector<std::int32_t>& vol,
+                                               const std::vector<std::int32_t>& arp,
+                                               int arpMode = 0)
+    {
+        std::vector<uint8_t> b;
+        b.push_back (0x0B);   // version 11
+        b.push_back (0x02);   // sys = Genesis
+        b.push_back (0x00);   // mode = STD/PSG
+        appendDmpStdMacro (b, vol, /*loop*/ 0);
+        appendDmpStdMacro (b, arp, /*loop*/ 0);
+        b.push_back (static_cast<uint8_t> (arpMode));
+        appendDmpStdMacro (b, {}, /*loop*/ 0);   // duty macro (empty)
+        appendDmpStdMacro (b, {}, /*loop*/ 0);   // wave macro (empty)
+        return b;
+    }
+
+    fs::path writePsgDmpFixture (const std::vector<uint8_t>& bytes, const char* filename)
+    {
+        return writeTempBinary (bytes, filename);
+    }
+}
+
+// A hand-built PSG DMP fixture loads via loadDmpPsg and produces ADSR values
+// in the PsgPreset hardware ranges. The macro starts at silence (15),
+// climbs to peak (0), plateaus at attenuation 4, and the tail returns to
+// silence — so the loader should extract a non-zero attack and a non-zero
+// sustain drop.
+TEST (PatchLoaderDmpPsg, VolumeMacroProducesAdsrInRange)
+{
+    // Macro: ramp 15→0 in 3 steps, plateau at 4 for 4 ticks, fade to 12 then 15.
+    const std::vector<std::int32_t> vol { 15, 10, 5, 0, 4, 4, 4, 4, 12, 15 };
+    const fs::path tmp = writePsgDmpFixture (makeDmpV11PsgFixture (vol, {}),
+                                             "genvst_dmp_psg_vol.dmp");
+    const auto r = loadDmpPsg (tmp);
+    fs::remove (tmp);
+
+    ASSERT_TRUE (r.preset.has_value()) << r.error;
+    EXPECT_TRUE (r.warning.empty());     // no arp macro -> no warning
+
+    // All three tone channels share the imported envelope (ADR-0026 step 7).
+    for (int i = 0; i < PsgPreset::kNumTones; ++i)
+    {
+        SCOPED_TRACE (i);
+        const auto& t = r.preset->tones[(std::size_t) i];
+        EXPECT_GE (t.atk, 1);          // non-zero atk for a 3-step ramp
+        EXPECT_LE (t.atk, 31);
+        EXPECT_GE (t.dr1, 1);          // non-zero dr1 for the 4-step decay
+        EXPECT_LE (t.dr1, 31);
+        EXPECT_EQ (t.sus, 4);          // plateau attenuation - peak attenuation
+        EXPECT_EQ (t.dr2, 0);
+        EXPECT_GE (t.rr, 1);
+        EXPECT_LE (t.rr, 15);
+        EXPECT_FLOAT_EQ (t.vol, 1.0f);
+        EXPECT_FLOAT_EQ (t.pan, 0.0f);
+        EXPECT_EQ (t.detune, 0);
+    }
+
+    // Noise channel stays silent with the apvts defaults (ADR-0026: DMP PSG
+    // does not carry a noise-mode field that maps cleanly to noise.type /
+    // noise.rate).
+    EXPECT_FLOAT_EQ (r.preset->noise.vol, 0.0f);
+    EXPECT_EQ (r.preset->noiseType, "white");
+    EXPECT_EQ (r.preset->noiseRate, "mid");
+}
+
+// A PSG DMP with a non-empty arpeggio macro emits the "arpeggio dropped"
+// warning string for the toast surface.
+TEST (PatchLoaderDmpPsg, ArpeggioMacroEmitsWarning)
+{
+    const std::vector<std::int32_t> vol { 15, 0, 0, 15 };
+    const std::vector<std::int32_t> arp { 0, 12, 7, 0 };
+    const fs::path tmp = writePsgDmpFixture (makeDmpV11PsgFixture (vol, arp),
+                                             "genvst_dmp_psg_arp.dmp");
+    const auto r = loadDmpPsg (tmp);
+    fs::remove (tmp);
+
+    ASSERT_TRUE (r.preset.has_value()) << r.error;
+    EXPECT_FALSE (r.warning.empty());
+    EXPECT_NE (r.warning.find ("arpeggio"), std::string::npos);
+}
+
+// An FM DMP (mode 1) routed to loadDmpPsg is rejected with a descriptive
+// error — the PSG loader does not silently accept FM files.
+TEST (PatchLoaderDmpPsg, FmModeDmpIsRejected)
+{
+    auto fixture = makeDmpV11Fixture();      // mode = 1 (FM)
+    const fs::path tmp = writeTempBinary (fixture, "genvst_dmp_psg_fm.dmp");
+    const auto r = loadDmpPsg (tmp);
+    fs::remove (tmp);
+
+    EXPECT_FALSE (r.preset.has_value());
+    EXPECT_FALSE (r.error.empty());
+}
+
+// An unknown mode byte (e.g. 0x03) is rejected with an error rather than
+// silently parsed — both loadDMP (FM) and loadDmpPsg reject it.
+TEST (PatchLoaderDmpPsg, UnknownModeByteIsRejected)
+{
+    auto fixture = makeDmpV11Fixture();
+    fixture[2] = 0x03;                       // not FM (1) and not PSG (0)
+    const fs::path tmp = writeTempBinary (fixture, "genvst_dmp_psg_mode3.dmp");
+
+    const auto rPsg = loadDmpPsg (tmp);
+    EXPECT_FALSE (rPsg.preset.has_value());
+    EXPECT_FALSE (rPsg.error.empty());
+
+    const auto rFm  = loadDMP (tmp);
+    fs::remove (tmp);
+    EXPECT_FALSE (rFm.patch.has_value());
+    EXPECT_FALSE (rFm.error.empty());
+}
+
+// A wrong-version PSG DMP is rejected (mirrors the FM loader's v11-only scope).
+TEST (PatchLoaderDmpPsg, WrongVersionIsRejected)
+{
+    auto fixture = makeDmpV11PsgFixture ({ 15, 0, 15 }, {});
+    fixture[0] = 0x08;                       // legacy v8 — out of scope (ADR-0012)
+    const fs::path tmp = writeTempBinary (fixture, "genvst_dmp_psg_v8.dmp");
+
+    const auto r = loadDmpPsg (tmp);
+    fs::remove (tmp);
+    EXPECT_FALSE (r.preset.has_value());
+    EXPECT_FALSE (r.error.empty());
+}
+
+// A truncated body (volume macro promises 4 values but file only carries 1)
+// fails gracefully rather than reading off the end.
+TEST (PatchLoaderDmpPsg, TruncatedBodyIsRejected)
+{
+    std::vector<uint8_t> b { 0x0B, 0x02, 0x00,
+                             /* volMacro.len */ 4,
+                             /* only one value, not four */ 0x00, 0x00, 0x00, 0x00 };
+    const fs::path tmp = writeTempBinary (b, "genvst_dmp_psg_trunc.dmp");
+
+    const auto r = loadDmpPsg (tmp);
+    fs::remove (tmp);
+    EXPECT_FALSE (r.preset.has_value());
+    EXPECT_FALSE (r.error.empty());
+}
+
+// tagFromFile peeks byte 2 of `.dmp` so the browser/dispatcher routes PSG
+// DMPs through loadDmpPsg and FM DMPs through loadDMP (ADR-0026).
+TEST (TagFromFile, DmpModeByteDispatch)
+{
+    const auto fmBytes = makeDmpV11Fixture();   // mode = 1
+    const fs::path fmTmp = writeTempBinary (fmBytes, "genvst_tag_fm.dmp");
+    EXPECT_EQ (tagFromFile (fmTmp), std::optional<Tag> (Tag::FM));
+    fs::remove (fmTmp);
+
+    const auto psgBytes = makeDmpV11PsgFixture ({ 15, 0, 15 }, {});
+    const fs::path psgTmp = writeTempBinary (psgBytes, "genvst_tag_psg.dmp");
+    EXPECT_EQ (tagFromFile (psgTmp), std::optional<Tag> (Tag::SQ));
+    fs::remove (psgTmp);
+}
+
+// tagFromFile on a missing / unreadable `.dmp` falls back to FM so the FM
+// loader's error path surfaces the failure (ADR-0026).
+TEST (TagFromFile, DmpUnreadableFallsBackToFm)
+{
+    const fs::path missing = fs::temp_directory_path() / "genvst_tag_missing.dmp";
+    fs::remove (missing);
+    EXPECT_EQ (tagFromFile (missing), std::optional<Tag> (Tag::FM));
+}
+
+// Non-`.dmp` extensions still flow through tagFromExtension — `.psg` is SQ,
+// `.tfi` is FM, an unknown extension is std::nullopt.
+TEST (TagFromFile, NonDmpExtensionsDelegate)
+{
+    EXPECT_EQ (tagFromFile (fs::path { "x.psg" }), std::optional<Tag> (Tag::SQ));
+    EXPECT_EQ (tagFromFile (fs::path { "x.tfi" }), std::optional<Tag> (Tag::FM));
+    EXPECT_EQ (tagFromFile (fs::path { "x.unknown" }), std::nullopt);
 }

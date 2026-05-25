@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "name": "pulse-arp",
+  "name": "Pulse Arp",
   "channels": {
-    "tone1": { "atk": 0, "dr1": 12, "sus": 8, "dr2": 0, "rr": 4,
+    "tone1": { "atk": 0, "dr1": 10, "sus": 14, "dr2": 0, "rr": 3,
                "vol": 1.0, "pan": 0.0, "detune": 0 },
     "tone2": { "atk": 0, "dr1": 0, "sus": 15, "dr2": 0, "rr": 0,
                "vol": 0.0, "pan": 0.0, "detune": 0 },
