@@ -1,9 +1,9 @@
 #include <array>
 #include <cmath>
+#include <vector>
 
 #include <gtest/gtest.h>
 
-#include "PartManager.h"
 #include "PatchSystem.h"
 #include "VoiceAllocator.h"
 
@@ -154,35 +154,6 @@ TEST (VoiceAllocator, AllSoundOffFreesEveryVoice)
     EXPECT_EQ (alloc.numIdleVoices(), VoiceAllocator::kNumVoices);
 }
 
-// --- Part association --------------------------------------------------------
-
-TEST (VoiceAllocator, NoteOnRecordsTheServingPart)
-{
-    VoiceAllocator alloc;
-    alloc.prepare (44100.0, 512);
-    const Patch p = makePatch();
-
-    alloc.noteOn (3, 64, 100, 0.0, false, p);
-    EXPECT_TRUE  (alloc.isNoteActive (3, 64));
-    EXPECT_FALSE (alloc.isNoteActive (0, 64));
-}
-
-TEST (VoiceAllocator, ChannelRoutesToCorrectPart)
-{
-    PartManager pm;
-    VoiceAllocator alloc;
-    alloc.prepare (44100.0, 512);
-    const Patch p = makePatch();
-
-    // A note arriving on MIDI channel 2 must be served by part 1.
-    const int part = pm.partForMidiChannel (2);
-    ASSERT_EQ (part, 1);
-    alloc.noteOn (part, 67, 100, 0.0, false, p);
-
-    EXPECT_TRUE  (alloc.isNoteActive (1, 67));
-    EXPECT_FALSE (alloc.isNoteActive (0, 67));
-}
-
 // --- Dirty-diff parameter updates -------------------------------------------
 
 TEST (VoiceAllocator, UpdateActiveVoicesAppliesParamEditsWithoutRetrigger)
@@ -191,12 +162,11 @@ TEST (VoiceAllocator, UpdateActiveVoicesAppliesParamEditsWithoutRetrigger)
     alloc.prepare (44100.0, 512);
     alloc.noteOn (0, 69, 100, 0.0, false, makePatch());
 
-    // A live edit on part 0: the dirty-diff must apply it without dropping or
+    // A live edit: the dirty-diff must apply it without dropping or
     // retriggering the voice.
-    std::array<Patch, VoiceAllocator::kNumParts> patches;
-    patches.fill (makePatch());
-    patches[0].tl[0] = 80;   // changed carrier level
-    alloc.updateActiveVoices (patches, false);
+    Patch p = makePatch();
+    p.tl[0] = 80;   // changed carrier level
+    alloc.updateActiveVoicesForPart (0, p, false);
 
     EXPECT_EQ (alloc.numActiveVoices(), 1);
     EXPECT_TRUE (alloc.isNoteActive (0, 69));
@@ -252,36 +222,6 @@ TEST (VoiceAllocator, RenderHandlesVaryingBlockSizes)
     }
 
     EXPECT_TRUE (allFinite);
-}
-
-// --- PartManager -------------------------------------------------------------
-
-TEST (PartManager, DefaultChannelBindings)
-{
-    PartManager pm;
-
-    for (int part = 0; part < PartManager::kNumParts; ++part)
-        EXPECT_EQ (pm.midiChannelForPart (part), part + 1);
-
-    for (int ch = 1; ch <= 6; ++ch)
-        EXPECT_EQ (pm.partForMidiChannel (ch), ch - 1);
-
-    // Channels 7-16 are unbound until PSG/DAC routing arrives.
-    EXPECT_EQ (pm.partForMidiChannel (7), -1);
-    EXPECT_EQ (pm.partForMidiChannel (16), -1);
-}
-
-TEST (PartManager, LoadPatchStoresPerPart)
-{
-    PartManager pm;
-    Patch a {}; a.alg = 5;
-    Patch b {}; b.alg = 2;
-
-    pm.loadPatch (0, a);
-    pm.loadPatch (1, b);
-
-    EXPECT_EQ (static_cast<int> (pm.getPatch (0).alg), 5);
-    EXPECT_EQ (static_cast<int> (pm.getPatch (1).alg), 2);
 }
 
 // --- Task 15 — Polyphony modes & voice count --------------------------------
@@ -341,26 +281,6 @@ TEST (VoiceAllocator, MonoLegatoKeepsVoiceWithoutRetrigger)
     EXPECT_EQ (alloc.numReleasingVoices(), 0);
     EXPECT_TRUE  (alloc.isNoteActive (0, 64));
     EXPECT_FALSE (alloc.isNoteActive (0, 60));
-}
-
-TEST (VoiceAllocator, MonoModeIsPerPart)
-{
-    VoiceAllocator alloc;
-    alloc.prepare (44100.0, 512);
-    alloc.setPartMode (0, monoMode (false));
-    alloc.setPartMode (1, polyMode());
-    const Patch p = makePatch();
-
-    // Mono on part 0, Poly on part 1 — part 1 should stack voices freely.
-    alloc.noteOn (0, 60, 100, 0.0, false, p);
-    alloc.noteOn (0, 64, 100, 0.0, false, p);
-    alloc.noteOn (1, 70, 100, 0.0, false, p);
-    alloc.noteOn (1, 72, 100, 0.0, false, p);
-
-    EXPECT_EQ (alloc.numActiveVoices(), 3);   // 1 mono + 2 poly
-    EXPECT_TRUE (alloc.isNoteActive (0, 64));
-    EXPECT_TRUE (alloc.isNoteActive (1, 70));
-    EXPECT_TRUE (alloc.isNoteActive (1, 72));
 }
 
 TEST (VoiceAllocator, UnisonStackAllocatesAllVoices)

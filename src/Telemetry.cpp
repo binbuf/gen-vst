@@ -12,24 +12,16 @@ void Telemetry::prepare (double hostSampleRate) noexcept
     releaseCoef = static_cast<float> (std::exp (std::log (0.01) / samples));
 }
 
-void Telemetry::pushSamples (const float* L, const float* R, int numSamples,
-                             bool clipDetectedThisRange) noexcept
+void Telemetry::pushSamples (const float* L, const float* R, int numSamples) noexcept
 {
     if (numSamples <= 0 || L == nullptr) return;
-
-    const std::uint64_t start = writeIdx.load (std::memory_order_relaxed);
-    constexpr std::uint64_t mask = static_cast<std::uint64_t> (kScopeBufferSize - 1);
 
     if (R != nullptr)
     {
         for (int i = 0; i < numSamples; ++i)
         {
-            const float l = L[i];
-            const float r = R[i];
-            scope[(start + static_cast<std::uint64_t> (i)) & mask] = 0.5f * (l + r);
-
-            const float absL = std::fabs (l);
-            const float absR = std::fabs (r);
+            const float absL = std::fabs (L[i]);
+            const float absR = std::fabs (R[i]);
             if (absL > blockPeakL) blockPeakL = absL;
             if (absR > blockPeakR) blockPeakR = absR;
         }
@@ -38,28 +30,17 @@ void Telemetry::pushSamples (const float* L, const float* R, int numSamples,
     {
         for (int i = 0; i < numSamples; ++i)
         {
-            const float l = L[i];
-            scope[(start + static_cast<std::uint64_t> (i)) & mask] = l;
-            const float absL = std::fabs (l);
+            const float absL = std::fabs (L[i]);
             if (absL > blockPeakL) blockPeakL = absL;
             if (absL > blockPeakR) blockPeakR = absL;
         }
     }
-
-    // Release: writers in pushSamples are paired with the reader's acquire
-    // load of writeIdx, so the reader sees the matching scope writes.
-    writeIdx.store (start + static_cast<std::uint64_t> (numSamples),
-                    std::memory_order_release);
-
-    if (clipDetectedThisRange)
-        blockClipped = true;
 }
 
-void Telemetry::finishBlock (std::uint32_t voiceMask) noexcept
+void Telemetry::finishBlock() noexcept
 {
     // VU envelope: instant attack to the block peak, exponential release per
-    // block. The block-rate release is coarse but matches the editor's 30 Hz
-    // read cadence — a finer per-sample envelope would be invisible at the UI.
+    // block.
     if (blockPeakL > vuEnvL) vuEnvL = blockPeakL;
     else                     vuEnvL *= releaseCoef;
     if (blockPeakR > vuEnvR) vuEnvR = blockPeakR;
@@ -68,29 +49,6 @@ void Telemetry::finishBlock (std::uint32_t voiceMask) noexcept
     publishedVuL.store (std::min (1.0f, vuEnvL), std::memory_order_relaxed);
     publishedVuR.store (std::min (1.0f, vuEnvR), std::memory_order_relaxed);
 
-    if (blockClipped)
-        clipFlag.store (true, std::memory_order_relaxed);
-
-    mask.store (voiceMask, std::memory_order_relaxed);
-
-    blockPeakL   = 0.0f;
-    blockPeakR   = 0.0f;
-    blockClipped = false;
-}
-
-int Telemetry::readScope (float* dest, int destSize) const noexcept
-{
-    if (dest == nullptr || destSize <= 0) return 0;
-
-    const std::uint64_t w = writeIdx.load (std::memory_order_acquire);
-    const int available   = static_cast<int> (std::min<std::uint64_t> (w, kScopeBufferSize));
-    const int wantLen     = std::min (destSize, available);
-    if (wantLen <= 0) return 0;
-
-    constexpr std::uint64_t ring = static_cast<std::uint64_t> (kScopeBufferSize - 1);
-    const std::uint64_t startIdx = w - static_cast<std::uint64_t> (wantLen);
-    for (int i = 0; i < wantLen; ++i)
-        dest[i] = scope[(startIdx + static_cast<std::uint64_t> (i)) & ring];
-
-    return wantLen;
+    blockPeakL = 0.0f;
+    blockPeakR = 0.0f;
 }

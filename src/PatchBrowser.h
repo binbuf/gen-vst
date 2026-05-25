@@ -10,7 +10,6 @@
 
 #include <juce_core/juce_core.h>
 
-#include "PartManager.h"
 #include "PatchSystem.h"
 
 namespace genvst
@@ -84,11 +83,17 @@ struct PatchRoot
 class PatchBrowser : private juce::Thread
 {
 public:
-    // The audio-thread delivery queue is sized so a full state restore can
-    // push all 6 parts' patches at once (Task 16); the UI per-click load is a
-    // single push that the audio thread drains every block, so this is plenty
-    // of headroom (04-patch-system.md "Audio Thread Delivery").
+    // The audio-thread delivery queue size; per-click loads push a single
+    // entry the audio thread drains every block (04-patch-system.md
+    // "Audio Thread Delivery").
     static constexpr int kQueueCapacity = 8;
+
+    // Slot count for the per-"part" active-path table. The v1 multitimbral
+    // model is gone (mvp2/02-strip-v1) — Task 09 reshapes this surface as
+    // part of the tagged preset browser. Kept as a small fixed pool so the
+    // existing per-part API (loadIntoPart / activePatchPath) compiles
+    // unchanged until Task 09 lands.
+    static constexpr int kNumPartSlots = 6;
 
     PatchBrowser();
     ~PatchBrowser() override;
@@ -367,8 +372,8 @@ private:
 
     // Per-part active patch path (the file path each part was loaded from).
     // Set by loadIntoPart on the message thread, read by state-save (Task 16).
-    std::array<juce::String, PartManager::kNumParts> activePaths;
-    mutable juce::CriticalSection                     activePathLock;
+    std::array<juce::String, kNumPartSlots> activePaths;
+    mutable juce::CriticalSection           activePathLock;
 
     // Search index — protected by indexMutex; populated by the background
     // thread. `indexBuilt` is the cheap "is it ready yet?" probe.

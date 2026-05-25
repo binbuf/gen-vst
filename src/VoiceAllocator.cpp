@@ -4,8 +4,6 @@
 #include <cmath>
 #include <cstring>
 
-#include "DACPlayer.h"
-
 void VoiceAllocator::setVgmLogger (VgmLogger* logger) noexcept
 {
     for (auto& v : voices)
@@ -246,7 +244,7 @@ void VoiceAllocator::updateActiveVoicesForPart (int part, const Patch& patch, bo
             v.updateRegisters (patch, velToTl);
 }
 
-void VoiceAllocator::render (float* outL, float* outR, int numSamples, DACPlayer* dac)
+void VoiceAllocator::render (float* outL, float* outR, int numSamples)
 {
     if (numSamples <= 0)
         return;
@@ -268,19 +266,9 @@ void VoiceAllocator::render (float* outL, float* outR, int numSamples, DACPlayer
     for (auto& v : voices)
         if (! v.isIdle())
         {
-            // Task 28 — advance any in-progress portamento before generating
-            // samples so the chip's frequency registers reflect the new
-            // interpolated pitch for the whole block. Cheap no-op when the
-            // voice isn't gliding (release / steady note).
             v.advanceGlide (toGen);
             v.renderAdd (mixL + carry, mixR + carry, toGen);
         }
-
-    // The DAC is summed into the same native mix buffer as the FM voices so
-    // a single resample pass handles both (ADR-0011, ADR-0014). The dedicated
-    // 17th ymfm instance never consumes an FM voice slot.
-    if (dac != nullptr)
-        dac->renderAdd (mixL + carry, mixR + carry, toGen);
 
     const int available = carry + toGen;
 

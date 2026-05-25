@@ -20,28 +20,20 @@ add_executable(GenVstTests
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
     VoiceAllocatorTests.cpp
-    MidiRoutingTests.cpp
     PsgDacTests.cpp
     PsgEnvelopeTests.cpp
-    BankIOTests.cpp
     AlgoMappingTests.cpp
     TuningTests.cpp
-    DACKitTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmLogger.cpp"
-    "${CMAKE_SOURCE_DIR}/src/BankIO.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"
-    "${CMAKE_SOURCE_DIR}/src/PartManager.cpp"
-    "${CMAKE_SOURCE_DIR}/src/MidiRouter.cpp"
     "${CMAKE_SOURCE_DIR}/src/Voice.cpp"
     "${CMAKE_SOURCE_DIR}/src/VoiceAllocator.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Wrapper.cpp"
     "${CMAKE_SOURCE_DIR}/src/SN76489Engine.cpp"
-    "${CMAKE_SOURCE_DIR}/src/DACPlayer.cpp"
-    "${CMAKE_SOURCE_DIR}/src/DACKit.cpp"
     "${CMAKE_SOURCE_DIR}/src/Tuning.cpp")
 
 # The ymfm OPN2 core — VoiceAllocatorTests drives real ymfm::ym2612 instances
@@ -84,7 +76,7 @@ target_link_libraries(GenVstTests PRIVATE
     juce::juce_core
     juce::juce_events           # PatchBrowser inherits juce::Thread
     juce::juce_audio_basics
-    juce::juce_audio_formats)   # DACPlayer::loadWav
+    juce::juce_audio_formats)
 
 include(GoogleTest)
 gtest_discover_tests(GenVstTests)

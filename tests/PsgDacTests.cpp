@@ -3,48 +3,11 @@
 #include <array>
 #include <cmath>
 
-#include "DACPlayer.h"
 #include "SN76489Engine.h"
 
-// --- DACPlayer pure helpers ---------------------------------------------------
-
-TEST (DACPlayer, FloatToUnsignedSilenceIsMidpoint)
-{
-    // YM2612 DAC: 0x80 is the midpoint / silence (07-feature-spec.md
-    // "DAC Mode Specification").
-    EXPECT_EQ (DACPlayer::floatTo8BitUnsigned (0.0f), 0x80);
-}
-
-TEST (DACPlayer, FloatToUnsignedExtremes)
-{
-    EXPECT_EQ (DACPlayer::floatTo8BitUnsigned (1.0f),  255);
-    EXPECT_EQ (DACPlayer::floatTo8BitUnsigned (-1.0f), 1);
-}
-
-TEST (DACPlayer, FloatToUnsignedClampsOutOfRange)
-{
-    EXPECT_EQ (DACPlayer::floatTo8BitUnsigned (2.0f),   255);
-    EXPECT_EQ (DACPlayer::floatTo8BitUnsigned (-2.0f),  1);
-}
-
-TEST (DACPlayer, NormaliseDacRatePassesValidRates)
-{
-    EXPECT_EQ (DACPlayer::normaliseDacRate (8000),  8000);
-    EXPECT_EQ (DACPlayer::normaliseDacRate (11025), 11025);
-    EXPECT_EQ (DACPlayer::normaliseDacRate (22050), 22050);
-}
-
-TEST (DACPlayer, NormaliseDacRateFallsBackOnUnknown)
-{
-    EXPECT_EQ (DACPlayer::normaliseDacRate (48000), 22050);
-    EXPECT_EQ (DACPlayer::normaliseDacRate (0),     22050);
-    EXPECT_EQ (DACPlayer::normaliseDacRate (-1),    22050);
-}
-
-// Concurrent stress / lifecycle coverage of DACPlayer was moved into
-// DACKitTests.cpp (Task 31), since the player now consumes a DACKit instead
-// of holding its own single-sample buffer. See
-// DACPlayer.KitMutationsAreSafeUnderConcurrentRender.
+// The DAC half of this test file was removed in mvp2/02-strip-v1 — the DAC
+// player is replaced by the D-mode DSP decimator in Task 03. What remains is
+// the SN76489Engine surface, which Task 06 re-wires into the v2 SQ panel.
 
 // --- SN76489Engine allocation -------------------------------------------------
 

@@ -8,7 +8,6 @@
 #include "PatchSystem.h"
 #include "Voice.h"
 
-class DACPlayer;
 class VgmLogger;
 
 // The shared 16-voice FM pool (ADR-0013).
@@ -110,10 +109,8 @@ public:
 
     // Render `numSamples` of host-rate stereo audio: sum all sounding voices
     // at the native rate, then resample the mix to the host rate in one
-    // pass. If `dac` is non-null, its DAC ymfm instance is also rendered
-    // into the same native mix buffer before the resample (ADR-0011,
-    // ADR-0014), so FM voices and DAC pass through a single resampler stage.
-    void render (float* outL, float* outR, int numSamples, DACPlayer* dac = nullptr);
+    // pass.
+    void render (float* outL, float* outR, int numSamples);
 
     // --- Introspection (tests / telemetry) -----------------------------------
 

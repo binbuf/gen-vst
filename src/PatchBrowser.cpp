@@ -434,7 +434,7 @@ PatchBrowser::search (const juce::String& query, int maxResults) const
 
 std::string PatchBrowser::loadIntoPart (int part, const juce::String& absolutePath)
 {
-    if (part < 0 || part >= PartManager::kNumParts)
+    if (part < 0 || part >= kNumPartSlots)
         return "invalid part index: " + std::to_string (part);
 
     const fs::path fsPath { absolutePath.toRawUTF8() };
@@ -467,7 +467,7 @@ std::string PatchBrowser::loadIntoPart (int part, const juce::String& absolutePa
 
 juce::String PatchBrowser::activePatchPath (int part) const
 {
-    if (part < 0 || part >= PartManager::kNumParts)
+    if (part < 0 || part >= kNumPartSlots)
         return {};
     const juce::ScopedLock lk (activePathLock);
     return activePaths[(std::size_t) part];
@@ -475,7 +475,7 @@ juce::String PatchBrowser::activePatchPath (int part) const
 
 void PatchBrowser::clearActivePatchPath (int part)
 {
-    if (part < 0 || part >= PartManager::kNumParts)
+    if (part < 0 || part >= kNumPartSlots)
         return;
     const juce::ScopedLock lk (activePathLock);
     activePaths[(std::size_t) part] = juce::String{};
