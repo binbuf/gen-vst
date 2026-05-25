@@ -85,8 +85,17 @@ Approximation algorithm for `PsgPreset` params derived from this sequence:
 
 DMP PSG instruments that use the arpeggio or pitch macros will import with
 `detune = 0` and a note in the notification toast: "DMP PSG arpeggio / pitch
-macro ignored — only volume envelope imported." The noise macro (type +
-rate) maps directly to `noise.type` and `noise.rate`.
+macro ignored — only volume envelope imported."
+
+The DMP STD body for Genesis PSG (system 0x02 / 0x42) carries duty- and
+wave-macro slots that have no community-agreed mapping to the SN76489 noise
+channel's mode (`white` / `periodic`) and shift rate (`low` / `mid` /
+`high` / `ch2`) — DefleMask configures Genesis noise mode at the channel
+level, not per-instrument. The import bridge therefore consumes those
+macros to advance the parser cursor but **does not** derive `noise.type` or
+`noise.rate` from them; the noise channel lands at the apvts defaults
+(`vol = 0`, `type = white`, `rate = mid`). Users tune the noise channel
+manually after import.
 
 The approximation is **best-effort**. A DMP preset with a complex,
 multi-plateau volume sequence will not round-trip cleanly. This is
@@ -100,10 +109,13 @@ DMP PSG is an import-only path.
   `.dmp` only; all other extensions continue through `tagFromExtension`.
   The folder-scan marks `.dmp` files as `Tag::Pending`; a pending-tag
   file is resolved on first browse-expand or on load attempt.
-- A new `loadDmpPsg(path)` function in `src/DmpLoader.{h,cpp}` (alongside
-  the existing FM DMP loader in the same file) handles mode-0 DMP files.
-  It returns a `PsgPreset` on success, or a descriptive error string for
-  the notification toast.
+- A new `loadDmpPsg(path)` function in `src/PsgPreset.{h,cpp}` (the file
+  that already owns the `PsgPreset` data model and the `.psg` loader) handles
+  mode-0 DMP files. It returns a `PsgPreset` on success, or a descriptive
+  error string for the notification toast — plus a non-fatal `warning` field
+  on `PsgPresetLoadResult` for the arpeggio / pitch-macro toast. The FM DMP
+  loader (`loadDMP`) stays where it has always lived, in `src/PatchSystem.cpp`
+  alongside the other format loaders.
 - The `.dmp` extension is added to `kSupportedPatchExtensions` (it was
   already present for FM; the set remains unchanged — both modes use the
   same extension and the tag resolver handles the split).

@@ -34,8 +34,11 @@ for a v2 release.
 - **`.gnvst` plugin state file** (`04-patch-system.md` *Plugin state
   file*):
   - Contents: the full `apvts` XML (mode + FM + SQ + D + globals),
-    the active patch path (one path; the patch's extension implies
-    its tag and therefore the mode), the registered custom-root paths.
+    the active patch path (one path; the tag is resolved on restore
+    via `PatchSystem::tagFromFile` — extension alone for every format
+    except `.dmp`, which needs the byte-2 mode peek per ADR-0026 —
+    and the resolved tag determines the mode), the registered
+    custom-root paths.
   - **No embedded base64 PCM** in v2 (D mode does not load WAV files
     per ADR-0021).
   - Custom-root paths and the active-patch path are stored as

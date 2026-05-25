@@ -246,11 +246,19 @@ checkout as the FM loader; see ADR-0012 pattern). Key fields:
   sequence. A notification toast warns the user.
 - **Pitch macro** — fine pitch offsets. **Dropped on import** for the same
   reason.
-- **Noise macro** — noise type (periodic / white) and shift rate. Maps
-  directly to `noise.type` and `noise.rate` in the `PsgPreset`.
+- **Duty / wave macros** — DefleMask's per-chip macro slots. For Genesis
+  PSG (sys 0x02 / 0x42) these carry no community-standard mapping to the
+  SN76489 noise channel (DefleMask configures noise mode at the channel
+  level, not per-instrument), so the import bridge reads them only to
+  advance the parser cursor; the `PsgPreset.noise` channel is left at the
+  apvts defaults (`vol = 0`, `type = white`, `rate = mid`) and the user
+  tunes it manually after import. See [ADR-0026](adr/0026-dmp-psg-import.md)
+  *Macro → ADSR approximation* for the rationale.
 
-**Macro → ADSR approximation.** `loadDmpPsg()` in `src/DmpLoader.{h,cpp}`
-derives `PsgPreset` fields from the volume macro as follows:
+**Macro → ADSR approximation.** `loadDmpPsg()` in `src/PsgPreset.{h,cpp}`
+(alongside the `.psg` loader and the `PsgPreset` data model — the FM DMP
+loader stays in `src/PatchSystem.cpp`) derives `PsgPreset` fields from the
+volume macro as follows:
 
 1. Convert the attenuation sequence to a level sequence (15 − atten).
 2. `atk` — steps from the first sample to the peak level; scaled to the
