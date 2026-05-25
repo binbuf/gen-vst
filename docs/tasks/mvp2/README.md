@@ -134,6 +134,38 @@ Resolved during the post-mockup review (no longer open):
 - Signed/notarized macOS `.pkg`; `.deb`/AppImage for Linux (ADR-0016).
 - Cross-OS portability for custom-root paths (existing limitation,
   carried).
+- **MIDI Program Change handling** (moved from `07-feature-spec.md`
+  *MIDI* section by mvp2/11). `PatchBrowser::factoryPatchByIndex` is
+  the source-of-truth pool, but `dispatchMidi` does not yet handle
+  `juce::MidiMessage::isProgramChange`. Wiring is small but needs an
+  audio-thread-safe per-mode "current pool" cache and a decision on
+  how PC interacts with the v2 single-engine + auto-mode-switch model
+  (PC selects the Nth patch of the active mode, never flips mode —
+  ADR-0025).
+- **MIDI Reset All Controllers (CC 121)** (moved from `07-feature-spec.md`
+  *MIDI* section by mvp2/11). Not wired in `handleControlChange`. The
+  spec calls for resetting mod-wheel mirror, pitch-bend mirror, and
+  sustain-pedal state on receipt; clients today must send CC 120 (All
+  Sound Off) for a clean reset.
+- **Standalone `.gnvst` state file** (moved from `07-feature-spec.md`
+  *State* section by mvp2/11). The DAW project envelope covers the
+  in-session round-trip (mvp2/11); a freestanding file for cross-
+  session / cross-machine portability needs its own ADR (filename,
+  magic bytes, version handshake, captured-state subset) and a
+  dedicated task.
+- **CPU profiling pass on v2 final build** (carried from
+  `07-feature-spec.md` *Open Questions* #1). The 16-voice + AUTO_RETRIG
+  + LFO + Filter + Ladder + telemetry-active stress measurement against
+  Reaper has not yet been recorded; if the figure exceeds the 30%-of-
+  one-core target, optimisation (ymfm batch-render, decimator
+  vectorisation) is the post-MVP follow-up.
+- **Cross-platform pluginval / CI matrix verification on v2 final
+  build** (carried from mvp2/11 Verification). The Windows + macOS +
+  Linux GitHub-Actions matrix and the `pluginval --strictness-level 8`
+  pass on each platform's artefact must be run against the v2 release
+  branch and any failures fixed before shipping; this is a release-
+  prep checklist item rather than a code change and is left to the
+  release engineer.
 
 Picking these up later is a follow-up planning exercise; do not implement
 them as part of the mvp2 sequence.

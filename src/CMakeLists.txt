@@ -114,6 +114,31 @@ file(COPY ${FACTORY_FM_TFI} DESTINATION "${FACTORY_STAGE}")
 file(COPY ${FACTORY_SQ_PSG} DESTINATION "${FACTORY_STAGE}/sq")
 juce_add_bundle_resources_directory(GenVst "${FACTORY_STAGE}")
 
+# `juce_add_bundle_resources_directory` only sets MACOSX_PACKAGE_LOCATION on
+# every source — an Xcode-only attribute. On Windows + Linux the call is a
+# no-op (the files become HEADER_FILE_ONLY references and never land inside
+# the .vst3 bundle's Contents/Resources/patches/), so a stock Windows install
+# of the plugin would never find the factory bank — `resolveFactoryRoot` would
+# then fall back to GENVST_DEV_PATCH_DIR, which is absent on an end-user
+# machine. Task 11: mirror the macOS bundle layout into the Windows + Linux
+# artefacts with a POST_BUILD copy. macOS continues to use the JUCE/Xcode
+# path. Run for every plugin-format target that produces a bundle directory
+# (VST3 + AU); Standalone is covered by the install(FILES …) rule below.
+if(NOT APPLE)
+    foreach(plugin_format_target IN ITEMS GenVst_VST3 GenVst_AU)
+        if(TARGET ${plugin_format_target})
+            add_custom_command(TARGET ${plugin_format_target} POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E rm -rf
+                    "$<TARGET_FILE_DIR:${plugin_format_target}>/../Resources/patches"
+                COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                    "${FACTORY_STAGE}"
+                    "$<TARGET_FILE_DIR:${plugin_format_target}>/../Resources/patches"
+                COMMENT "Staging factory patches into ${plugin_format_target} bundle"
+                VERBATIM)
+        endif()
+    endforeach()
+endif()
+
 # Standalone has no bundle — install the factory patches to the data
 # directory, preserving the sq/ subfolder.
 install(FILES ${FACTORY_FM_TFI} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")

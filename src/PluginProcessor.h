@@ -3,7 +3,11 @@
 #include <array>
 #include <atomic>
 #include <filesystem>
+#include <functional>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -12,6 +16,7 @@
 #include "OutputFilter.h"
 #include "PatchBrowser.h"
 #include "PatchSystem.h"
+#include "PluginState.h"
 #include "PsgPreset.h"
 #include "SN76489Engine.h"
 #include "Telemetry.h"
@@ -156,6 +161,13 @@ public:
     // Pass {} to clear. Editor calls this in its constructor.
     void setPatchLoadedNotifier (std::function<void (const PatchLoadedNotifier&)> cb);
 
+    // Register a notifier for state-restore toasts (unresolved patch path,
+    // unresolved custom root, legacy v1 state ignored — see PluginState.cpp).
+    // Drains any toasts queued before the editor registered. Pass {} to
+    // clear. Called from the editor constructor on the message thread.
+    void setStateRestoreNotifier (std::function<void (const juce::String& level,
+                                                      const juce::String& message)> cb);
+
     // Public so unit tests can build the layout standalone (no AudioProcessor
     // instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -177,9 +189,29 @@ private:
     juce::String applyFmPatch (const Patch& patch, const juce::String& absolutePath);
     juce::String applyPsgPreset (const PsgPreset& preset, const juce::String& absolutePath);
 
-    // Per-mode active path setters/getters (internal — apvts state-save will
-    // eventually persist these, see Task 11).
+    // Per-mode active path setter (internal — apvts state-save persists the
+    // pair via genvst::state::save). State-restore drives the parallel
+    // restoreActivePathForMode helper below.
     void setActivePathForMode (Mode mode, const juce::String& path);
+
+    // Drain the pending-restore payload queued by setStateInformation. Called
+    // at the end of the first prepareToPlay after restore (once the JUCE
+    // wrapper type has been set and the patch browser has been initialised).
+    // Each per-mode path is verified against the filesystem; resolvable paths
+    // are recorded as active + the editor's patchLoaded callback fires (so
+    // the header LCD updates); unresolvable paths raise a state-restore
+    // toast and the active path is left empty (the restored apvts values
+    // stay in place — 01-architecture.md *State Persistence*). Each custom
+    // root is re-registered via PatchBrowser::addCustomRoot; unresolvable
+    // paths raise a toast.
+    void drainPendingStateRestore();
+
+    // Emit a state-restore toast. If the editor has registered a notifier
+    // the call routes through; otherwise the toast is queued and drained
+    // when the editor registers (covers the "setStateInformation runs
+    // before createEditor" case typical for Reaper / Logic / etc.).
+    void emitStateRestoreToast (const juce::String& level,
+                                const juce::String& message);
 
     void renderFmBlock  (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void renderSqBlock  (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
@@ -262,6 +294,16 @@ private:
     // default twice in a row (the listener can fire multiple times per
     // change in some hosts).
     Mode lastHandledMode = Mode::FM;
+
+    // Pending state-restore payload (Task 11). setStateInformation parses
+    // the v2 envelope into here and clears it once prepareToPlay drains it.
+    std::optional<genvst::state::PendingRestore>          pendingStateRestore;
+
+    // State-restore toast callback + queue. The editor registers in its
+    // ctor and we drain any toasts queued before that point (covers the
+    // setStateInformation-before-createEditor flow common in real hosts).
+    std::function<void (const juce::String&, const juce::String&)> stateRestoreToastCallback;
+    std::vector<std::pair<juce::String, juce::String>>             pendingStateRestoreToasts;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

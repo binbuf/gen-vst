@@ -22,18 +22,18 @@ preset is loaded ([ADR-0025](adr/0025-tagged-preset-browser.md)).
 
 All FM features present in Genny v1.5 are matched in FM mode:
 
-- [ ] YM2612 FM synthesis — single patch played polyphonically on the
-  16-voice pool
-- [ ] All 8 FM algorithms
-- [ ] Per-operator controls: DT, MUL, TL, KS, AR, DR, SR, RR, SL, SSG-EG, AMON
-- [ ] Per-channel controls: ALG, FB, L/R output enable, AMS, PMS
-- [ ] Global LFO: enable toggle, rate selector (8 values)
-- [ ] TFI patch load
-- [ ] Folder-tree patch browser ([ADR-0006](adr/0006-folder-tree-patch-browser.md)), tagged ([ADR-0025](adr/0025-tagged-preset-browser.md))
-- [ ] MIDI note-on / note-off
-- [ ] MIDI velocity → TL scaling (configurable on/off)
-- [ ] MIDI pitch bend
-- [ ] Polyphonic FM (multiple simultaneous FM notes)
+- [x] YM2612 FM synthesis — single patch played polyphonically on the
+  16-voice pool *(mvp2/05)*
+- [x] All 8 FM algorithms *(mvp2/05)*
+- [x] Per-operator controls: DT, MUL, TL, KS, AR, DR, SR, RR, SL, SSG-EG, AMON *(mvp2/05)*
+- [x] Per-channel controls: ALG, FB, L/R output enable, AMS, PMS *(mvp2/05)*
+- [x] Global LFO: enable toggle, rate selector (8 values) *(mvp2/05)*
+- [x] TFI patch load *(mvp2/09)*
+- [x] Folder-tree patch browser ([ADR-0006](adr/0006-folder-tree-patch-browser.md)), tagged ([ADR-0025](adr/0025-tagged-preset-browser.md)) *(mvp2/09)*
+- [x] MIDI note-on / note-off *(mvp2/05)*
+- [x] MIDI velocity → TL scaling (configurable on/off) *(mvp2/05)*
+- [x] MIDI pitch bend *(mvp2/05)*
+- [x] Polyphonic FM (multiple simultaneous FM notes) *(mvp2/05)*
 
 Multitimbrality and DAC-as-sample-channel are explicitly **not** in v2 —
 both are replaced by the multi-instance + audio-FX D mode design above.
@@ -43,103 +43,103 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 ## Extensions Beyond Genny
 
 ### Patch Formats
-- [ ] VGI patch import (adds AMS/FMS fields missing from TFI)
-- [ ] VGI patch export
-- [ ] DMP patch import (DefleMask format, version 11 — [ADR-0012](adr/0012-dmp-version-scope.md))
-- [ ] Y12 patch import (flat single-channel register dump)
-- [ ] OPM patch import (text-based VOPM / YM2151)
-- [ ] VGM bank import (extracts FM patches from .vgm/.vgz register streams)
-- [ ] Drag-and-drop: accept tagged patch files dropped onto plugin window
-- [ ] Bulk folder import: drop a folder → register it as a custom patch root
+- [x] VGI patch import (adds AMS/FMS fields missing from TFI) *(mvp2/09)*
+- [x] VGI patch export *(mvp2/09)*
+- [x] DMP patch import (DefleMask format, version 11 — [ADR-0012](adr/0012-dmp-version-scope.md)) *(mvp2/09 + mvp2/10 for DMP PSG per ADR-0026)*
+- [x] Y12 patch import (flat single-channel register dump) *(mvp2/09)*
+- [x] OPM patch import (text-based VOPM / YM2151) *(mvp2/09)*
+- [x] VGM bank import (extracts FM patches from .vgm/.vgz register streams) *(mvp2/09)*
+- [x] Drag-and-drop: accept tagged patch files dropped onto plugin window *(mvp2/09)*
+- [x] Bulk folder import: drop a folder → register it as a custom patch root *(mvp2/09)*
 
 ### Mode-switch / Tagged presets (v2 additions)
-- [ ] `mode_select` apvts param (FM | SQ | D)
-- [ ] Manual mode selector in header
-- [ ] Auto mode-switch when a tagged preset is loaded
-- [ ] `.psg` preset format (SQ mode)
-- [ ] Unified tagged preset browser with `All / FM / SQ` filter chips
+- [x] `mode_select` apvts param (FM | SQ | D) *(mvp2/02)*
+- [x] Manual mode selector in header *(mvp2/08)*
+- [x] Auto mode-switch when a tagged preset is loaded *(mvp2/09)*
+- [x] `.psg` preset format (SQ mode) *(mvp2/09 + mvp2/10)*
+- [x] Unified tagged preset browser with `All / FM / SQ` filter chips
       (D mode has no preset format —
-      [ADR-0025](adr/0025-tagged-preset-browser.md))
+      [ADR-0025](adr/0025-tagged-preset-browser.md)) *(mvp2/09)*
 
 ### Polyphony (FM mode)
-- [ ] FM polyphony beyond the YM2612's hardware 6 voices — single-patch,
-  16-voice pool
-- [ ] `poly_voices` apvts param — numeric voice count 1–16 (default 16);
+- [x] FM polyphony beyond the YM2612's hardware 6 voices — single-patch,
+  16-voice pool *(mvp2/05)*
+- [x] `poly_voices` apvts param — numeric voice count 1–16 (default 16);
   surfaced as the `POLY` stepper on the FM mode panel, mirroring the
-  RYM2612 `POLY N` field
-- [ ] `note_mode` apvts param — `RETRIG` vs `LEGATO` always-visible
+  RYM2612 `POLY N` field *(mvp2/05)*
+- [x] `note_mode` apvts param — `RETRIG` vs `LEGATO` always-visible
   toggle on the FM panel; semantics in [`02-fm-synthesis.md`](02-fm-synthesis.md)
-  § *Voice handling — LEGATO and RETRIG*
-- [ ] `pitch_bend_range` apvts param — ±1..±12 semitones (default ±2);
+  § *Voice handling — LEGATO and RETRIG* *(mvp2/05)*
+- [x] `pitch_bend_range` apvts param — ±1..±12 semitones (default ±2);
   surfaced as the `RANGE` stepper on the FM panel (promoted from
-  Settings)
-- [ ] LRU voice stealing across the pool; release-phase voices preferred
-  for stealing
-- [ ] `mod_wheel_value` and `pitch_bend_value` apvts params — display-only
+  Settings) *(mvp2/05)*
+- [x] LRU voice stealing across the pool; release-phase voices preferred
+  for stealing *(mvp2/05)*
+- [x] `mod_wheel_value` and `pitch_bend_value` apvts params — display-only
   mirrors of the live MIDI stream, written by `PluginProcessor` on every
   inbound CC 1 / pitch-bend message. The FM `GLOBAL IN` PB + MW wheels
   and the SQ `GLOBAL IN` PB wheel bind to these via the normal relay
   layer (no separate telemetry event — see `05-ui-ux.md` *C++→JS
-  telemetry push*).
+  telemetry push*). *(mvp2/05)*
 
 ### FM Features
 - [ ] Channel 3 special mode (per-operator pitch as a top-level UI editor) — *post-MVP ([ADR-0014](adr/0014-special-channel-features.md))*
-- [ ] SSG-EG for all 8 looping envelope shapes (UI exposes them with named labels: Repeat, Hold, Alternate, Inv. Repeat, etc., not raw `8`–`15`)
-- [ ] **FREQ CTRL MODE** — three-state selector (`INT_MUL` / `FLOAT_MUL` / `AUTO_RETRIG`); RYM2612 manual page 11. `FLOAT_MUL` and `AUTO_RETRIG` use Channel 3 Special / CSM internally — see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *FREQ Control Mode*.
-- [ ] **FIXED per-operator** toggle — when active in `FLOAT_MUL` / `AUTO_RETRIG`, the operator runs at an absolute Hz value (`freq_fixed_hz[op]`) instead of `note × mul_float[op]`. Greyed out in `INT_MUL`.
-- [ ] **RETRIG RATE** (TimerA value, 0–1023) — visible/editable only when `freq_ctrl_mode == AUTO_RETRIG`; writes YM2612 registers `0x24` / `0x25`.
-- [ ] **MW → PMS routing** — modwheel (CC 1) routes into the LFO `PMS` field at fixed full depth (no adjustable knob). RYM2612 manual page 10. (Modwheel is the **only** instrument-level MW route in v2; both the earlier per-operator `mw[op]` TL-modulation column and the global `mw_to_pms` depth knob were removed during the post-mockup review — the per-patch `PMS` knob already covers the "amount of vibrato" axis.)
-- [ ] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel. **Lives in the persistent header next to VOL** (per RYM2612 reference) with **mode-aware binding** — FM targets `fm_dac_prescaler`, D targets `prescaler`, SQ greys it (PSG bypasses DAC). The D panel itself carries **no** prescaler knob; the header widget is the sole UI surface for both prescaler params (see `08-ui-views.md` views 1 + 4).
-- [ ] **CH VOL (channel TL master)** knob (`channel_tl`, 0.0–1.0) — UI-only convenience that multiplies into all 4 operator TLs on the register-write path. Sits above the operator grid with connector lines fanning down to each op's TL knob, mirroring the RYM2612 reference. Not a YM2612 hardware register; the multiplier is applied per-op before the `attenuation = 127 - level` flip. Default 1.0 (no master attenuation).
-- [ ] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*.
-- [ ] **HARDWARE STRICT** authenticity toggle — Settings-level opt-in
+- [x] SSG-EG for all 8 looping envelope shapes (UI exposes them with named labels: Repeat, Hold, Alternate, Inv. Repeat, etc., not raw `8`–`15`) *(mvp2/05)*
+- [x] **FREQ CTRL MODE** — three-state selector (`INT_MUL` / `FLOAT_MUL` / `AUTO_RETRIG`); RYM2612 manual page 11. `FLOAT_MUL` and `AUTO_RETRIG` use Channel 3 Special / CSM internally — see [`02-fm-synthesis.md`](02-fm-synthesis.md) § *FREQ Control Mode*. *(mvp2/05)*
+- [x] **FIXED per-operator** toggle — when active in `FLOAT_MUL` / `AUTO_RETRIG`, the operator runs at an absolute Hz value (`freq_fixed_hz[op]`) instead of `note × mul_float[op]`. Greyed out in `INT_MUL`. *(mvp2/05)*
+- [x] **RETRIG RATE** (TimerA value, 0–1023) — visible/editable only when `freq_ctrl_mode == AUTO_RETRIG`; writes YM2612 registers `0x24` / `0x25`. *(mvp2/05)*
+- [x] **MW → PMS routing** — modwheel (CC 1) routes into the LFO `PMS` field at fixed full depth (no adjustable knob). RYM2612 manual page 10. (Modwheel is the **only** instrument-level MW route in v2; both the earlier per-operator `mw[op]` TL-modulation column and the global `mw_to_pms` depth knob were removed during the post-mockup review — the per-patch `PMS` knob already covers the "amount of vibrato" axis.) *(mvp2/05)*
+- [x] **DAC PRESCALER (FM mode)** knob (`fm_dac_prescaler`, 0.0–1.0) — YM2612 internal clock prescaler / DAC sample-rate divider, modelled per [`02-fm-synthesis.md`](02-fm-synthesis.md) § *DAC Prescaler (FM mode)*. Shares the `DspDecimator` code path with D mode's `prescaler` param but stores state independently so a mode switch doesn't blow user tuning. Mirrors the `DAC PRESCALER` knob on the RYM2612 reference panel. **Lives in the persistent header next to VOL** (per RYM2612 reference) with **mode-aware binding** — FM targets `fm_dac_prescaler`, D targets `prescaler`, SQ greys it (PSG bypasses DAC). The D panel itself carries **no** prescaler knob; the header widget is the sole UI surface for both prescaler params (see `08-ui-views.md` views 1 + 4). *(mvp2/05 DSP + mvp2/08 header)*
+- [x] **CH VOL (channel TL master)** knob (`channel_tl`, 0.0–1.0) — UI-only convenience that multiplies into all 4 operator TLs on the register-write path. Sits above the operator grid with connector lines fanning down to each op's TL knob, mirroring the RYM2612 reference. Not a YM2612 hardware register; the multiplier is applied per-op before the `attenuation = 127 - level` flip. Default 1.0 (no master attenuation). *(mvp2/05)*
+- [x] **UI level vs HW attenuation** — `TL` / `SL` knobs and value readouts are *levels* (max = loudest, 0 = silent); the apvts → register layer inverts to hardware attenuation. See [`02-fm-synthesis.md`](02-fm-synthesis.md) § *UI level vs hardware attenuation*. *(mvp2/05)*
+- [x] **HARDWARE STRICT** authenticity toggle — Settings-level opt-in
   modelled on the RYM2612 manual's *For the Purists* page. When on:
   clamps `poly_voices` to 6; restricts `FLOAT_MUL` / `AUTO_RETRIG` to a
   single voice (extra voices fall back to `INT_MUL`); forces
   `output_filter` and `ladder_effect` on and locks their header
-  toggles. Default off. Bound to apvts param `hardware_strict`.
+  toggles. Default off. Bound to apvts param `hardware_strict`. *(mvp2/08)*
 
 ### Output character (all modes, v2 additions per [ADR-0024](adr/0024-hardware-filter-toggles.md))
-- [ ] **Output Filtering** toggle — Model-1 RC lowpass + amp coloration on mix bus
-- [ ] **Ladder Effect** toggle — YM2612 stepwise nonlinearity (FM voice sum + D-mode output; greyed out in SQ)
+- [x] **Output Filtering** toggle — Model-1 RC lowpass + amp coloration on mix bus *(mvp2/03 DSP + mvp2/08 header)*
+- [x] **Ladder Effect** toggle — YM2612 stepwise nonlinearity (FM voice sum + D-mode output; greyed out in SQ) *(mvp2/03 DSP + mvp2/08 header)*
 
 ### MIDI (FM and SQ modes; D mode ignores MIDI)
-- [ ] MIDI CC automation for all parameters (full map below)
-- [ ] Sustain pedal (CC 64): hold voices through note-off
-- [ ] All Sound Off (CC 120)
-- [ ] Reset All Controllers (CC 121)
-- [ ] All Notes Off (CC 123)
-- [ ] Program Change: load the Nth patch of the **current mode**
-- [ ] Aftertouch (channel pressure): default LFO depth (PMS); off / carrier TL alternates
+- [x] MIDI CC automation for all parameters (full map below) *(mvp2/05)*
+- [x] Sustain pedal (CC 64): hold voices through note-off *(mvp2/05)*
+- [x] All Sound Off (CC 120) *(mvp2/05)*
+- [ ] Reset All Controllers (CC 121) — *post-MVP; not wired in `handleControlChange`. MW + pitch-bend + sustain reset semantics not implemented; clients that need a clean controller reset use CC 120 (All Sound Off) which silences notes and resets PSG state.*
+- [x] All Notes Off (CC 123) *(mvp2/05)*
+- [ ] Program Change: load the Nth patch of the **current mode** — *post-MVP; `PatchBrowser::factoryPatchByIndex` exists for the source-of-truth pool but `dispatchMidi` doesn't yet handle `juce::MidiMessage::isProgramChange`. Wiring it is a one-block change in PluginProcessor.cpp but needs a per-mode "current pool" cache to keep the audio thread allocation-free; deferred so it can land alongside a small dedicated task.*
+- [x] Aftertouch (channel pressure): default LFO depth (PMS); off / carrier TL alternates *(mvp2/08)*
 
 ### SQ Features
-- [ ] Per-channel envelope (Task 23 software ADSR)
-- [ ] PSG pitch bend (`SN76489Engine::pitchBend()`; depth shared with FM
+- [x] Per-channel envelope (Task 23 software ADSR) *(mvp2/06)*
+- [x] PSG pitch bend (`SN76489Engine::pitchBend()`; depth shared with FM
       via the global `pitch_bend_range` apvts param). The SQ panel
       surfaces a read-only `PB` wheel visualizer in its `GLOBAL IN`
-      block — see `08-ui-views.md` view 3.
-- [ ] PSG velocity → attenuation mapping
-- [ ] Per-PSG-channel soft panning (L/R gain)
+      block — see `08-ui-views.md` view 3. *(mvp2/06)*
+- [x] PSG velocity → attenuation mapping *(mvp2/06)*
+- [x] Per-PSG-channel soft panning (L/R gain) *(mvp2/06)*
 
 ### D Mode (PCM2612-style audio FX)
-- [ ] Audio input bus on plugin
-- [ ] `prescaler` DSP — sample-rate decimation 0.0..1.0; UI surface is
+- [x] Audio input bus on plugin *(mvp2/03)*
+- [x] `prescaler` DSP — sample-rate decimation 0.0..1.0; UI surface is
       the **header** DAC PRESCALER knob (mode-aware binding — see
-      `08-ui-views.md` view 1)
-- [ ] `mono` toggle — collapse L/R before decimation
-- [ ] `dry_wet` mix — 0.0..1.0 blend of decimated output with original input
-- [ ] Plays nice with the Filter + Ladder toggles (Output Filter active;
-      Ladder applied; both header-toggleable)
-- [ ] Signal-presence feedback via header NOTE ON LED + the DAW's
+      `08-ui-views.md` view 1) *(mvp2/07 DSP + mvp2/08 header)*
+- [x] `mono` toggle — collapse L/R before decimation *(mvp2/07)*
+- [x] `dry_wet` mix — 0.0..1.0 blend of decimated output with original input *(mvp2/07)*
+- [x] Plays nice with the Filter + Ladder toggles (Output Filter active;
+      Ladder applied; both header-toggleable) *(mvp2/07)*
+- [x] Signal-presence feedback via header NOTE ON LED + the DAW's
       native track input meter (no panel-side input meters per
-      `08-ui-views.md` view 4)
+      `08-ui-views.md` view 4) *(mvp2/07 + mvp2/08)*
 
 ### UI
-- [ ] Live algorithm diagram (selected algorithm highlighted)
-- [ ] Per-operator inline ADSR curve preview (FM mode)
-- [ ] `NOTE ON` indicator LED (single LED, not 16)
-- [ ] Modern hardware-VST aesthetic ([ADR-0022](adr/0022-modern-vst-aesthetic.md))
-- [ ] **Hover tooltips** for every interactive control (full name + one-sentence description). Gated by the global `tooltips_enabled` apvts param, surfaced as both a header `TIPS` toggle (quick access while learning the layout) and a Settings `TOOLTIPS` row (set-and-forget). Default **on**. Content schema + widget recipe per [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system* and [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip*.
+- [x] Live algorithm diagram (selected algorithm highlighted) *(mvp2/05)*
+- [x] Per-operator inline ADSR curve preview (FM mode) *(mvp2/05)*
+- [x] `NOTE ON` indicator LED (single LED, not 16) *(mvp2/08)*
+- [x] Modern hardware-VST aesthetic ([ADR-0022](adr/0022-modern-vst-aesthetic.md)) *(mvp2/01 mockup → mvp2/05-08 implementation)*
+- [x] **Hover tooltips** for every interactive control (full name + one-sentence description). Gated by the global `tooltips_enabled` apvts param, surfaced as both a header `TIPS` toggle (quick access while learning the layout) and a Settings `TOOLTIPS` row (set-and-forget). Default **on**. Content schema + widget recipe per [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system* and [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip*. *(mvp2/04 widget + mvp2/08 settings)*
 
 ### Microtuning
 - [x] Scala `.scl` import — 12-degree scales, MIDI 69 = 440 Hz root, FM + SQ share one table, path persisted in DAW project. (Shipped Task 30; retained in v2 — code is mode-agnostic.)
@@ -148,9 +148,9 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [ ] MTS (MIDI Tuning Standard) Sysex — post-MVP.
 
 ### State
-- [ ] Full DAW state save/restore (`getStateInformation`/`setStateInformation`)
-- [ ] Mode + active patch path + apvts persisted in DAW project
-- [ ] Standalone state file (`.gnvst`) for cross-session/machine portability
+- [x] Full DAW state save/restore (`getStateInformation`/`setStateInformation`) *(mvp2/11)*
+- [x] Mode + active patch path + apvts persisted in DAW project *(mvp2/11; per-mode `<patch>` so a mode flip after restore remembers each mode's last patch label — see `PluginState.h`)*
+- [ ] Standalone state file (`.gnvst`) for cross-session/machine portability — *post-MVP; the DAW project state envelope (host's `setStateInformation`) covers the in-session round-trip and is what users actually interact with via project save / template. The freestanding `.gnvst` file format is a packaging concern that needs its own ADR (filename, magic bytes, version handshake, what subset of state it captures) and is deferred to a dedicated task.*
 
 ---
 
@@ -348,6 +348,12 @@ Most former open questions are now resolved by ADRs (see
 1. **CPU profiling pass** — confirm 16 ymfm instances at 44,100 Hz are
    affordable; revisit the instance layout if not ([ADR-0010](adr/0010-ymfm-instance-model.md)).
    A post-skeleton implementation check.
+   *Status (mvp2/11):* deferred to a manual Reaper-stress measurement. The
+   target is `< 30 %` peak CPU on a modern desktop for a 16-voice chord with
+   FM AUTO_RETRIG + LFO + Filter + Ladder + telemetry active. Measurement
+   has not yet been recorded against the final v2 build; if exceeded, the
+   tuning work (ymfm batch-render, decimator vectorisation) lands as a
+   post-MVP follow-up.
 2. **Host quirks for instrument-with-audio-input** — Logic, Pro Tools,
    and some older hosts may need special handling for the audio input bus
    on what they classify as an instrument plugin. Verified in v2/02 task.

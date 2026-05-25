@@ -508,6 +508,15 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
         patchBrowser.initialize (factoryRootPath);
         patchBrowserInitialised = true;
     }
+
+    // Drain any state-restore payload now that the patch browser is live.
+    // setStateInformation may have run before the JUCE wrapper set wrapperType
+    // (so we couldn't initialise the browser there); the pending restore
+    // queued during that call is processed here on the first prepareToPlay
+    // after restore. Subsequent prepareToPlay calls are no-ops because
+    // drainPendingStateRestore resets the optional.
+    if (pendingStateRestore.has_value())
+        drainPendingStateRestore();
 }
 
 void GenVstAudioProcessor::releaseResources()
@@ -1188,14 +1197,45 @@ void GenVstAudioProcessor::changeProgramName (int, const juce::String&) {}
 
 void GenVstAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = genvst::state::save (*this))
+    // Collect Custom-kind roots from the browser to persist. The user's
+    // factory / user-saved / user-imported roots are recreated automatically
+    // on startup, so only the Custom ones need to survive in the project.
+    std::vector<juce::String> customRoots;
+    for (const auto& r : patchBrowser.roots())
+    {
+        if (r == nullptr || r->folder == nullptr) continue;
+        if (r->kind != genvst::PatchRootKind::Custom)  continue;
+        customRoots.push_back (r->folder->path);
+    }
+
+    auto xml = genvst::state::save (apvts.copyState(),
+                                    activePathForMode (Mode::FM),
+                                    activePathForMode (Mode::SQ),
+                                    customRoots);
+    if (xml != nullptr)
         copyXmlToBinary (*xml, destData);
 }
 
 void GenVstAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        genvst::state::restore (*this, *xml);
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr)
+        return;
+
+    auto pending = genvst::state::restore (apvts, *xml);
+    if (! pending.has_value())
+    {
+        // Anything that isn't a v2 <GenVstState/> envelope is treated as a
+        // legacy / unknown byte stream and rejected without touching apvts.
+        // The release notes warn that v1 projects don't migrate.
+        emitStateRestoreToast (
+            "warn", "Gen VST: legacy state ignored — re-save the project to upgrade.");
+        return;
+    }
+
+    pendingStateRestore = std::move (*pending);
+    // The first prepareToPlay drains pendingStateRestore — see comment on the
+    // pendingStateRestore data member.
 }
 
 // =============================================================================
@@ -1294,7 +1334,23 @@ void GenVstAudioProcessor::handleAsyncUpdate()
 
     const juce::String activePath = activePathForMode (m);
     if (activePath.isNotEmpty())
-        return;   // mode already has a real patch — don't clobber it.
+    {
+        // Mode has a remembered patch (typical after state-restore + mode flip
+        // back) — the apvts already carries the patch's params, so we mustn't
+        // re-parse from disk and clobber any user tweaks. Just refresh the
+        // header LCD via the patch-loaded callback so it picks up the patch
+        // name instead of staying on whatever was last visible.
+        if (patchLoadedCallback)
+        {
+            PatchLoadedNotifier note;
+            note.name = juce::String (std::filesystem::path { activePath.toRawUTF8() }
+                                          .stem().string());
+            note.tag  = (m == Mode::FM) ? Tag::FM : Tag::SQ;
+            note.path = activePath;
+            patchLoadedCallback (note);
+        }
+        return;
+    }
 
     const auto defaultPath = defaultPresetPathForMode (m);
     if (defaultPath.isEmpty())
@@ -1310,6 +1366,112 @@ void GenVstAudioProcessor::setPatchLoadedNotifier (
     std::function<void (const PatchLoadedNotifier&)> cb)
 {
     patchLoadedCallback = std::move (cb);
+}
+
+void GenVstAudioProcessor::setStateRestoreNotifier (
+    std::function<void (const juce::String&, const juce::String&)> cb)
+{
+    stateRestoreToastCallback = std::move (cb);
+
+    // Drain any toasts that queued before the editor registered. Typical when
+    // setStateInformation runs before createEditor in the host's instantiation
+    // flow (Reaper, Logic, etc.).
+    if (stateRestoreToastCallback)
+    {
+        auto drained = std::move (pendingStateRestoreToasts);
+        pendingStateRestoreToasts.clear();
+        for (const auto& t : drained)
+            stateRestoreToastCallback (t.first, t.second);
+    }
+}
+
+void GenVstAudioProcessor::emitStateRestoreToast (const juce::String& level,
+                                                  const juce::String& message)
+{
+    if (stateRestoreToastCallback)
+        stateRestoreToastCallback (level, message);
+    else
+        pendingStateRestoreToasts.emplace_back (level, message);
+}
+
+void GenVstAudioProcessor::drainPendingStateRestore()
+{
+    if (! pendingStateRestore.has_value())
+        return;
+
+    // exchange-and-reset so a nested re-entry (shouldn't happen, but cheap
+    // insurance) can't loop on the same payload.
+    auto pending = std::move (*pendingStateRestore);
+    pendingStateRestore.reset();
+
+    // ---- Custom roots --------------------------------------------------------
+    // Re-register every persisted custom-root path. addCustomRoot is a no-op
+    // for paths that already resolved (e.g. the user re-saved the project on
+    // a machine where the folder exists), so we just check the return value
+    // and toast on failure.
+    for (const auto& path : pending.customRoots)
+    {
+        if (path.isEmpty()) continue;
+        if (! juce::File (path).isDirectory())
+        {
+            emitStateRestoreToast ("warn",
+                "Custom folder could not be loaded: " + path);
+            continue;
+        }
+        const auto id = patchBrowser.addCustomRoot (path);
+        if (id.isEmpty())
+        {
+            // The path resolves as a directory but addCustomRoot still
+            // returned empty — most likely already-registered (dedup hit).
+            // No toast for that; the user's intent is satisfied either way.
+        }
+    }
+
+    // ---- Per-mode active patch paths ----------------------------------------
+    // Label-only restore — the apvts already carries the patch's parameter
+    // values (potentially with user tweaks since the patch was loaded), so
+    // we mustn't re-parse the file. Just record the path + fire patchLoaded
+    // for the current mode so the LCD picks up the patch name. The other
+    // mode's patchLoaded fires when the user flips into it (see
+    // handleAsyncUpdate's active-path branch).
+    const auto applyPerModePath = [this] (Mode mode, const juce::String& path)
+    {
+        if (path.isEmpty()) return;
+        if (! juce::File (path).existsAsFile())
+        {
+            emitStateRestoreToast ("warn",
+                "Patch could not be loaded: " + path);
+            return;
+        }
+        setActivePathForMode (mode, path);
+    };
+    applyPerModePath (Mode::FM, pending.activeFmPath);
+    applyPerModePath (Mode::SQ, pending.activeSqPath);
+
+    // Fire patchLoaded for the active mode's patch (if any) so the header LCD
+    // updates. Other modes' LCD labels surface on first flip via handleAsyncUpdate.
+    if (patchLoadedCallback)
+    {
+        const Mode m = currentMode();
+        const juce::String activePath = activePathForMode (m);
+        if (activePath.isNotEmpty() && m != Mode::D)
+        {
+            PatchLoadedNotifier note;
+            note.name = juce::String (std::filesystem::path { activePath.toRawUTF8() }
+                                          .stem().string());
+            note.tag  = (m == Mode::FM) ? Tag::FM : Tag::SQ;
+            note.path = activePath;
+            patchLoadedCallback (note);
+        }
+    }
+
+    // Refresh `lastHandledMode` so the listener-driven async update doesn't
+    // immediately overwrite the just-restored state with a default-load. The
+    // restored apvts already set mode_select; we've now installed the active
+    // paths; subsequent manual mode flips fall through handleAsyncUpdate's
+    // active-path branch (LCD refresh, no default-load).
+    lastHandledMode = currentMode();
+    cancelPendingUpdate();
 }
 
 juce::String GenVstAudioProcessor::defaultPresetPathForMode (Mode mode) const

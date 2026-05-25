@@ -1,38 +1,86 @@
 #include "PluginState.h"
 
-#include "PluginProcessor.h"
-
 namespace genvst::state
 {
-    std::unique_ptr<juce::XmlElement> save (GenVstAudioProcessor& proc)
+    namespace
+    {
+        constexpr const char* kPatchTag        = "patch";
+        constexpr const char* kPatchModeAttr   = "mode";
+        constexpr const char* kPatchPathAttr   = "path";
+        constexpr const char* kCustomRootsTag  = "customRoots";
+        constexpr const char* kRootElementTag  = "root";
+
+        void appendPatchPathIfPresent (juce::XmlElement&   parent,
+                                       const char*         modeLabel,
+                                       const juce::String& path)
+        {
+            if (path.isEmpty()) return;
+            auto* p = parent.createNewChildElement (kPatchTag);
+            p->setAttribute (kPatchModeAttr, modeLabel);
+            p->setAttribute (kPatchPathAttr, path);
+        }
+    }
+
+    std::unique_ptr<juce::XmlElement> save (
+        const juce::ValueTree&             apvtsState,
+        const juce::String&                activeFmPath,
+        const juce::String&                activeSqPath,
+        const std::vector<juce::String>&   customRootPaths)
     {
         auto root = std::make_unique<juce::XmlElement> (kRootTag);
-        if (auto apvtsXml = proc.getValueTreeState().copyState().createXml())
+
+        appendPatchPathIfPresent (*root, "FM", activeFmPath);
+        appendPatchPathIfPresent (*root, "SQ", activeSqPath);
+
+        auto* customRoots = root->createNewChildElement (kCustomRootsTag);
+        for (const auto& path : customRootPaths)
+        {
+            if (path.isEmpty()) continue;
+            auto* rootEl = customRoots->createNewChildElement (kRootElementTag);
+            rootEl->setAttribute (kPatchPathAttr, path);
+        }
+
+        if (auto apvtsXml = apvtsState.createXml())
             root->addChildElement (apvtsXml.release());
+
         return root;
     }
 
-    void restore (GenVstAudioProcessor& proc, const juce::XmlElement& xml)
+    std::optional<PendingRestore> restore (
+        juce::AudioProcessorValueTreeState& apvts,
+        const juce::XmlElement&             xml)
     {
-        // Direct apvts root (pre-Task-10 / unwrapped) — replace state in place.
-        if (xml.hasTagName (proc.getValueTreeState().state.getType()))
-        {
-            proc.getValueTreeState().replaceState (juce::ValueTree::fromXml (xml));
-            return;
-        }
+        if (! xml.hasTagName (kRootTag))
+            return std::nullopt;
 
-        // v2 wrapper. The single child holds the apvts XML; defensively pick
-        // the first matching one in case future fields land alongside it.
-        if (xml.hasTagName (kRootTag))
+        PendingRestore pending;
+        const auto apvtsRootTag = apvts.state.getType();
+
+        for (auto* child : xml.getChildIterator())
         {
-            for (auto* child : xml.getChildIterator())
+            if (child->hasTagName (kPatchTag))
             {
-                if (child->hasTagName (proc.getValueTreeState().state.getType()))
+                const auto mode = child->getStringAttribute (kPatchModeAttr);
+                const auto path = child->getStringAttribute (kPatchPathAttr);
+                if (path.isEmpty()) continue;
+                if      (mode == "FM") pending.activeFmPath = path;
+                else if (mode == "SQ") pending.activeSqPath = path;
+            }
+            else if (child->hasTagName (kCustomRootsTag))
+            {
+                for (auto* rootEl : child->getChildIterator())
                 {
-                    proc.getValueTreeState().replaceState (juce::ValueTree::fromXml (*child));
-                    return;
+                    if (! rootEl->hasTagName (kRootElementTag)) continue;
+                    const auto path = rootEl->getStringAttribute (kPatchPathAttr);
+                    if (path.isNotEmpty()) pending.customRoots.push_back (path);
                 }
             }
+            else if (child->hasTagName (apvtsRootTag))
+            {
+                apvts.replaceState (juce::ValueTree::fromXml (*child));
+            }
         }
+
+        return pending;
     }
 }

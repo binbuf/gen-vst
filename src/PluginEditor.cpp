@@ -139,12 +139,21 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& p)
     // WebView so the header LCD picks up the new name.
     processor.setPatchLoadedNotifier (
         [this] (const PatchLoadedNotifier& note) { emitPatchLoaded (note); });
+
+    // Task 11 — state-restore toast notifier. Routes restore-time issues
+    // (unresolved patch path, unresolved custom root, legacy v1 state) into
+    // the WebView's notify channel. Registering here also drains any toasts
+    // the processor queued before the editor existed.
+    processor.setStateRestoreNotifier (
+        [this] (const juce::String& level, const juce::String& message)
+        { emitToast (level, message); });
 }
 
 GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
 {
     stopTimer();
     processor.setPatchLoadedNotifier ({});
+    processor.setStateRestoreNotifier ({});
 }
 
 juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()

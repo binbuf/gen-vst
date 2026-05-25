@@ -17,6 +17,7 @@ add_executable(GenVstTests
     VgmExtractTests.cpp
     VgmLoggerTests.cpp
     PatchBrowserTests.cpp
+    PluginStateTests.cpp
     PsgPresetTests.cpp
     FrequencyCalcTests.cpp
     RegisterWriteTests.cpp
@@ -34,6 +35,7 @@ add_executable(GenVstTests
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
+    "${CMAKE_SOURCE_DIR}/src/PluginState.cpp"
     "${CMAKE_SOURCE_DIR}/src/PsgPreset.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmLogger.cpp"
