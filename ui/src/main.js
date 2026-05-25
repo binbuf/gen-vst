@@ -3,8 +3,8 @@
 // FM / SQ / D panels. Also mounts the global notification-toast host and
 // fires the `uiReady` event so the C++ editor knows the page is alive.
 //
-// Task 05: mounts the FM view into #mode-panel when `mode_select == FM`,
-// and unmounts on mode change. SQ + D views land in Tasks 06 / 07.
+// Mode dispatch: subscribes to `mode_select` and swaps the panel contents.
+// FM (Task 05) and SQ (Task 06) views are wired; D lands in Task 07.
 
 import "./styles/design-system.css";
 
@@ -12,6 +12,7 @@ import { mount as mountToast } from "./widgets/notification-toast.js";
 import { installTooltips }     from "./widgets/tooltip.js";
 import { bindCombo }            from "./binding.js";
 import { mount as mountFmView } from "./views/fm-view.js";
+import { mount as mountSqView } from "./views/sq-view.js";
 
 const MODE_FM = 0;
 const MODE_SQ = 1;
@@ -43,8 +44,7 @@ function init() {
           currentDisposer = mountFmView(modePanel);
           break;
         case MODE_SQ:
-          // SQ view lands in Task 06.
-          modePanel.appendChild(makePlaceholder("SQ"));
+          currentDisposer = mountSqView(modePanel);
           break;
         case MODE_D:
           // D view lands in Task 07.
