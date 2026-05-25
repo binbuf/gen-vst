@@ -37,123 +37,246 @@ const FREQ_CTRL_MODE_INT     = 0;
 const FREQ_CTRL_MODE_FLOAT   = 1;
 const FREQ_CTRL_MODE_RETRIG  = 2;
 
-// FM panel CSS scoped to .fm-view. Kept inline so the view ships self-
-// contained without polluting design-system.css with view-specific layout.
-// Recipes for individual widgets (.knob, .toggle, .algo-grid, etc.) come
-// from design-system.css; this stylesheet only positions them.
+// FM panel CSS — ported from the mvp2/01 mockup (deleted in task 04 per
+// docs/tasks/mvp2/01-static-ui-mockup.md). The mockup's mockup-fm.css is
+// the visual source-of-truth for the v2 FM layout; this stylesheet inlines
+// it scoped to .fm-panel. The mode panel splits into two CSS-grid rows:
+//
+//   .fm-top  (6 cols)  LFO | ENVELOPE | FREQ CTRL | RETRIG+OP1FB |
+//                      ALGO PICKER | TOPOLOGY
+//   .fm-mid  (3 cols)  GLOBAL IN (PB/MW) | OPERATOR GRID | VEL
+//
+// Block titles are absolutely-positioned at top-left of each block so the
+// block content can fill the cell — matches the mockup recipe.
 function ensureStyles() {
   if (document.getElementById("genvst-fm-view-style")) return;
   const style = document.createElement("style");
   style.id = "genvst-fm-view-style";
   style.textContent = `
-    .fm-view { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 6px; }
-    .fm-view .fm-row { display: flex; gap: 8px; align-items: stretch; }
-    .fm-view .fm-block {
-      background: rgba(0,0,0,0.10);
-      border: 1px solid rgba(0,0,0,0.30);
+    .fm-panel {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-rows: 154px 1fr;
+      gap: 6px;
+      /* Mockup padding — overrides design-system.css's .mode-panel 14px
+       * (same selector specificity, later wins). */
+      padding: 16px 10px 8px;
+      box-sizing: border-box;
+    }
+
+    /* Block chrome — inset dark surface with absolutely-positioned title. */
+    .fm-panel .fm-block {
+      position: relative;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(0, 0, 0, 0.4);
       border-radius: 3px;
-      padding: 6px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+      padding: 16px 8px 6px;
     }
-    .fm-view .fm-block-title {
+    .fm-panel .fm-block-title {
+      position: absolute;
+      top: 4px;
+      left: 8px;
       font: 500 8px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.16em;
+      letter-spacing: 0.20em;
       text-transform: uppercase;
-      color: var(--label-text-dim);
-      margin-bottom: 2px;
+      color: var(--label-text);
+      opacity: 0.78;
+      pointer-events: none;
+      z-index: 2;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
     }
-    .fm-view .knob-cell {
+
+    /* ---- Top row: 6 columns with fixed widths from mockup ---------- */
+    .fm-panel .fm-top {
+      display: grid;
+      grid-template-columns: 234px 1fr 130px 96px 86px 132px;
+      gap: 6px;
+    }
+
+    /* LFO/global block — 4 knobs in a row + POLY/RANGE steppers + note-mode. */
+    .fm-panel .lfo-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      align-items: end;
+      padding-top: 0;
+    }
+    .fm-panel .knob-cell {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 3px;
     }
-    .fm-view .knob-cell .knob-label {
-      font: 500 7px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.14em;
+    .fm-panel .knob-cell .knob-label {
+      font: 500 8px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--label-text);
       opacity: 0.85;
     }
-    .fm-view .lfo-row { display: flex; gap: 10px; align-items: flex-end; }
-    .fm-view .stepper-row { display: flex; gap: 8px; align-items: center; }
-    .fm-view .stepper-cell {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-    }
-    .fm-view .stepper-cell .stepper-label {
-      font: 500 7px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--label-text);
-      opacity: 0.85;
-    }
-    .fm-view .op-grid {
+    .fm-panel .stepper-row {
       display: grid;
-      grid-template-columns:
-        [tl] 48px
-        [badge] 28px
-        [am] 28px
-        [ar] 36px [dr] 36px [sl] 36px [sr] 36px [rr] 36px
-        [rs] 36px [ssg] 56px [mul] 36px [freq] 44px
-        [fixed] 28px [dt] 36px;
-      gap: 4px 6px;
-      align-items: center;
-    }
-    .fm-view .op-grid .col-header {
-      font: 500 7px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--label-text-dim);
-      text-align: center;
-      padding-bottom: 2px;
-    }
-    .fm-view .op-grid .knob { margin: 0 auto; }
-    .fm-view .op-grid .freq-lcd { display: flex; justify-content: center; }
-    .fm-view .op-grid .fixed-cell { display: flex; justify-content: center; }
-    .fm-view .op-grid.is-int-mul .fixed-cell { opacity: 0.35; pointer-events: none; }
-    .fm-view .global-in {
-      display: flex;
-      flex-direction: row;
+      grid-template-columns: 1fr 1fr;
       gap: 6px;
-      align-items: stretch;
+      padding-top: 4px;
     }
-    .fm-view .vel-col {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      align-items: center;
-    }
-    .fm-view .ch-vol-row {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .fm-view .midi-wheel-cell {
+    .fm-panel .stepper-cell {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 2px;
     }
-    .fm-view .midi-wheel-cell .wheel-label {
+    .fm-panel .stepper-cell .stepper-label {
       font: 500 7px/1 "IBM Plex Mono", monospace;
       letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--label-text);
+      opacity: 0.85;
     }
-    .fm-view .retrig-rate.is-hidden { visibility: hidden; }
-    .fm-view .freq-mode-pill {
+
+    /* Envelope-curve block — block-title pinned, envelope canvas fills. */
+    .fm-panel .fm-env {
+      padding: 16px 6px 6px;
+    }
+
+    /* FREQ CTRL — 3 stacked pill buttons */
+    .fm-panel .fm-freqctrl {
       display: flex;
       flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      gap: 4px;
+      padding-top: 14px;
+    }
+    .fm-panel .freq-mode-pill {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .fm-panel .freq-mode-pill .btn { text-align: center; padding: 5px 8px; }
+
+    /* RETRIG RATE + OP1 FB stacked */
+    .fm-panel .fm-misc {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 6px;
+      padding-top: 14px;
+    }
+    .fm-panel .fm-misc .stepper-cell,
+    .fm-panel .fm-misc .knob-cell {
+      align-items: center;
+      justify-content: center;
+    }
+    .fm-panel .retrig-rate.is-hidden { visibility: hidden; }
+
+    /* Algorithm picker — 8-button 2x4 grid */
+    .fm-panel .fm-algo-picker {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 4px 4px;
+    }
+
+    /* Topology tile */
+    .fm-panel .fm-algo-diagram {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 3px;
+      padding: 14px 4px 4px;
+    }
+
+    /* ---- Mid row: PB/MW | operator grid | VEL ---------------------- */
+    .fm-panel .fm-mid {
+      display: grid;
+      grid-template-columns: 88px 1fr 60px;
+      gap: 6px;
+    }
+
+    .fm-panel .fm-pbmw {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 22px 4px 8px;
+    }
+    .fm-panel .midi-wheel-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       gap: 2px;
     }
-    .fm-view .freq-mode-pill .btn { padding: 4px 8px; }
-    .fm-view .op-row {
+    .fm-panel .midi-wheel-cell .wheel-label {
+      font: 500 8px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--label-text);
+    }
+    .fm-panel .fm-pbmw .wheels {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    /* Operator grid — 14 columns with the first two fixed (TL anchor +
+     * op-badge) and the remaining 12 sharing equally (matches mockup). */
+    .fm-panel .fm-opgrid {
+      padding: 22px 6px 6px 12px;
+    }
+    .fm-panel .op-grid {
+      display: grid;
+      grid-template-columns: 32px 28px repeat(12, 1fr);
+      align-items: center;
+      justify-items: center;
+      row-gap: 5px;
+      column-gap: 3px;
+    }
+    .fm-panel .op-grid .col-header {
+      font: 500 8px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--label-text-dim);
+      text-align: center;
+      padding-bottom: 3px;
+    }
+    .fm-panel .op-grid .knob { margin: 0; }
+    .fm-panel .op-grid .freq-lcd { display: flex; justify-content: center; }
+    .fm-panel .op-grid .fixed-cell { display: flex; justify-content: center; }
+    .fm-panel .op-grid.is-int-mul .fixed-cell { opacity: 0.35; pointer-events: none; }
+    .fm-panel .op-row {
       display: contents;   /* grid items continue from parent */
+    }
+
+    /* CH VOL master knob — sits above the operator grid, aligned to TL col. */
+    .fm-panel .ch-vol-row {
+      display: grid;
+      grid-template-columns: 32px 28px 1fr;
+      align-items: center;
+      column-gap: 3px;
+      margin-bottom: 4px;
+    }
+
+    /* VEL right-margin column — single per-op knob × 4 rows. */
+    .fm-panel .fm-velblock {
+      padding: 22px 4px 6px;
+    }
+    .fm-panel .vel-col {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-auto-rows: auto;
+      align-items: center;
+      justify-items: center;
+      row-gap: 5px;
+    }
+    .fm-panel .vel-col .col-header {
+      font: 500 8px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--label-text-dim);
     }
   `;
   document.head.appendChild(style);
@@ -195,28 +318,43 @@ function makeStepperCell(label, paramId) {
 // switches mode away from FM.
 export function mount(root) {
   ensureStyles();
-  root.classList.add("fm-view");
+  root.classList.add("fm-panel");
   root.innerHTML = "";
 
   // Top row: LFO/global + envelope + freq ctrl + misc + algo + topology.
-  const topRow = el("div", { className: "fm-row" });
+  // 6-column grid (234 | 1fr | 130 | 96 | 86 | 132) — matches mvp2/01 mockup.
+  const topRow = el("div", { className: "fm-top" });
 
   // --- LFO + global block ---------------------------------------------------
   const lfoBlock = el("div", { className: "fm-block" });
   lfoBlock.appendChild(el("div", { className: "fm-block-title", text: "LFO / Global" }));
   const lfoRow = el("div", { className: "lfo-row" });
-  // LFO enable lives behind the LFO RATE knob conceptually; the knob's value =
-  // 0 + lfo_enable=false reads as "off". For MVP we bind the rate, then a small
-  // toggle to the right enables it.
-  const lfoRate = makeKnobCell("RATE", "lfo_rate");
+  // The mockup (mvp2/01 reference) draws four knob shapes in the LFO row:
+  // LFO · RATE · PMS · AMS. `lfo_enable` is a bool param, so the LFO knob
+  // adapts the toggle bind into a slider-shaped controller (0 = off at the
+  // 7 o'clock rest, 1 = on at 5 o'clock). The knob's drag/scroll naturally
+  // snaps to the two states because 0.5 rounds either way.
   const lfoEnable = (() => {
     const wrap = el("div", { className: "knob-cell" });
-    const toggle = el("div");
-    wrap.appendChild(toggle);
+    const knobHost = el("div");
+    wrap.appendChild(knobHost);
     wrap.appendChild(el("div", { className: "knob-label", text: "LFO" }));
-    mountToggle(toggle, { bind: bindToggle("lfo_enable"), tipId: "lfo_enable" });
+    const tog = bindToggle("lfo_enable");
+    const togAsSlider = {
+      name: "lfo_enable",
+      getNormalised: () => (tog.get() ? 1 : 0),
+      setNormalised: (v) => tog.set(v >= 0.5),
+      beginGesture: () => {},
+      endGesture:   () => {},
+      onChange: (cb) => tog.onChange((on) => cb(on ? 1 : 0)),
+      defaultNormalised: (fb = 0) => fb,
+      dispose: () => (tog.dispose ? tog.dispose() : undefined),
+      state: tog.state,
+    };
+    mountKnob(knobHost, { bind: togAsSlider, size: 32, tipId: "lfo_enable" });
     return wrap;
   })();
+  const lfoRate = makeKnobCell("RATE", "lfo_rate");
   const pmsCell = makeKnobCell("PMS", "pms");
   const amsCell = makeKnobCell("AMS", "ams");
   lfoRow.appendChild(lfoEnable);
@@ -246,7 +384,7 @@ export function mount(root) {
   topRow.appendChild(lfoBlock);
 
   // --- Envelope-curve block (with op-badge selector) ------------------------
-  const envBlock = el("div", { className: "fm-block" });
+  const envBlock = el("div", { className: "fm-block fm-env" });
   envBlock.appendChild(el("div", { className: "fm-block-title", text: "Envelope · Op 1" }));
   const envHost = el("div");
   const envelope = mountEnvelope(envHost, { width: 240, height: 110 });
@@ -258,7 +396,7 @@ export function mount(root) {
   const envBinds = {};   // op (1..4) -> { ar, dr, sl, sr, rr } bindings
 
   // --- FREQ CTRL block (3-button pill) -------------------------------------
-  const freqBlock = el("div", { className: "fm-block" });
+  const freqBlock = el("div", { className: "fm-block fm-freqctrl" });
   freqBlock.appendChild(el("div", { className: "fm-block-title", text: "Freq Ctrl" }));
   const freqPillWrap = el("div", { className: "freq-mode-pill" });
   const freqCtrlCombo = bindCombo("freq_ctrl_mode");
@@ -274,7 +412,7 @@ export function mount(root) {
   topRow.appendChild(freqBlock);
 
   // --- Misc block (RETRIG RATE stepper-readout + OP1 FB knob) --------------
-  const miscBlock = el("div", { className: "fm-block" });
+  const miscBlock = el("div", { className: "fm-block fm-misc" });
   miscBlock.appendChild(el("div", { className: "fm-block-title", text: "Misc" }));
 
   const retrigRateCell = el("div", { className: "stepper-cell retrig-rate" });
@@ -291,30 +429,41 @@ export function mount(root) {
   miscBlock.appendChild(op1FbCell.host);
   topRow.appendChild(miscBlock);
 
-  // --- Algorithm picker + topology tile -------------------------------------
-  const algoBlock = el("div", { className: "fm-block" });
-  algoBlock.appendChild(el("div", { className: "fm-block-title", text: "Algorithm" }));
-  const algoGridHost = el("div");
+  // --- Algorithm picker + Topology tile ------------------------------------
+  // Two separate blocks per the mvp2/01 mockup so each gets its own grid
+  // column with a fixed width. Topology must mount BEFORE the picker
+  // because mountAlgoGrid's bind.onChange fires synchronously during
+  // mount and the onSelect callback drives algoMini — referencing it
+  // before initialisation would throw a TDZ ReferenceError (same class
+  // of bug as the tooltip.js fix).
+  const topoBlock = el("div", { className: "fm-block fm-algo-diagram" });
+  topoBlock.appendChild(el("div", { className: "fm-block-title", text: "Topology" }));
   const algoMiniHost = el("div");
   const algoMini = mountAlgoMini(algoMiniHost, { size: 96 });
+  topoBlock.appendChild(algoMiniHost);
+
+  const algoBlock = el("div", { className: "fm-block fm-algo-picker" });
+  algoBlock.appendChild(el("div", { className: "fm-block-title", text: "Algorithm" }));
+  const algoGridHost = el("div");
   mountAlgoGrid(algoGridHost, {
     bind: bindSlider("alg"),
     onSelect: (idx) => algoMini.setAlgorithm(idx),
     tipId: "alg",
   });
-  const algoRow = el("div", { className: "fm-row" });
-  algoRow.appendChild(algoGridHost);
-  algoRow.appendChild(algoMiniHost);
-  algoBlock.appendChild(algoRow);
+  algoBlock.appendChild(algoGridHost);
+
+  // Grid column order from the mockup: algo picker (col 5), topology (col 6).
   topRow.appendChild(algoBlock);
+  topRow.appendChild(topoBlock);
 
   root.appendChild(topRow);
 
   // --- Mid row: GLOBAL IN block | operator grid | VEL column ---------------
-  const midRow = el("div", { className: "fm-row" });
+  // 3-column grid (88px | 1fr | 60px) — matches mvp2/01 mockup.
+  const midRow = el("div", { className: "fm-mid" });
 
   // GLOBAL IN — PB + MW midi-wheels.
-  const inBlock = el("div", { className: "fm-block global-in" });
+  const inBlock = el("div", { className: "fm-block fm-pbmw" });
   inBlock.appendChild(el("div", { className: "fm-block-title", text: "Global In" }));
   const pbCell = el("div", { className: "midi-wheel-cell" });
   const pbHost = el("span");
@@ -334,12 +483,16 @@ export function mount(root) {
     variant: "mw",
     tipId: "mod_wheel_value",
   });
-  inBlock.appendChild(pbCell);
-  inBlock.appendChild(mwCell);
+  // Wrap PB + MW in a horizontal flex container so the wheels sit
+  // side-by-side under the GLOBAL IN block title (matches mockup layout).
+  const wheelsWrap = el("div", { className: "wheels" });
+  wheelsWrap.appendChild(pbCell);
+  wheelsWrap.appendChild(mwCell);
+  inBlock.appendChild(wheelsWrap);
   midRow.appendChild(inBlock);
 
   // --- Operator grid (4 rows + CH VOL master + header row) -----------------
-  const opGridBlock = el("div", { className: "fm-block" });
+  const opGridBlock = el("div", { className: "fm-block fm-opgrid" });
   opGridBlock.appendChild(el("div", { className: "fm-block-title", text: "Operator Grid" }));
 
   const chVolRow = el("div", { className: "ch-vol-row" });
@@ -356,8 +509,9 @@ export function mount(root) {
 
   const opBadgeCtrls = [];
   for (let op = 1; op <= 4; ++op) {
-    // TL — leftmost anchor knob.
-    const tlCell = makeKnobCell(null, `tl_op${op}`, { size: 36 }).host;
+    // TL — leftmost anchor knob (28px per mockup, slightly larger than
+    // the 24px regular operator knobs so it reads as the column anchor).
+    const tlCell = makeKnobCell(null, `tl_op${op}`, { size: 28 }).host;
     opGrid.appendChild(tlCell);
 
     // op-badge: click to swap which operator the envelope-curve tracks.
@@ -392,22 +546,22 @@ export function mount(root) {
       [srBind, "sr", 31], [rrBind, "rr", 15],
     ]) {
       const host = el("div");
-      mountKnob(host, { bind, size: 32, tipId: `${key}_op${op}` });
+      mountKnob(host, { bind, size: 24, tipId: `${key}_op${op}` });
       opGrid.appendChild(host);
     }
     envBinds[op] = { ar: arBind, dr: drBind, sl: slBind, sr: srBind, rr: rrBind };
 
     // RS / SSG-EG / MUL knobs.
     const rsHost = el("div");
-    mountKnob(rsHost, { bind: bindSlider(`ks_op${op}`), size: 32, tipId: `ks_op${op}` });
+    mountKnob(rsHost, { bind: bindSlider(`ks_op${op}`), size: 24, tipId: `ks_op${op}` });
     opGrid.appendChild(rsHost);
 
     const ssgHost = el("div");
-    mountKnob(ssgHost, { bind: bindSlider(`ssg_op${op}`), size: 32, tipId: `ssg_op${op}` });
+    mountKnob(ssgHost, { bind: bindSlider(`ssg_op${op}`), size: 24, tipId: `ssg_op${op}` });
     opGrid.appendChild(ssgHost);
 
     const mulHost = el("div");
-    mountKnob(mulHost, { bind: bindSlider(`mul_op${op}`), size: 32, tipId: `mul_op${op}` });
+    mountKnob(mulHost, { bind: bindSlider(`mul_op${op}`), size: 24, tipId: `mul_op${op}` });
     opGrid.appendChild(mulHost);
 
     // FREQ — state-dependent LCD readout. Display updates on every relevant
@@ -428,7 +582,7 @@ export function mount(root) {
 
     // DT knob.
     const dtHost = el("div");
-    mountKnob(dtHost, { bind: bindSlider(`dt_op${op}`), size: 32, tipId: `dt_op${op}` });
+    mountKnob(dtHost, { bind: bindSlider(`dt_op${op}`), size: 24, tipId: `dt_op${op}` });
     opGrid.appendChild(dtHost);
 
     // FREQ display behaviour: dependent on freq_ctrl_mode × fixed[op] × mul.
@@ -474,12 +628,15 @@ export function mount(root) {
   midRow.appendChild(opGridBlock);
 
   // --- VEL column (right margin, single column 4-deep) ---------------------
-  const velBlock = el("div", { className: "fm-block vel-col" });
-  velBlock.appendChild(el("div", { className: "fm-block-title", text: "Vel" }));
+  // No block-title — the VEL col-header inside doubles as the label (mockup).
+  const velBlock = el("div", { className: "fm-block fm-velblock" });
+  const velCol = el("div", { className: "vel-col" });
+  velCol.appendChild(el("div", { className: "col-header", text: "VEL" }));
   for (let op = 1; op <= 4; ++op) {
     const cell = makeKnobCell(null, `vel_op${op}`, { size: 24 }).host;
-    velBlock.appendChild(cell);
+    velCol.appendChild(cell);
   }
+  velBlock.appendChild(velCol);
   midRow.appendChild(velBlock);
 
   root.appendChild(midRow);

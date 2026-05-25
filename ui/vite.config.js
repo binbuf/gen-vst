@@ -29,6 +29,9 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2020",
     assetsInlineLimit: 0, // keep fonts as real files — never inline as data URIs
+    sourcemap: true,      // stack traces from main.js's init() try/catch land in
+                          // ui/src/* file/line coordinates instead of the minified
+                          // bundle (~50 KB of .map files alongside the JS chunks).
     rollupOptions: {
       // Two entry points (mvp2/04-widget-library.md):
       //   - main    -> index.html      (the v2 production UI — empty chassis

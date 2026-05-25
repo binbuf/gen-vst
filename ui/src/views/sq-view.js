@@ -1,25 +1,20 @@
 // SQ mode panel — `08-ui-views.md` view 3.
 //
-// Assembled from Task 04's widget library. Left-edge GLOBAL IN block carries
-// the read-only `PB` midi-wheel, followed by four vertical strips: three tone
-// channels + one noise channel.
+// Layout + CSS ported verbatim from the mvp2/01 mockup (deleted in
+// task 04 per its own disposal note): see `ui/mockup-sq.html` and
+// `ui/mockup/mockup-sq.css` at commit 2120d65 for the throwaway
+// source-of-truth.
 //
-//   Tone strip:  envelope-curve thumbnail
-//                ATK / DR1 / SUS / DR2 / RR knobs
-//                DETUNE / VOL knobs + PAN slider
+// Five columns: left GLOBAL IN strip (PB wheel only — no MW per view 3),
+// then four equal channel strips. Each tone strip carries an ADSR LCD
+// thumbnail, ATK / DR1 / SUS / DR2 / RR envelope knobs, then a bottom
+// stack of Detune / Vol / Pan. The noise strip swaps Detune for a
+// VOL position in the 2nd env row and adds Type (W/P) + Rate
+// (L/M/H/CH2) pills below the Pan slider.
 //
-//   Noise strip: envelope-curve thumbnail
-//                ATK / DR1 / SUS / DR2 / RR knobs
-//                VOL knob + PAN slider
-//                TYPE pill (white / periodic)
-//                RATE pill (low / mid / high / ch2)
-//
-// Every interactive control routes through binding.js relays — apvts param
-// IDs match `createParameterLayout()` in src/PluginProcessor.cpp (tone
-// suffixes `_ch1` / `_ch2` / `_ch3`, noise suffix `_noise`).
-//
-// MW is deliberately omitted from GLOBAL IN — v2 SQ wires no mod-wheel
-// destination, so a visualiser here would be misleading chrome (see view 3).
+// Every interactive control routes through binding.js relays — apvts
+// param IDs match `createParameterLayout()` (tone suffixes `_ch1` /
+// `_ch2` / `_ch3`, noise suffix `_noise`).
 
 import {
   bindSlider,
@@ -31,120 +26,187 @@ import { mount as mountSlider }     from "../widgets/slider.js";
 import { mount as mountEnvelope }   from "../widgets/envelope-curve.js";
 import { mount as mountMidiWheel }  from "../widgets/midi-wheel.js";
 
-// Channel suffixes — index 0..2 are tone channels, 3 is noise. The apvts
-// param IDs encode the suffix directly (no numeric `[ch]` indexing).
 const CHANNEL_SUFFIX = ["_ch1", "_ch2", "_ch3", "_noise"];
 const CHANNEL_LABEL  = ["Tone 1", "Tone 2", "Tone 3", "Noise"];
 
-// Envelope-knob ranges — kept inline since the widget needs integer values to
-// drive its polyline. Matches the apvts range declared in PluginProcessor.cpp
-// (psg_atk 0..31, psg_dr1 0..31, psg_sus 0..15, psg_dr2 0..31, psg_rr 0..15).
 const ENV_KNOB_MAX = { atk: 31, dr1: 31, sus: 15, dr2: 31, rr: 15 };
 
-// SQ panel CSS scoped to .sq-view. Same self-contained pattern as fm-view —
-// widget recipes (.knob, .slider, .midi-wheel, .btn-pill, …) come from
-// design-system.css; this sheet only positions them.
+// SQ panel CSS — ported verbatim from mvp2/01 mockup-sq.css. Widget
+// recipes (.knob, .midi-wheel, .btn-pill, …) come from design-system.css;
+// this sheet only positions them.
 function ensureStyles() {
   if (document.getElementById("genvst-sq-view-style")) return;
   const style = document.createElement("style");
   style.id = "genvst-sq-view-style";
   style.textContent = `
-    .sq-view { width: 100%; height: 100%; display: flex; gap: 8px; align-items: stretch; }
-    .sq-view .sq-block {
-      background: rgba(0,0,0,0.10);
-      border: 1px solid rgba(0,0,0,0.30);
-      border-radius: 3px;
-      padding: 8px 10px;
+    .sq-panel {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      /* Leftmost narrow column for the GLOBAL IN block (PB wheel only —
+       * MW omitted in SQ, see 08-ui-views.md view 3), then four equal
+       * columns for the three tone strips + noise strip. */
+      grid-template-columns: 64px 1fr 1fr 1fr 1fr;
+      gap: 12px;
+      padding: 22px 14px 14px;
+    }
+
+    .sq-panel .sq-globalin {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      align-items: center;
+      gap: 8px;
+      padding: 22px 4px 8px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(0, 0, 0, 0.4);
+      border-radius: 4px;
+      position: relative;
     }
-    .sq-view .sq-block-title {
+    .sq-panel .sq-globalin > .strip-title {
+      position: absolute;
+      top: 4px;
+      left: 6px;
+      right: 6px;
+      text-align: center;
+      font: 500 9px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.20em;
+      text-transform: uppercase;
+      color: var(--label-text-dim);
+    }
+    .sq-panel .midi-wheel-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .sq-panel .midi-wheel-cell .wheel-label {
       font: 500 8px/1 "IBM Plex Mono", monospace;
       letter-spacing: 0.18em;
       text-transform: uppercase;
-      color: var(--label-text-dim);
-      margin-bottom: 2px;
-      text-align: center;
+      color: var(--label-text);
     }
-    .sq-view .global-in {
-      align-items: center;
-      justify-content: flex-start;
-      padding: 8px 6px;
-    }
-    .sq-view .ch-strip {
-      flex: 1 1 0;
-      min-width: 0;
+
+    .sq-panel .sq-strip {
+      display: flex;
+      flex-direction: column;
       align-items: stretch;
+      gap: 10px;
+      padding: 16px 12px 14px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(0, 0, 0, 0.4);
+      border-radius: 4px;
+      position: relative;
     }
-    .sq-view .env-knob-row {
+    .sq-panel .sq-strip > .strip-title {
+      position: absolute;
+      top: 4px;
+      left: 10px;
+      font: 500 9px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.20em;
+      text-transform: uppercase;
+      color: var(--label-text-dim);
+    }
+
+    .sq-panel .sq-env-lcd {
+      height: 64px;
+      background: var(--lcd-bg, #0d1424);
+      border: 1px solid var(--inset-edge-dark);
+      border-radius: 2px;
+      box-shadow:
+        inset 2px 2px 5px rgba(0, 0, 0, 0.7),
+        0 0 0 1px var(--lcd-bg-edge, #050810);
+      position: relative;
+      overflow: hidden;
       display: flex;
-      gap: 4px;
-      justify-content: space-between;
+      align-items: center;
+      justify-content: center;
     }
-    .sq-view .knob-cell {
+    .sq-panel .sq-env-lcd::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg,
+        rgba(0, 0, 0, 0.45) 0%, transparent 15%, transparent 85%,
+        rgba(78, 160, 255, 0.04) 100%);
+      pointer-events: none;
+    }
+
+    .sq-panel .sq-env-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px 4px;
+      justify-items: center;
+    }
+    .sq-panel .sq-env-row.row2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .sq-panel .sq-noise-env-row {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .sq-panel .sq-noise-env-row-b {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .sq-panel .knob-cell {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 3px;
     }
-    .sq-view .knob-cell .knob-label {
-      font: 500 7px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.14em;
+    .sq-panel .knob-cell .knob-cell-label {
+      font: 500 8px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--label-text);
       opacity: 0.85;
     }
-    .sq-view .control-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .sq-view .control-row .knob-cell { flex: 0 0 auto; }
-    .sq-view .control-row .pan-cell  { flex: 1 1 0; min-width: 0; }
-    .sq-view .pan-cell {
+
+    .sq-panel .sq-bottom {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 3px;
+      gap: 6px;
+      margin-top: auto;
     }
-    .sq-view .pan-cell .pan-label {
-      font: 500 7px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.14em;
+    .sq-panel .sq-bottom-row {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      align-items: center;
+      gap: 4px 8px;
+    }
+    .sq-panel .sq-bottom-row .label-col {
+      font: 500 8px/1 "IBM Plex Mono", monospace;
+      letter-spacing: 0.20em;
       text-transform: uppercase;
       color: var(--label-text);
-      opacity: 0.85;
+      text-align: left;
     }
-    .sq-view .pan-cell .slider { width: 100%; min-width: 60px; }
-    .sq-view .pill-row {
+    .sq-panel .sq-bottom-row .value-col {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .sq-panel .sq-bottom-row .value-col .slider {
+      flex: 1 1 auto;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .sq-panel .sq-noise-extras {
       display: flex;
       flex-direction: column;
       gap: 4px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 6px;
     }
-    .sq-view .pill-cell {
+    .sq-panel .sq-noise-extras .btn-pill {
       display: flex;
-      align-items: center;
-      gap: 6px;
+      flex: 1 1 auto;
     }
-    .sq-view .pill-cell .pill-label {
-      font: 500 7px/1 "IBM Plex Mono", monospace;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--label-text);
-      opacity: 0.85;
-      width: 32px;
-      flex: 0 0 auto;
-    }
-    .sq-view .pill-cell .btn-pill { flex: 1 1 0; }
-    .sq-view .pill-cell .btn-pill .btn {
+    .sq-panel .sq-noise-extras .btn-pill .btn {
       flex: 1 1 0;
       padding: 4px 4px;
       font-size: 8px;
       letter-spacing: 0.14em;
-    }
-    .sq-view .env-curve-host {
-      display: flex;
-      justify-content: center;
     }
   `;
   document.head.appendChild(style);
@@ -163,30 +225,13 @@ function makeKnobCell(label, paramId, opts = {}) {
   const wrap = el("div", { className: "knob-cell" });
   const knobHost = el("div");
   wrap.appendChild(knobHost);
-  if (label) wrap.appendChild(el("div", { className: "knob-label", text: label }));
+  if (label) wrap.appendChild(el("div", { className: "knob-cell-label", text: label }));
   const bind = bindSlider(paramId);
-  mountKnob(knobHost, { bind, size: opts.size || 28, tipId: paramId });
+  mountKnob(knobHost, { bind, size: opts.size || 24, tipId: paramId });
   return { host: wrap, bind };
 }
 
-function makePanCell(paramId) {
-  const wrap = el("div", { className: "pan-cell" });
-  const sliderHost = el("div");
-  wrap.appendChild(sliderHost);
-  wrap.appendChild(el("div", { className: "pan-label", text: "PAN" }));
-  mountSlider(sliderHost, {
-    bind: bindSlider(paramId),
-    tipId: paramId,
-    defaultNormalised: 0.5,
-  });
-  return wrap;
-}
-
-// Build a vertical pill of `.btn`s bound to a Choice apvts param. The active
-// button carries `.is-active`. Returns the wrapper element.
-function makePillCell(label, paramId, choices) {
-  const wrap = el("div", { className: "pill-cell" });
-  wrap.appendChild(el("div", { className: "pill-label", text: label }));
+function makePillCell(paramId, choices) {
   const pill = el("div", { className: "btn-pill" });
   const combo = bindCombo(paramId);
   const btns = choices.map((choice, idx) => {
@@ -200,43 +245,51 @@ function makePillCell(label, paramId, choices) {
   combo.onChange((idx) => {
     btns.forEach((b, i) => b.classList.toggle("is-active", i === idx));
   });
-  wrap.appendChild(pill);
-  return wrap;
+  return pill;
 }
 
-// Build one channel strip (tone or noise). `chIndex` selects the apvts suffix
-// + the strip's label; the noise strip differs by dropping DETUNE and adding
-// TYPE / RATE pills.
+// Build one channel strip. Tone strips have envelope knob-grid +
+// Detune/Vol/Pan bottom; the noise strip swaps Detune for VOL in the
+// 2nd env row and replaces the bottom with Pan + Type/Rate pills.
 function makeChannelStrip(chIndex) {
   const isNoise = (chIndex === 3);
   const sfx     = CHANNEL_SUFFIX[chIndex];
   const label   = CHANNEL_LABEL[chIndex];
 
-  const block = el("div", { className: "sq-block ch-strip" });
-  block.appendChild(el("div", { className: "sq-block-title", text: label }));
+  const strip = el("div", { className: "sq-strip" });
+  strip.appendChild(el("span", { className: "strip-title", text: label }));
 
-  // Envelope-curve thumbnail — same widget as FM, sized down for the strip.
-  const envHost = el("div", { className: "env-curve-host" });
-  const envelope = mountEnvelope(envHost, { width: 150, height: 70 });
-  block.appendChild(envHost);
+  // ADSR envelope LCD canvas — same widget as FM, sized down.
+  const envHost = el("div", { className: "sq-env-lcd" });
+  const envelope = mountEnvelope(envHost, { width: 140, height: 56 });
+  strip.appendChild(envHost);
 
-  // Envelope knobs — 5 across.
-  const envRow = el("div", { className: "env-knob-row" });
+  // Env knobs split across two rows per the mockup:
+  //   Row 1: ATK · DR1 · SUS   (.sq-env-row)
+  //   Row 2: DR2 · RR          (.sq-env-row.row2)
+  //   Noise row 2: DR2 · RR · VOL  (.sq-noise-env-row-b)
+  const row1 = el("div", { className: "sq-env-row" + (isNoise ? " sq-noise-env-row" : "") });
   const atkCell = makeKnobCell("ATK", `psg_atk${sfx}`);
   const dr1Cell = makeKnobCell("DR1", `psg_dr1${sfx}`);
   const susCell = makeKnobCell("SUS", `psg_sus${sfx}`);
+  row1.appendChild(atkCell.host);
+  row1.appendChild(dr1Cell.host);
+  row1.appendChild(susCell.host);
+  strip.appendChild(row1);
+
+  const row2 = el("div", { className: "sq-env-row " + (isNoise ? "sq-noise-env-row-b" : "row2") });
   const dr2Cell = makeKnobCell("DR2", `psg_dr2${sfx}`);
   const rrCell  = makeKnobCell("RR",  `psg_rr${sfx}`);
-  envRow.appendChild(atkCell.host);
-  envRow.appendChild(dr1Cell.host);
-  envRow.appendChild(susCell.host);
-  envRow.appendChild(dr2Cell.host);
-  envRow.appendChild(rrCell.host);
-  block.appendChild(envRow);
+  row2.appendChild(dr2Cell.host);
+  row2.appendChild(rrCell.host);
+  if (isNoise) {
+    const volCell = makeKnobCell("VOL", `psg_vol${sfx}`);
+    row2.appendChild(volCell.host);
+  }
+  strip.appendChild(row2);
 
-  // Live-recompute the envelope thumbnail from the 5 knob values. The
-  // envelope-curve API matches FM's (ar/dr/sl/sr/rr) — SQ's ATK/DR1/SUS/
-  // DR2/RR map 1:1 onto those positional args.
+  // Live-recompute the envelope thumbnail. Mapping ATK→AR, DR1→DR,
+  // SUS→SL, DR2→SR, RR→RR.
   const envBinds = {
     ar: atkCell.bind, dr: dr1Cell.bind, sl: susCell.bind,
     sr: dr2Cell.bind, rr:  rrCell.bind,
@@ -253,47 +306,99 @@ function makeChannelStrip(chIndex) {
   for (const b of Object.values(envBinds)) b.onChange(refreshEnvelope);
   refreshEnvelope();
 
-  // DETUNE / VOL / PAN row. Noise has no pitch, so it drops DETUNE.
-  const ctrlRow = el("div", { className: "control-row" });
+  // Bottom stack — different for tone vs noise.
+  const bottom = el("div", { className: "sq-bottom" });
+
   if (!isNoise) {
-    ctrlRow.appendChild(makeKnobCell("DETUNE", `psg_detune${sfx}`).host);
-  }
-  ctrlRow.appendChild(makeKnobCell("VOL", `psg_vol${sfx}`).host);
-  const panCell = makePanCell(`psg_pan${sfx}`);
-  panCell.classList.add("pan-cell");
-  ctrlRow.appendChild(panCell);
-  block.appendChild(ctrlRow);
+    // Tone: Detune / Vol / Pan stacked rows.
+    const detuneRow = el("div", { className: "sq-bottom-row" });
+    detuneRow.appendChild(el("span", { className: "label-col", text: "Detune" }));
+    const detuneVal = el("span", { className: "value-col" });
+    const detuneKnob = el("div");
+    detuneVal.appendChild(detuneKnob);
+    mountKnob(detuneKnob, {
+      bind: bindSlider(`psg_detune${sfx}`),
+      size: 22,
+      tipId: `psg_detune${sfx}`,
+    });
+    detuneRow.appendChild(detuneVal);
+    bottom.appendChild(detuneRow);
 
-  // Noise-only TYPE + RATE pills.
-  if (isNoise) {
-    const pillRow = el("div", { className: "pill-row" });
-    pillRow.appendChild(makePillCell("TYPE", "psg_noise_type",
-                                     ["WHITE", "PERIODIC"]));
-    pillRow.appendChild(makePillCell("RATE", "psg_noise_rate",
-                                     ["LOW", "MID", "HIGH", "CH2"]));
-    block.appendChild(pillRow);
+    const volRow = el("div", { className: "sq-bottom-row" });
+    volRow.appendChild(el("span", { className: "label-col", text: "Vol" }));
+    const volVal = el("span", { className: "value-col" });
+    const volKnob = el("div");
+    volVal.appendChild(volKnob);
+    mountKnob(volKnob, {
+      bind: bindSlider(`psg_vol${sfx}`),
+      size: 22,
+      tipId: `psg_vol${sfx}`,
+    });
+    volRow.appendChild(volVal);
+    bottom.appendChild(volRow);
+
+    const panRow = el("div", { className: "sq-bottom-row" });
+    panRow.appendChild(el("span", { className: "label-col", text: "Pan" }));
+    const panVal = el("span", { className: "value-col" });
+    const panHost = el("div");
+    panVal.appendChild(panHost);
+    mountSlider(panHost, {
+      bind: bindSlider(`psg_pan${sfx}`),
+      tipId: `psg_pan${sfx}`,
+      defaultNormalised: 0.5,
+    });
+    panRow.appendChild(panVal);
+    bottom.appendChild(panRow);
+  } else {
+    // Noise: Pan row, then Type / Rate pills inside .sq-noise-extras.
+    const panRow = el("div", { className: "sq-bottom-row" });
+    panRow.appendChild(el("span", { className: "label-col", text: "Pan" }));
+    const panVal = el("span", { className: "value-col" });
+    const panHost = el("div");
+    panVal.appendChild(panHost);
+    mountSlider(panHost, {
+      bind: bindSlider(`psg_pan${sfx}`),
+      tipId: `psg_pan${sfx}`,
+      defaultNormalised: 0.5,
+    });
+    panRow.appendChild(panVal);
+    bottom.appendChild(panRow);
+
+    const extras = el("div", { className: "sq-noise-extras" });
+    const typeRow = el("div", { className: "sq-bottom-row" });
+    typeRow.appendChild(el("span", { className: "label-col", text: "Type" }));
+    const typeVal = el("span", { className: "value-col" });
+    typeVal.appendChild(makePillCell("psg_noise_type", ["W", "P"]));
+    typeRow.appendChild(typeVal);
+    extras.appendChild(typeRow);
+
+    const rateRow = el("div", { className: "sq-bottom-row" });
+    rateRow.appendChild(el("span", { className: "label-col", text: "Rate" }));
+    const rateVal = el("span", { className: "value-col" });
+    rateVal.appendChild(makePillCell("psg_noise_rate", ["L", "M", "H", "CH2"]));
+    rateRow.appendChild(rateVal);
+    extras.appendChild(rateRow);
+
+    bottom.appendChild(extras);
   }
 
-  return block;
+  strip.appendChild(bottom);
+  return strip;
 }
 
-// Build & mount the SQ panel into `root`. Returns a disposer that strips the
-// view class and clears the host; main.js calls it on mode change.
+// Build & mount the SQ panel into `root`. Returns a disposer.
 export function mount(root) {
   ensureStyles();
-  root.classList.add("sq-view");
+  root.classList.add("sq-panel");
   root.innerHTML = "";
 
-  // --- GLOBAL IN block (left edge) --------------------------------------
-  const inBlock = el("div", { className: "sq-block global-in" });
-  inBlock.appendChild(el("div", { className: "sq-block-title", text: "Global In" }));
+  // --- GLOBAL IN block (left column) --------------------------------------
+  const inBlock = el("div", { className: "sq-globalin" });
+  inBlock.appendChild(el("span", { className: "strip-title", text: "Global In" }));
   const pbCell  = el("div", { className: "midi-wheel-cell" });
   const pbHost  = el("span");
   pbCell.appendChild(pbHost);
   pbCell.appendChild(el("span", { className: "wheel-label", text: "PB" }));
-  // Pitch-bend is read-only on the SQ panel; PluginProcessor mirrors live
-  // MIDI pitch-bend into `pitch_bend_value` (Task 05 § *MIDI state mirror*).
-  // Range -1..+1 — JUCE normalises to 0..1; the widget centres at 0.5.
   mountMidiWheel(pbHost, {
     bind: bindSlider("pitch_bend_value"),
     variant: "pb",
@@ -302,14 +407,14 @@ export function mount(root) {
   inBlock.appendChild(pbCell);
   root.appendChild(inBlock);
 
-  // --- Four channel strips (3 tone + 1 noise) ---------------------------
+  // --- Four channel strips (3 tone + 1 noise) -----------------------------
   for (let ch = 0; ch < 4; ++ch) {
     root.appendChild(makeChannelStrip(ch));
   }
 
   return {
     dispose() {
-      root.classList.remove("sq-view");
+      root.classList.remove("sq-panel");
       root.innerHTML = "";
     },
   };

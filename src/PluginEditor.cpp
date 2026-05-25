@@ -193,9 +193,15 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         .withOptionsFrom (galleryLevel)
         .withOptionsFrom (galleryNoteOn)
         .withOptionsFrom (galleryWheel)
-        .withEventListener ("uiReady", [] (juce::var)
+        .withEventListener ("uiReady", [] (juce::var payload)
         {
-            juce::Logger::writeToLog ("Gen VST: uiReady received from WebView");
+            // Carries the JS-side init() outcome: { ok: true } on success,
+            // or { ok: false, error: "...", stack: "..." } when the
+            // permanent try/catch in ui/src/main.js caught a mount throw.
+            // Logging the payload here turns an otherwise-silent JS error
+            // into a one-line entry in the host's juce::Logger output.
+            juce::Logger::writeToLog ("Gen VST: uiReady received from WebView: "
+                                      + juce::JSON::toString (payload));
         })
         // Task 08 — Settings → RESET ALL TO DEFAULTS confirmation handler.
         // Returns juce::var{} so the JS-side getNativeFunction promise resolves.

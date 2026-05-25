@@ -41,15 +41,26 @@ export function installTooltips(root) {
   const nameRow = tipEl.querySelector(".tip-name");
   const descRow = tipEl.querySelector(".tip-desc");
 
+  let enterTimer = null;
+  let lastEl = null;
+
+  // hideTooltip declared before the enabledBind subscription below — the
+  // subscribe callback fires synchronously with the current state value
+  // (binding.js#bindToggle), and the JUCE ToggleState defaults to `false`
+  // until the async backend update arrives, so the sync fire takes the
+  // `!enabled` branch on every mount. Declaring the helper first avoids
+  // the resulting TDZ ReferenceError.
+  const hideTooltip = () => {
+    tipEl.classList.add("is-hidden");
+    if (enterTimer) { clearTimeout(enterTimer); enterTimer = null; }
+  };
+
   const enabledBind = bindToggle("tooltips_enabled");
   let enabled = true;
   const unsubEnabled = enabledBind.onChange((on) => {
     enabled = Boolean(on);
     if (!enabled) hideTooltip();
   });
-
-  let enterTimer = null;
-  let lastEl = null;
 
   const findTipHost = (el) => {
     while (el && el !== document.documentElement) {
@@ -77,11 +88,6 @@ export function installTooltips(root) {
     if (y < EDGE_PAD) y = EDGE_PAD;
     tipEl.style.left = `${x}px`;
     tipEl.style.top  = `${y}px`;
-  };
-
-  const hideTooltip = () => {
-    tipEl.classList.add("is-hidden");
-    if (enterTimer) { clearTimeout(enterTimer); enterTimer = null; }
   };
 
   const onPointerMove = (e) => {
