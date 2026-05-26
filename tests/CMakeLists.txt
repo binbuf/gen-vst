@@ -83,7 +83,8 @@ target_compile_definitions(GenVstTests PRIVATE
     GENVST_FACTORY_PATCHES_DIR="${CMAKE_SOURCE_DIR}/extern/patches"
     GENVST_FIXTURES_PATCHES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/patches"
     GENVST_FIXTURES_TUNINGS_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/tunings"
-    JUCE_WEB_BROWSER=0)
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0)
 
 target_link_libraries(GenVstTests PRIVATE
     GTest::gtest_main
