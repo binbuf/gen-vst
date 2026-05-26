@@ -34,3 +34,5 @@ pending sign-off), `Superseded` (replaced by a later ADR).
 | [0023](0023-fixed-window-1200x560.md) | Fixed 1200×560 plugin window | Accepted |
 | [0024](0024-hardware-filter-toggles.md) | Output character — independent Filter and Ladder toggles | Accepted |
 | [0025](0025-tagged-preset-browser.md) | Tagged unified preset browser with mode auto-switch | Accepted |
+| [0026](0026-dmp-psg-import.md) | DMP PSG instrument import for SQ mode | Accepted |
+| [0027](0027-ssg-eg-nudge-not-force.md) | SSG-EG loop shapes — visual nudge instead of forcing AR=31 | Accepted |

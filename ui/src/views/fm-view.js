@@ -55,6 +55,24 @@ const SSG_LABELS = {
   15: "SUO",   // saw up, one-shot
 };
 
+// The four SSG-EG shapes that loop. Hardware behaviour for these requires
+// AR=31 on the same operator — see ADR-0027 and 02-fm-synthesis.md
+// *UI nudge — SSG-EG loop vs AR*. SDR/ALT/SUR/ALU.
+const SSG_LOOPING_VALUES = new Set([8, 10, 12, 14]);
+
+// Tooltip variants for the AR knob. The "normal" copy mirrors
+// tooltip-content.js FM_OP_BASE.ar so the AR cell falls back cleanly when
+// the nudge clears. The "warn" copy fires when the paired SSG-EG is on a
+// looping shape and AR < 31.
+const AR_TIP_NORMAL = {
+  name: "AR",
+  desc: "Attack rate — how quickly the envelope rises from key-on to full level. 0 slowest, 31 instant.",
+};
+const AR_TIP_SSG_WARN = {
+  name: "AR — SSG-EG LOOP",
+  desc: "SSG-EG loop needs AR=31 to sound as labelled. Raise AR to 31, or pick a non-looping SSG-EG shape (SDO / SDH / SUH / SUO).",
+};
+
 // FM panel CSS — ported from the mvp2/01 mockup (deleted in task 04 per
 // docs/tasks/mvp2/01-static-ui-mockup.md). The mockup's mockup-fm.css is
 // the visual source-of-truth for the v2 FM layout; this stylesheet inlines
@@ -319,6 +337,17 @@ function ensureStyles() {
       letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--label-text-dim);
+    }
+
+    /* SSG-EG loop nudge — see ADR-0027 and 02-fm-synthesis.md "UI nudge —
+     * SSG-EG loop vs AR". When ssg ∈ {8,10,12,14} and AR < 31, the AR knob
+     * carries .ssg-ar-mismatch and paints with an amber outline + glow. No
+     * audio override — visual hint only. */
+    .fm-panel .op-grid .knob.ssg-ar-mismatch {
+      box-shadow:
+        0 0 0 1px rgba(255, 176, 64, 0.85),
+        0 0 8px 1px rgba(255, 176, 64, 0.45);
+      border-radius: 50%;
     }
   `;
   document.head.appendChild(style);
@@ -595,8 +624,15 @@ export function mount(root) {
     const srBind = bindSlider(`sr_op${op}`);
     const rrBind = bindSlider(`rr_op${op}`);
 
+    // AR mounts separately from the rate loop so we can capture its host
+    // element — the SSG-EG nudge (ADR-0027) toggles a class + tooltip on it
+    // when the paired SSG-EG is on a looping shape and AR < 31.
+    const arHost = tagOp(el("div"), op);
+    mountKnob(arHost, { bind: arBind, size: 24, tipId: `ar_op${op}` });
+    opGrid.appendChild(arHost);
+
     for (const [bind, key, max] of [
-      [arBind, "ar", 31], [drBind, "dr", 31], [slBind, "sl", 15],
+      [drBind, "dr", 31], [slBind, "sl", 15],
       [srBind, "sr", 31], [rrBind, "rr", 15],
     ]) {
       const host = tagOp(el("div"), op);
@@ -615,15 +651,32 @@ export function mount(root) {
     // 9 valid SSG-EG register values; the LCD shows the shape's short name.
     // Wrapped in .ssg-cell so the CSS can tighten the stepper to fit the
     // operator-grid column width.
+    const ssgBind = bindSlider(`ssg_op${op}`);
     const ssgHost = tagOp(el("div", { className: "ssg-cell" }), op);
     mountStepper(ssgHost, {
-      bind: bindSlider(`ssg_op${op}`),
+      bind: ssgBind,
       sizeMini: true,
       valueSequence: SSG_VALUE_SEQUENCE,
       formatter: (v) => SSG_LABELS[v] || "OFF",
       tipId: `ssg_op${op}`,
     });
     opGrid.appendChild(ssgHost);
+
+    // SSG-EG loop nudge — ADR-0027. Repaints the AR knob amber and swaps
+    // its tooltip when the paired SSG-EG is on a looping shape and AR < 31.
+    // Recomputes reactively from either binding; clears the moment the
+    // condition no longer holds. No audio override, no patch mutation.
+    const updateSsgArNudge = () => {
+      const arInt  = Math.round(arBind.getNormalised()  * 31);
+      const ssgInt = Math.round(ssgBind.getNormalised() * 15);
+      const mismatch = SSG_LOOPING_VALUES.has(ssgInt) && arInt < 31;
+      arHost.classList.toggle("ssg-ar-mismatch", mismatch);
+      const tip = mismatch ? AR_TIP_SSG_WARN : AR_TIP_NORMAL;
+      arHost.setAttribute("data-tip-name", tip.name);
+      arHost.setAttribute("data-tip-desc", tip.desc);
+    };
+    arBind.onChange(updateSsgArNudge);
+    ssgBind.onChange(updateSsgArNudge);
 
     const mulHost = tagOp(el("div"), op);
     mountKnob(mulHost, { bind: bindSlider(`mul_op${op}`), size: 24, tipId: `mul_op${op}` });

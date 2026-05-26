@@ -339,11 +339,20 @@ Columns (left → right):
 | `AM` | Toggle | `amon[op]` |
 | `AR / DR / SL / SR / RR` | Knobs | Envelope rate values |
 | `RS` (Rate Scaling) | Knob | `ks[op]` |
-| `SSG-EG` | Combo (OFF + 8 named shapes — `Repeat`, `Hold`, `Alternate`, `Inv. Repeat`, …) | `ssg[op]` |
+| `SSG-EG` | Mini stepper with named-shape readout (▲/▼ cycles through OFF + 8 shapes — `SDR`, `SDO`, `ALT`, `SDH`, `SUR`, `SUH`, `ALU`, `SUO`; see [`02-fm-synthesis.md`](02-fm-synthesis.md) *SSG-EG* for the shape table). Wired to `bindSlider(ssg_op{N})` with a 9-entry `valueSequence` so the stepper snaps register values 1–7 down to 0 (`OFF`). | `ssg[op]` |
 | `MUL` | Knob | `mul[op]` in `INT_MUL` mode (integer 0–15); `mul_float[op]` in `FLOAT_MUL` mode (decimal); ignored when `fixed[op]` is on |
 | `FREQ` | LCD readout (state-dependent) | Display depends on `freq_ctrl_mode` × `fixed[op]`: <br>• `INT MUL` → integer multiplier (`×0.5`, `×1`, `×2`, …, `×15`); `FIXED` has no effect<br>• `FLOAT MUL`, fixed off → float multiplier (e.g. `1.50`)<br>• `FLOAT MUL`, fixed on → absolute frequency in Hz (e.g. `523 Hz`)<br>• `AUTO RETRIG` → same as `FLOAT MUL` |
 | `FIXED` | Toggle | `fixed[op]` — when on (and mode = `FLOAT_MUL`/`AUTO_RETRIG`), the operator runs at the absolute frequency `freq_fixed_hz[op]` instead of `note × mul_float[op]`. Greyed out in `INT_MUL` mode (no effect). |
 | `DT` | Knob | `dt[op]` |
+
+**AR nudge for SSG-EG loop shapes.** When `ssg[op] ∈ {8, 10, 12, 14}`
+(the four looping SSG-EG shapes — `SDR`, `ALT`, `SUR`, `ALU`) and
+`ar[op] < 31`, the AR knob on the same operator row paints with an
+amber outline / glow and its tooltip switches to *"SSG-EG loop needs
+AR=31 to sound as labelled."* No audio override; clears the moment the
+condition no longer holds. See [ADR-0027](adr/0027-ssg-eg-nudge-not-force.md)
+for the design rationale (preserve TFI/VGI round-trip, allow
+intentional chiptune AR<31 combos, avoid automation conflicts).
 | `VEL` (right margin, single column) | Knob | `vel[op]` — per-op velocity → TL depth (0 = no effect, 1 = full). RYM2612 manual page 10 |
 
 All controls in the grid are `apvts`-bound through the standard relays.

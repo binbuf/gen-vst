@@ -221,15 +221,56 @@ KS adds `(key_code >> (3 - KS))` to all rate values, making envelopes velocity/p
 | 3    | SSGE  | 1 = SSG-EG envelope mode active |
 | 2:0  | SSGM  | Shape mode (0–7) |
 
-**Shapes** (SSGE=1, AR must be 31):
+The full register byte therefore takes only 9 audible values: **0** (any
+value with SSGE=0 is "off" — hardware-invalid `1..7` collapse here via
+`clampSsg`) plus **8..15** (SSGE=1 with one of 8 shapes). The FM panel's
+SSG-EG stepper exposes exactly those 9 states with the labels in the
+*UI labels* column below.
 
-| SSGM | Shape | Description |
-|------|-------|-------------|
-| 0–3  | /‾ × | One-shot attack or decay variants |
-| 4    | \\\  | Descending sawtooth, loops |
-| 5    | \/   | Triangle, loops |
-| 6    | \‾   | Descending sawtooth, hold |
-| 7    | \/   | Triangle (half), hold |
+**Shapes** (SSGE=1):
+
+| Register value | SSGM | Shape | Behaviour | UI label |
+|----------------|------|-------|-----------|----------|
+| 8  | 0 | `\\\\\\` | Saw-down, **repeat** (loops) | `SDR` |
+| 9  | 1 | `\____` | Saw-down, one-shot | `SDO` |
+| 10 | 2 | `\/\/` | Alternate triangle, **loops** (down-first) | `ALT` |
+| 11 | 3 | `\---` | Saw-down then hold at floor | `SDH` |
+| 12 | 4 | `////` | Saw-up, **repeat** (loops) | `SUR` |
+| 13 | 5 | `/---` | Saw-up then hold at peak | `SUH` |
+| 14 | 6 | `/\/\` | Alternate triangle, **loops** (up-first) | `ALU` |
+| 15 | 7 | `/___` | Saw-up, one-shot | `SUO` |
+
+**Looping shapes are the bold-italic rows above**: register values
+`{8, 10, 12, 14}` (SSGM 0/2/4/6). The other four (SSGM 1/3/5/7) are
+one-shot or hold envelopes that fire once and then either silence or
+hold their final level.
+
+#### UI nudge — SSG-EG loop vs AR
+
+The looping shapes only produce the documented repeating envelope when
+**AR = 31** on the same operator: SSG-EG runs the envelope generator at
+the chip's `~6×` SSG rate, so a slow attack (AR < 31) bleeds into the
+loop cycle and the audible shape drifts from the table above. AR = 31
+makes the attack instantaneous so the SSG-EG shape itself is what you
+hear.
+
+Rather than force AR = 31 (which would silently mutate imported TFI /
+VGI / DMP / Y12 / OPM patches with a looping SSG-EG and AR < 31 — see
+[ADR-0027](adr/0027-ssg-eg-nudge-not-force.md)), the FM panel
+**nudges**: when `ssg[op] ∈ {8, 10, 12, 14}` and `ar[op] < 31`, the
+operator row's AR knob is painted with an amber outline and its tooltip
+reads:
+
+> *SSG-EG loop needs AR=31 to sound as labelled.*
+
+The nudge clears as soon as AR is raised to 31, the SSG-EG shape moves
+to a non-looping value, or SSG-EG is turned off. There is no audio-path
+override and no auto-snap of AR — the user is informed and decides.
+
+Users who want a strict "force AR=31 on loop shapes" behaviour can opt
+in via the `hardware_strict` toggle in Settings ([ADR-0027](adr/0027-ssg-eg-nudge-not-force.md)
+*Consequences* — this is the right umbrella for future enforcement
+modes, deferred until requested).
 
 ---
 
