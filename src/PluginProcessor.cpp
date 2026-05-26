@@ -1336,7 +1336,7 @@ double GenVstAudioProcessor::getTailLengthSeconds() const               { return
 int GenVstAudioProcessor::getNumPrograms()                              { return 1; }
 int GenVstAudioProcessor::getCurrentProgram()                           { return 0; }
 void GenVstAudioProcessor::setCurrentProgram (int)                      {}
-const juce::String GenVstAudioProcessor::getProgramName (int)           { return {}; }
+const juce::String GenVstAudioProcessor::getProgramName (int)           { return "Gen VST"; }
 void GenVstAudioProcessor::changeProgramName (int, const juce::String&) {}
 
 void GenVstAudioProcessor::getStateInformation (juce::MemoryBlock& destData)

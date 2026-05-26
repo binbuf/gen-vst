@@ -45,10 +45,15 @@ function ensureStyles() {
       display: grid;
       /* Leftmost narrow column for the GLOBAL IN block (PB wheel only —
        * MW omitted in SQ, see 08-ui-views.md view 3), then four equal
-       * columns for the three tone strips + noise strip. */
+       * columns for the three tone strips + noise strip. Single row at
+       * 1fr so each strip cell inherits the panel's full height instead
+       * of auto-collapsing to its natural content height. */
       grid-template-columns: 64px 1fr 1fr 1fr 1fr;
+      grid-template-rows: 1fr;
+      align-items: stretch;
       gap: 12px;
       padding: 22px 14px 14px;
+      box-sizing: border-box;
     }
 
     .sq-panel .sq-globalin {
@@ -90,8 +95,10 @@ function ensureStyles() {
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 10px;
-      padding: 16px 12px 14px;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 0;
+      padding: 22px 12px 16px;
       background: rgba(0, 0, 0, 0.18);
       border: 1px solid rgba(0, 0, 0, 0.4);
       border-radius: 4px;
@@ -134,7 +141,7 @@ function ensureStyles() {
     .sq-panel .sq-env-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 6px 4px;
+      gap: 8px 4px;
       justify-items: center;
     }
     .sq-panel .sq-env-row.row2 {
@@ -164,8 +171,7 @@ function ensureStyles() {
     .sq-panel .sq-bottom {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-top: auto;
+      gap: 8px;
     }
     .sq-panel .sq-bottom-row {
       display: grid;
@@ -227,7 +233,7 @@ function makeKnobCell(label, paramId, opts = {}) {
   wrap.appendChild(knobHost);
   if (label) wrap.appendChild(el("div", { className: "knob-cell-label", text: label }));
   const bind = bindSlider(paramId);
-  mountKnob(knobHost, { bind, size: opts.size || 24, tipId: paramId });
+  mountKnob(knobHost, { bind, size: opts.size || 28, tipId: paramId });
   return { host: wrap, bind };
 }
 
@@ -320,7 +326,7 @@ function makeChannelStrip(chIndex) {
     detuneVal.appendChild(detuneKnob);
     mountKnob(detuneKnob, {
       bind: bindSlider(`psg_detune${sfx}`),
-      size: 22,
+      size: 26,
       tipId: `psg_detune${sfx}`,
     });
     detuneRow.appendChild(detuneVal);
@@ -333,7 +339,7 @@ function makeChannelStrip(chIndex) {
     volVal.appendChild(volKnob);
     mountKnob(volKnob, {
       bind: bindSlider(`psg_vol${sfx}`),
-      size: 22,
+      size: 26,
       tipId: `psg_vol${sfx}`,
     });
     volRow.appendChild(volVal);

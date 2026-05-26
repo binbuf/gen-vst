@@ -28,6 +28,14 @@ const MODE_D  = 2;
 
 function init() {
   try {
+    // Strip browser-style affordances (right-click, F11/F12 inspector,
+    // Ctrl/Cmd+wheel zoom, Ctrl/Cmd+R reload, …) in production bundles.
+    // Lazy import so the dev server (vite dev) never even fetches the
+    // module — devtools stay fully functional during development.
+    if (import.meta.env.PROD) {
+      import("./dev-tools-guard.js").then((m) => m.install());
+    }
+
     // Notification toast — global, lives over the chassis (and above modals,
     // per 08-ui-views.md *Modal behaviour (shared)*; the toast host's
     // z-index 100 > modal-host z-index 80).
