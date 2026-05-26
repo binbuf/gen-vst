@@ -1,0 +1,24 @@
+# Default: let Git detect text vs binary, normalize text on commit.
+* text=auto
+
+# Shell scripts and YAML must be LF in working trees too — they run on
+# macOS/Linux CI runners and must not be tripped up by CRLF line endings.
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.desktop   text eol=lf
+
+# Inno Setup expects Windows line endings.
+*.iss       text eol=crlf
+
+# Binaries / fonts / patches — keep verbatim.
+*.tfi       binary
+*.vgi       binary
+*.y12       binary
+*.dmp       binary
+*.opm       binary
+*.psg       binary
+*.ttf       binary
+*.otf       binary
+*.png       binary

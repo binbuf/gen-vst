@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Gen VST
+GenericName=Sega Genesis Synth
+Comment=Sega Genesis YM2612 + SN76489 emulation
+Exec=gen-vst
+Icon=gen-vst
+Categories=AudioVideo;Audio;Music;
+Terminal=false
+StartupWMClass=Gen VST
+Keywords=audio;synth;genesis;ym2612;fm;chiptune;
