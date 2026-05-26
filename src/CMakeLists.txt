@@ -76,6 +76,7 @@ juce_add_plugin(GenVst
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     NEEDS_WEBVIEW2              TRUE
+    NEEDS_WEB_BROWSER           TRUE
     AU_MAIN_TYPE                kAudioUnitType_MusicDevice
     AU_SANDBOX_SAFE             TRUE
     COPY_PLUGIN_AFTER_BUILD     ${COPY_PLUGIN_AFTER_BUILD}
