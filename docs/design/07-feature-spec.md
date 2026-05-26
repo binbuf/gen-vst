@@ -102,6 +102,14 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 ### Output character (all modes, v2 additions per [ADR-0024](adr/0024-hardware-filter-toggles.md))
 - [x] **Output Filtering** toggle — Model-1 RC lowpass + amp coloration on mix bus *(mvp2/03 DSP + mvp2/08 header)*
 - [x] **Ladder Effect** toggle — YM2612 stepwise nonlinearity (FM voice sum + D-mode output; greyed out in SQ) *(mvp2/03 DSP + mvp2/08 header)*
+- [x] **FM idle-silence clamp** — `renderFmBlock` short-circuits the
+      ymfm voice-render + Ladder chain when no voice is keyed-on or in
+      release tail (`VoiceAllocator::hasAudibleVoice() == false`). ymfm's
+      idle output isn't a hard zero (internal phase accumulators tick
+      regardless of envelope state); without the clamp the LSB-level
+      residue gets amplified by the 8-bit Ladder quantizer into audible
+      background hiss between notes. SQ is unaffected — Ladder is
+      FM-only.
 
 ### MIDI (FM and SQ modes; D mode ignores MIDI)
 - [x] MIDI CC automation for all parameters (full map below) *(mvp2/05)*
@@ -164,8 +172,8 @@ active mode are silently ignored.
 
 | CC | Parameter | Hardware Range | Modes | Notes |
 |----|-----------|---------------|-------|-------|
-| 1  | Mod Wheel → PMS (vibrato) | 0–7 | FM | Standard modwheel |
-| 7  | Master Volume | 0–127 | All | Standard volume |
+| 1  | Mod Wheel → PMS (vibrato) | 0–7 | FM | Standard modwheel; also mirrored into `mod_wheel_value` apvts param for the GLOBAL IN MW wheel |
+| 7  | *(intentionally ignored)* | — | — | Not routed to `master_volume` — the VOL knob is a per-instance trim and the DAW track fader already covers host-side level. Forwarding CC 7 made VOL appear to drift under controller defaults / fader automation. Host parameter automation on `master_volume` is the supported path. |
 | 10 | Pan (L/R) | 0–127 | FM, SQ | Standard pan |
 | 14 | Algorithm (ALG) | 0–7 | FM | |
 | 15 | Feedback (FB) | 0–7 | FM | |

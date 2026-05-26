@@ -129,10 +129,18 @@ ways:
   algorithm diagram, level meters, the LCD readout text. See *Component
   Inventory* below for which widgets are CSS vs Canvas.
 
-**No SVG.** Two reasons: (1) the CSS recipes in `09-visual-spec.md` use
-multi-stop gradients + layered shadows that read better than an SVG
-gradient, (2) keeping zero binary image assets makes the bundle leaner
-and easier to hot-reload. **No WebGL** — Canvas 2D is plenty at 1200×560.
+**No SVG, with one narrow exception.** The general rule holds — CSS
+multi-stop gradients + layered shadows read better than SVG gradients,
+and keeping zero binary image assets makes the bundle leaner and
+easier to hot-reload. The exception is `algorithm-mini`: the 8 YM2612
+algorithm topologies are static line-art diagrams (rectangles, edge-
+to-edge connector lines, an arrowhead, an `ALG N` label) with no
+animation and no per-frame redraw, so SVG's vector accuracy and inline
+CSS-variable theming (the diagram inherits `--lcd-text-on`
+automatically) outweigh Canvas for this one widget. New widgets
+default to Canvas for dynamic redraws and CSS for static chrome — SVG
+is only appropriate when both axes are static. **No WebGL** — Canvas
+2D is plenty at 1200×560.
 
 The only binary assets bundled with the web build are **fonts** (see
 *Fonts* below).
@@ -166,10 +174,10 @@ readouts use the LCD-style typeface drawn into Canvas with a subtle blur
 | `lcd-readout` | Patch-name LCD (header) and per-knob numeric readouts; flat dark base + glowing text | Canvas |
 | `toggle-switch` | Two- and three-position toggle (e.g., `CRYSTAL CLEAR / LEGACY`); physical-slider feel | CSS + a Canvas highlight |
 | `slider` | Horizontal slider with chunky cap, soft groove shadow | CSS only |
-| `algorithm-mini` | The 8 YM2612 algorithm topologies, drawn small; selected one highlighted | Canvas |
+| `algorithm-mini` | The 8 YM2612 algorithm topologies, drawn small; selected one highlighted | SVG (see *Asset Strategy* note below — diagrams are the one SVG exception) |
 | `envelope-curve` | Per-operator (FM) or per-channel (SQ) ADSR shape; computed live from envelope params | Canvas |
 | `note-on-led` | Single header LED that lights on key-on (FM/SQ) or input-audio-present (D) | CSS animation on apvts-bound state |
-| `midi-wheel` | Vertical wheel/slider visualizing live MIDI pitch-bend (variant `midi-wheel-pb`, center-detent) or mod-wheel (variant `midi-wheel-mw`, full-range). Read-only — driven by the host's MIDI stream, not user-draggable. Used by the FM panel's `GLOBAL IN` block (PB + MW) and the SQ panel's `GLOBAL IN` block (PB only — see `08-ui-views.md` view 3 for why SQ omits MW) | CSS + thin Canvas overlay for the centerline glow |
+| `midi-wheel` | Vertical wheel/slider for pitch-bend (variant `midi-wheel-pb`, center-detent) or mod-wheel (variant `midi-wheel-mw`, full-range). Bidirectional: tracks incoming MIDI / DAW automation **and** accepts user drag, scroll, double-click reset (PB → 0.5, MW → 0). User gestures write the bound apvts param (`pitch_bend_value` / `mod_wheel_value`); the processor reads those mirrors every block so a UI drag is audible and records as parameter automation. Used by the FM panel's `GLOBAL IN` block (PB + MW) and the SQ panel's `GLOBAL IN` block (PB only — see `08-ui-views.md` view 3 for why SQ omits MW) | CSS + thin Canvas overlay for the centerline glow |
 | `level-meter` | Stereo LED-style level bars; only deployed as the stacked `level-meter-mini` cell in the header for post-master output (no D-panel input variant in v2 — see `08-ui-views.md` view 4) | Canvas |
 | `decimator-knob` | Large 96 px central knob body variant (PCM2612-style — matte body, no top sheen); identical mechanics to `knob`. Used by the D panel's central `DRY/WET` knob | CSS body + Canvas indicator arc |
 | `patch-name-lcd` | Larger LCD readout in the header showing the active patch | Canvas; uses LCD-style font |
@@ -257,6 +265,19 @@ patch system, which dispatches by extension via
 `EDITOR_WANTS_KEYBOARD_FOCUS` must be `TRUE` (the HTML UI has text /
 numeric inputs).
 
+**Production webview hardening.** The WebView2 / WKWebView engines
+honour browser-style affordances by default (right-click → inspect
+element, F5 reload, F11 / F12 inspector, Ctrl/Cmd+wheel zoom,
+Ctrl/Cmd+R, Ctrl/Cmd+S, image drag-out, …) which leak through to the
+end user's plugin chassis as if it were a webpage. The JS bundle
+includes `ui/src/dev-tools-guard.js`, a single-call install that
+swallows those affordances at the `capture` phase. **It loads only in
+production builds** (`import.meta.env.PROD`) so the Vite dev server
+keeps devtools fully functional during development. Idempotent;
+guarded by `window.__genvstGuardInstalled__`. The guard owns no
+chrome — it strips affordances rather than reimplementing menus, so
+no design surface needs to know about it.
+
 ### Parameter binding (two-way) — unchanged
 
 Every automatable parameter lives in the `apvts` (see
@@ -278,6 +299,19 @@ repaints the knob. On the JS side, controls subscribe to
 **Naming contract:** the relay name equals the `apvts` parameter ID.
 Under v2 these IDs are simple (no `_part<n>` suffix to strip) — the
 single-engine model means one ID per parameter, full stop.
+
+**Exhaustive relay registration.** The editor constructor builds one
+relay per apvts parameter by iterating `processor.getParameters()` and
+classifying each by JUCE type — `AudioParameterBool` → toggle relay,
+`AudioParameterChoice` → combo relay, everything else (including int
+steppers) → slider relay. The relays live in three `std::vector`s
+(slider / toggle / combo) on the editor; `tryInitWebView` builds one
+parameter-attachment per relay in lock-step. Adding a new apvts
+parameter therefore costs zero editor changes — the JS side's
+`bindSlider("new_param")` connects automatically. This replaced an
+earlier per-task hand-roll of named relays (Tasks 04 / 08) which left
+the per-mode panel parameters unbound and caused preset loads to
+update audio without echoing back to the UI knobs.
 
 ### Mode dispatch on the UI side
 
@@ -337,8 +371,12 @@ wheel bind to the apvts parameters `mod_wheel_value` and
 mirrors every inbound CC 1 and pitch-bend message into those params via
 `setValueNotifyingHost` so the widgets repaint through the same
 `valueChangedEvent` path every other knob uses — no extra event, no
-extra timer. The widgets are read-only (no drag handler); the apvts
-params are display-only mirrors of the live MIDI stream.
+extra timer. The widgets are **bidirectional**: incoming MIDI moves
+the thumb, and the user can also drag, scroll, or double-click the
+wheel to write the param directly — the processor reads the apvts
+mirror every block (`renderFmBlock` / `renderSqBlock`) and applies it
+to the voices / PSG channels so UI gestures are audible and recordable
+as DAW parameter automation.
 
 The v1 oscilloscope, 16-voice LED bank, and clip LED are removed —
 they belonged to the v1 chassis.

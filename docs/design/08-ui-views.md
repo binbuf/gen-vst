@@ -221,23 +221,27 @@ operator 1's self-feedback specifically — no other operator carries an
   `poly_voices > 1` it gates whether an incoming note that hits an
   already-sounding voice retriggers the envelope or rides through. See
   [`02-fm-synthesis.md`](02-fm-synthesis.md) § *Voice handling — LEGATO
-  and RETRIG*. Bound to apvts param `note_mode` (enum:
-  `0 = RETRIG, 1 = LEGATO`).
+  and RETRIG*. Bound to apvts param `note_mode` (bool: `false = RETRIG,
+  true = LEGATO`; declared as `AudioParameterBool` so the WebView
+  toggle relay can bind to it — Choice relays are namespaced
+  separately).
 - `RANGE` — numeric stepper for **pitch-bend range in semitones**.
   Range ±1..±12, default ±2. Matches the RYM2612 `RANGE N` stepper.
   Bound to apvts param `pitch_bend_range`.
 **Global inputs block (`GLOBAL IN`, mid-row, left of the operator grid)**
 
-- `PB`, `MW` — **global** pitch-bend + mod-wheel visualisations, read-only.
+- `PB`, `MW` — **global** pitch-bend + mod-wheel widgets, bidirectional.
   Implemented as `midi-wheel` widgets (vertical wheel/slider shape with
   a thumb showing the current MIDI value) — they read as hardware
   pitch-bend / mod-wheel controls rather than LED meters, matching the
   RYM2612 reference's bottom-left PB/MW block. The PB wheel uses the
   `midi-wheel-pb` variant (center-detent, thin centerline drawn at the
   zero position); the MW wheel uses `midi-wheel-mw` (full-range, thumb
-  at 0 = bottom). The dedicated `GLOBAL IN` block lives in the mid-row
-  to the **left** of the operator grid (not buried in the LFO/global
-  block any more).
+  at 0 = bottom). Both accept drag, scroll, and double-click reset
+  (PB → 0.5, MW → 0) in addition to tracking incoming MIDI / DAW
+  automation — see `05-ui-ux.md` *Component Inventory*. The dedicated
+  `GLOBAL IN` block lives in the mid-row to the **left** of the
+  operator grid (not buried in the LFO/global block any more).
 
 These are *not* per-operator; the RYM2612 reference shows MW as a single
 modwheel level for the whole instrument, and Gen VST follows. The
@@ -378,12 +382,15 @@ left edge carries the read-only pitch-bend wheel visualizer.
 
 **`GLOBAL IN` block (left edge)**
 
-- `PB` — a single `midi-wheel-pb` widget (read-only, center-detent;
-  thin centerline drawn at the zero position). Visualises the host's
-  incoming MIDI pitch-bend value — purely informational, the user does
-  not drag it. The depth (semitones) is governed by the **global**
-  `pitch_bend_range` apvts param shared with FM mode (set from the
-  FM panel's `RANGE` stepper); SQ does not duplicate the stepper.
+- `PB` — a single `midi-wheel-pb` widget (center-detent; thin
+  centerline drawn at the zero position). Tracks the host's incoming
+  MIDI pitch-bend value and also accepts drag / scroll / double-click
+  reset (writes the `pitch_bend_value` apvts param; the processor
+  reads it per block so the gesture is audible — see `05-ui-ux.md`
+  *Component Inventory*). The depth (semitones) is governed by the
+  **global** `pitch_bend_range` apvts param shared with FM mode (set
+  from the FM panel's `RANGE` stepper); SQ does not duplicate the
+  stepper.
 - **No `MW` wheel on the SQ panel.** v2 SQ has no software LFO /
   vibrato / tremolo destination wired to MW, so a mod-wheel
   visualizer here would be misleading chrome (the user moves the

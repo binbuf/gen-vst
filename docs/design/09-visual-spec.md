@@ -487,15 +487,24 @@ reads at a glance without a popover.
 }
 ```
 
-### Algorithm topology diagram (canvas)
+### Algorithm topology diagram (SVG)
 
 A separate, *larger* LCD tile next to the `algo-grid` draws the topology
 of the **currently selected** algorithm — operator boxes + arrows, sized
 **roughly 2×** the picker buttons (target ≈ 112×112 px on the FM panel).
 The widget is read-only; selection happens via the `algo-grid` above.
-Lines are drawn in `--lcd-text-on` on `--lcd-bg`, 1.4 px antialiased
-strokes with the standard LCD phosphor bloom. The 8 hard-coded routings
-are stored as a small JS table mapping `algorithm_index → {boxes, lines}`.
+Rendered as inline SVG inside a 112-unit viewBox: 20×20 `<rect>`
+operator boxes, edge-to-edge `<line>` modulator connectors, a small
+`<polygon>` arrowhead at each carrier's output, and an `ALG N`
+`<text>` caption — all using `var(--lcd-text-on)` as stroke/fill so
+the LCD palette theme applies. A single `drop-shadow(0 0 2px
+var(--lcd-text-glow))` filter on the root `<svg>` provides the
+phosphor bloom for every stroke. The 8 hard-coded routings are stored
+as a small JS table mapping `algorithm_index → {boxes, lines, outputs}`.
+SVG is the rare exception to the *No SVG* default
+([`05-ui-ux.md`](05-ui-ux.md) *Asset Strategy*) — justified here
+because the diagram is purely static line-art with no per-frame
+redraw.
 
 ### NOTE ON LED — paired with text label
 
@@ -537,12 +546,20 @@ header. The 16 px LED is large enough to read across the panel; the
 text label avoids the "what does the red dot mean?" ambiguity of an
 unlabelled indicator. Mirrors the RYM2612 reference.
 
-### MIDI wheel (`midi-wheel`) — PB / MW visualisation
+### MIDI wheel (`midi-wheel`) — PB / MW
 
-The FM panel's `GLOBAL IN` block surfaces incoming pitch-bend and
-modwheel MIDI values as **read-only vertical wheel widgets** rather
-than LED meters, matching the RYM2612 reference's bottom-left PB / MW
-block (which reads as hardware pitch-bend / mod-wheel controls).
+The FM panel's `GLOBAL IN` block surfaces pitch-bend and modwheel MIDI
+values as **vertical wheel widgets** rather than LED meters, matching
+the RYM2612 reference's bottom-left PB / MW block (which reads as
+hardware pitch-bend / mod-wheel controls). The widgets are
+**bidirectional** — incoming MIDI moves the thumb; the user can also
+drag (up = increase, ≈80 px = full sweep, Shift = fine), scroll-wheel
+adjust (1/100 per click; Shift = 1/500), and double-click to reset
+(PB → 0.5 centre, MW → 0). All gestures write the bound apvts param
+(`pitch_bend_value` / `mod_wheel_value`) so DAW automation captures
+the move and the processor's per-block read makes it audible. See
+`05-ui-ux.md` *Component Inventory* and *C++ → JS telemetry push* for
+the binding contract.
 
 ```css
 .midi-wheel {

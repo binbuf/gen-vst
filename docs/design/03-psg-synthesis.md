@@ -260,16 +260,42 @@ class SN76489Engine {
 public:
     void prepare(double hostSampleRate);
     void reset();
-    void noteOn(int psgChannel, int midiNote, int velocity);
-    void noteOff(int psgChannel, int midiNote);
-    void pitchBend(int psgChannel, float semitones);
-    void setVolume(int psgChannel, float gain_0_to_1);
-    void setNoiseMode(uint8_t registerByte);   // raw register write for noise control
-    void generate(float* leftOut, float* rightOut, int numSamples);
+
+    // Note dispatch.
+    void noteOnTone(int midiNote, int velocity);
+    void noteOffTone(int midiNote);
+    void setPitchBendSemitones(int psgChannel, double semitones);
+
+    // Per-block apvts → engine push. The processor is contractually
+    // responsible for calling these every renderSqBlock so live UI
+    // edits and preset loads take effect — the engine does not read
+    // apvts itself.
+    void setEnvelopeRates(int ch, int atk, int dr1, int sus, int dr2, int rr);
+    void setEnvelopeVel  (int ch, float depth_0_to_1);
+    void setChannelVolume(int ch, float gain_0_to_1);
+    void setChannelPan   (int ch, float pan_minus1_to_plus1);
+    void setGlideTimeMs  (int toneCh, double ms);
+    void setNoiseType    (int periodic_0_or_white_1);
+    void setNoiseShiftRate(int rateIndex);
+    void setNoiseAutoMode (bool on);
+
+    // Audio.
+    void renderAdd(float* leftOut, float* rightOut, int numSamples);
 
 private:
     SN76489Wrapper chip;
-    float psgMixLevel;
-    // per-channel state: active note, current N value, attenuation
+    // per-channel state: active note, current N value, envelope follower,
+    // soft-pan gains
 };
 ```
+
+**Per-block parameter snapshot contract.** `PluginProcessor::renderSqBlock`
+must push every per-channel apvts value into the engine via the
+`set*` calls above on each block — `SN76489Engine` deliberately
+does not read the apvts itself (it has no apvts dependency and is
+test-buildable in isolation). Skipping the push leaves the engine on
+its prepare-time defaults so `.psg` preset loads or panel-knob edits
+update the apvts but produce no audible change; this was the
+root cause of an early-MVP "presets change sound but UI doesn't
+follow" report (regression tests in
+`tests/PsgEnvelopeTests.cpp` cover pan + channel-volume reach).
