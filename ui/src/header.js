@@ -268,13 +268,17 @@ export function mount(host, opts = {}) {
   host.appendChild(dacCell);
 
   // bindSliderByMode: subscribe to mode_select, swap the underlying slider
-  // bind on each mode change. In SQ mode no entry → grey the cell.
+  // bind on each mode change. In SQ mode no entry → grey the cell. The
+  // bind itself owns a JUCE valueChangedEvent subscription that must be
+  // disposed on rebind — without it every mode switch leaks one listener
+  // for the lifetime of the WebView (the orphan callback set is empty so
+  // it's silent, but the JUCE-side subscription keeps firing).
   let dacKnob = null;
-  let dacUnbind = null;
+  let dacBind = null;
   const dacBindMap = { [MODE_FM]: "fm_dac_prescaler", [MODE_D]: "prescaler" };
   const rebindDac = (modeIdx) => {
     if (dacKnob) { dacKnob.dispose(); dacKnob = null; }
-    if (dacUnbind) { dacUnbind = null; }
+    if (dacBind) { dacBind.dispose(); dacBind = null; }
     dacHost.innerHTML = "";
     const paramId = dacBindMap[modeIdx];
     if (paramId == null) {
@@ -289,9 +293,8 @@ export function mount(host, opts = {}) {
       return;
     }
     dacCell.classList.remove("is-disabled");
-    const bind = bindSlider(paramId);
-    dacKnob = mountKnob(dacHost, { bind, size: 32, extraClass: "knob-sm" });
-    dacUnbind = bind;
+    dacBind = bindSlider(paramId);
+    dacKnob = mountKnob(dacHost, { bind: dacBind, size: 32, extraClass: "knob-sm" });
   };
 
   // --- 9. VOL knob ------------------------------------------------------
@@ -332,22 +335,37 @@ export function mount(host, opts = {}) {
   // successful load — see PluginEditor::emitPatchLoaded).
   let lastPatchName = IDLE_LCD_PLACEHOLDER;
 
-  // D-mode patch cluster greying. When mode_select == D the entire ◀ LCD ▶
-  // 📂 cluster becomes non-interactive and the LCD displays AUDIO FX.
-  // Mirrors the SQ/D greying rules in view 1.
-  const applyModeGrey = (modeIdx) => {
-    const isD = (modeIdx === MODE_D);
+  // HARDWARE STRICT lock: when on, both the Output Filter switch and Ladder
+  // rocker are forced-on and locked. The C++ side also enforces this in the
+  // audio path so a stale apvts read can't bypass strict semantics.
+  const strictBind = bindToggle("hardware_strict");
+
+  // Single recompute path for every cell whose grey state depends on the
+  // (mode, strict) pair. Both the mode-switch and strict-toggle handlers
+  // route through here so the strict lock survives a mode switch — without
+  // this an FM→SQ→FM cycle would silently drop the strict-lock styling on
+  // the filter/ladder cells (the C++ audio path stayed correct, but the
+  // visual indicator was lost). Mirrors the SQ/D greying rules in view 1.
+  const applyHeaderGrey = () => {
+    const modeIdx = modeCombo.getIndex();
+    const isD     = (modeIdx === MODE_D);
+    const isSq    = (modeIdx === MODE_SQ);
+    const locked  = Boolean(strictBind.get());
+
     patchWrap.classList.toggle("is-disabled", isD);
     patchLcd.setText(isD ? D_LCD_PLACEHOLDER : lastPatchName);
-    // Ladder greyed in SQ (no audible effect on the PSG path).
-    const isSq = (modeIdx === MODE_SQ);
-    ladderWrap.classList.toggle("is-disabled", isSq);
-    // DAC PRESCALER mode-aware rebind (also greys in SQ where the map has
-    // no entry).
-    rebindDac(modeIdx);
+
+    // Output Filter lock: strict forces + locks the switch in every mode.
+    filterWrap.classList.toggle("is-disabled", locked);
+    // Ladder: strict-lock OR SQ-mode-grey (no audible effect on PSG).
+    ladderWrap.classList.toggle("is-disabled", locked || isSq);
   };
+
   const unsubMode = modeCombo.onChange((idx) => {
-    applyModeGrey(idx);
+    applyHeaderGrey();
+    // DAC PRESCALER mode-aware rebind (greys in SQ where the map has no
+    // entry, so this also drives the dac-cell's is-disabled class).
+    rebindDac(idx);
     // Visual highlighting of the active pill segment.
     modeBtns.forEach((btn, i) => btn.classList.toggle("is-active", i === idx));
   });
@@ -367,22 +385,15 @@ export function mount(host, opts = {}) {
     }
   });
 
-  // HARDWARE STRICT lock: when on, both the Output Filter switch and Ladder
-  // rocker are forced-on and locked. The C++ side also enforces this in the
-  // audio path so a stale apvts read can't bypass strict semantics.
-  const strictBind = bindToggle("hardware_strict");
   const unsubStrict = strictBind.onChange((on) => {
-    const locked = Boolean(on);
-    if (locked) {
+    if (Boolean(on)) {
+      // Force both to on when strict engages so the UI matches the audio
+      // path's hardware-strict enforcement (PluginProcessor.cpp render path
+      // ORs hardware_strict into the filter/ladder enable booleans).
       filterBind.set(true);
       ladderBind.set(true);
     }
-    filterWrap.classList.toggle("is-disabled", locked);
-    // Ladder lock layers on top of the SQ-mode grey — keep the SQ grey
-    // active in SQ regardless of strict.
-    const modeIdx = modeCombo.getIndex();
-    const isSq = (modeIdx === MODE_SQ);
-    ladderWrap.classList.toggle("is-disabled", locked || isSq);
+    applyHeaderGrey();
   });
 
   return {
@@ -396,6 +407,7 @@ export function mount(host, opts = {}) {
       if (unsubPatch)  unsubPatch();
       noteOn.dispose();
       if (dacKnob) dacKnob.dispose();
+      if (dacBind) dacBind.dispose();
       host.innerHTML = "";
     },
   };

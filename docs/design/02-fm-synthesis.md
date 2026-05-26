@@ -591,10 +591,16 @@ YM2612's characteristic aliasing, quantization noise, and high-frequency
 crosstalk — the same artefacts the Inphonik RYM2612 surfaces as a
 user-controllable `DAC PRESCALER` knob on its FM panel.
 
-Gen VST v2 exposes the same control on the FM mode panel
-([`08-ui-views.md`](08-ui-views.md) view 2, **Misc** block) so the user
-can sweep between a clean rendering and the heavier hardware character
-without leaving FM mode.
+Gen VST v2 exposes the same control in the **persistent header**
+([`08-ui-views.md`](08-ui-views.md) view 1, `DAC PRESCALER` cluster
+next to `VOL`) so the user can sweep between a clean rendering and the
+heavier hardware character without leaving FM mode. The header widget
+is mode-aware — it targets `fm_dac_prescaler` in FM mode and the
+D-mode `prescaler` apvts param in D mode (it greys out in SQ mode
+since the SN76489 PSG bypasses the YM2612 DAC). Earlier drafts
+placed the knob on the FM panel's Misc block; it was promoted to the
+header during the post-mockup review per the RYM2612 reference and so
+the same widget can serve both FM and D modes.
 
 **apvts parameter.** `fm_dac_prescaler` (0.0..1.0; 0 = no decimation,
 default; 1 = maximum decimation). Stored independently of the D-mode
