@@ -68,6 +68,8 @@ juce_add_plugin(GenVst
     PLUGIN_CODE                 Genv
     FORMATS                     VST3 AU Standalone
     PRODUCT_NAME                "Gen VST"
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/../resources/icon.png"
+    ICON_SMALL                  "${CMAKE_CURRENT_SOURCE_DIR}/../resources/icon.png"
     IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
