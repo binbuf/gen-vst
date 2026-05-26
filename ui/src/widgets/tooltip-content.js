@@ -52,7 +52,7 @@ export const TOOLTIPS = {
   },
   "dac_prescaler": {
     name: "DAC PRESCALER",
-    desc: "FM DAC clock divider in FM; sample-rate prescaler in D. Bypassed in SQ.",
+    desc: "FM: DAC clock divider (0 = bypass). D: sample-rate decimator; 8-bit quantize is always on. SQ: bypassed.",
   },
   "settings": {
     name: "SETTINGS",
