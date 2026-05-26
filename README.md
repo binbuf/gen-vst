@@ -35,6 +35,20 @@ Two global toggles in the header colour the output: the **Output Filter** models
 
 Pre-built binaries are on the **[Releases page →](https://github.com/binbuf/gen-vst/releases)**
 
+- **Windows** — `.exe` installer. Unsigned; SmartScreen may prompt — choose **More info → Run anyway**.
+- **macOS** — `.pkg` installer. Pick `Apple-Silicon` for M-series Macs or `Apple-Intel` for older Intel Macs. Unsigned — see the Gatekeeper steps below for macOS Tahoe (15+).
+- **Linux** — `.tar.gz` (VST3) or `.AppImage` (Standalone). `libwebkit2gtk-4.1-0` must be installed on the host.
+
+### macOS Tahoe (15+) — opening the unsigned `.pkg`
+
+Tahoe's Gatekeeper no longer accepts the right-click → Open shortcut, so it takes one extra round-trip through System Settings:
+
+1. Double-click the `.pkg`. macOS shows a warning that it "cannot be opened because Apple cannot check it for malicious software." Click **Done** to close the dialog.
+2. Open  → **System Settings** → **Privacy & Security**.
+3. Scroll down to the **Security** section — you'll see a line about the blocked `.pkg` with an **Open Anyway** button. Click it and re-confirm in the prompt that follows.
+
+On older macOS (Sonoma / Sequoia and earlier), **right-click → Open** on the `.pkg` is usually enough.
+
 Or build from source — instructions below.
 
 ## Build from source

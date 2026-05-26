@@ -144,12 +144,12 @@ jobs:
         run: auval -v aumu Genv GnVs
 
       - name: Build pkg installer
-        run: bash packaging/macos/build-pkg.sh "$VERSION" macos-arm64
+        run: bash packaging/macos/build-pkg.sh "$VERSION" macos-Apple-Silicon
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gen-vst-macos-arm64
+          name: gen-vst-macos-Apple-Silicon
           path: build/macos-release/installer/*.pkg
           if-no-files-found: error
 
@@ -204,12 +204,12 @@ jobs:
         run: auval -v aumu Genv GnVs
 
       - name: Build pkg installer
-        run: bash packaging/macos/build-pkg.sh "$VERSION" macos-x86_64
+        run: bash packaging/macos/build-pkg.sh "$VERSION" macos-Apple-Intel
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gen-vst-macos-x86_64
+          name: gen-vst-macos-Apple-Intel
           path: build/macos-release/installer/*.pkg
           if-no-files-found: error
 
@@ -329,8 +329,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             dist/gen-vst-windows/*.exe
-            dist/gen-vst-macos-arm64/*.pkg
-            dist/gen-vst-macos-x86_64/*.pkg
+            dist/gen-vst-macos-Apple-Silicon/*.pkg
+            dist/gen-vst-macos-Apple-Intel/*.pkg
             dist/gen-vst-linux/*.AppImage
             dist/gen-vst-linux/*.tar.gz
           body: |
@@ -338,9 +338,15 @@ jobs:
 
             **Windows** — Run the `.exe` installer. Installs the VST3 to `C:\Program Files\Common Files\VST3` (admin), the Standalone to `Program Files\Gen VST`, and factory patches to `%LOCALAPPDATA%\GenVst\patches`. Unsigned for this release; Windows SmartScreen may prompt — choose "More info" → "Run anyway".
 
-            **macOS (Apple Silicon)** — Download `*-macos-arm64.pkg`. Unsigned for this release: the first time, **right-click → Open** (not double-click) to bypass Gatekeeper. The installer places the VST3 in `/Library/Audio/Plug-Ins/VST3`, the AU in `/Library/Audio/Plug-Ins/Components`, and the Standalone in `/Applications`.
+            **macOS (Apple Silicon)** — Download `*-macos-Apple-Silicon.pkg`. Unsigned for this release; Gatekeeper will refuse to open it on first try. The installer places the VST3 in `/Library/Audio/Plug-Ins/VST3`, the AU in `/Library/Audio/Plug-Ins/Components`, and the Standalone in `/Applications`. To bypass Gatekeeper on macOS Tahoe (15+):
 
-            **macOS (Intel)** — Download `*-macos-x86_64.pkg`. Same installation steps as above.
+            1. Double-click the `.pkg` — macOS shows a "cannot be opened" warning. Click **Done** to dismiss it.
+            2. Open  → **System Settings** → **Privacy & Security**.
+            3. Scroll down to the **Security** section. You'll see a line about the blocked `.pkg` with an **Open Anyway** button — click it, then re-confirm in the prompt that follows.
+
+            On older macOS (Sonoma / Sequoia and earlier), **right-click → Open** (not double-click) is usually enough.
+
+            **macOS (Intel)** — Download `*-macos-Apple-Intel.pkg`. Same installation steps as above.
 
             **Linux** (plugin) — Extract the `.tar.gz` and run `./install.sh`. Drops the VST3 into `~/.vst3` and factory patches into `~/.local/share/GenVst/patches`.
 
