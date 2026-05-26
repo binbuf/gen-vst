@@ -1,6 +1,6 @@
 {
   "name": "genvst-ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Gen VST plugin UI — vanilla JS + Canvas, rendered in a JUCE 8 WebView",
   "private": true,
   "type": "module",

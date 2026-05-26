@@ -41,7 +41,7 @@ jobs:
             $v = $env:GITHUB_REF -replace '^refs/tags/v', ''
           } else {
             $sha = $env:GITHUB_SHA.Substring(0, 7)
-            $v = "0.1.0-dev.$($env:GITHUB_RUN_NUMBER)+$sha"
+            $v = "0.2.0-dev.$($env:GITHUB_RUN_NUMBER)+$sha"
           }
           "value=$v"      | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "VERSION=$v"    | Out-File -FilePath $env:GITHUB_ENV    -Append
@@ -118,7 +118,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
           else
-            v="0.1.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+            v="0.2.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
           fi
           echo "value=$v"   >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
@@ -178,7 +178,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
           else
-            v="0.1.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+            v="0.2.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
           fi
           echo "value=$v"   >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
@@ -254,7 +254,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
           else
-            v="0.1.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+            v="0.2.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
           fi
           echo "value=$v"   >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
