@@ -531,7 +531,8 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     psgEngine.setVgmLogger      (&vgmLogger);
     vgmLogger.prepare           (sampleRate);
 
-    if (! patchBrowserInitialised)
+    const bool firstPrepare = ! patchBrowserInitialised;
+    if (firstPrepare)
     {
         factoryRootPath = resolveFactoryRoot (wrapperType);
         patchBrowser.initialize (factoryRootPath);
@@ -544,8 +545,36 @@ void GenVstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     // queued during that call is processed here on the first prepareToPlay
     // after restore. Subsequent prepareToPlay calls are no-ops because
     // drainPendingStateRestore resets the optional.
+    const bool hadStateRestore = pendingStateRestore.has_value();
     if (pendingStateRestore.has_value())
         drainPendingStateRestore();
+
+    // Cold-start default preset load. When the plugin is freshly instantiated
+    // with no host state to restore, neither the editor opening nor the user
+    // moving a knob triggers any preset load — the listener on mode_select
+    // only fires when the value *changes*, and mode_select starts at its
+    // default (FM) on a fresh apvts, so handleAsyncUpdate's mode-mismatch
+    // guard early-returns. Without this, the FM panel boots with every TL
+    // at default, no algorithm topology, etc., and the user has to open the
+    // preset browser before they hear anything resembling a real instrument.
+    //
+    // We gate on `firstPrepare` so a host pausing+resuming playback doesn't
+    // re-load the default, and on `! hadStateRestore` so a project save
+    // with no preset active (e.g. the user tweaked knobs without ever
+    // opening the browser) preserves the user's tweaks instead of clobbering
+    // them with the factory default.
+    if (firstPrepare && ! hadStateRestore
+        && currentMode() != Mode::D
+        && activePathForMode (currentMode()).isEmpty())
+    {
+        // handleAsyncUpdate's first check is "mode unchanged → return".
+        // Flip lastHandledMode to any other value so the listener pathway
+        // actually fires the default-load branch when it runs on the
+        // message thread. The branch reads currentMode() afresh, so the
+        // value we put here is just a sentinel.
+        lastHandledMode = (currentMode() == Mode::FM) ? Mode::SQ : Mode::FM;
+        triggerAsyncUpdate();
+    }
 }
 
 void GenVstAudioProcessor::releaseResources()
@@ -804,6 +833,22 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
     const bool velToTl = velocityToTlParam != nullptr && velocityToTlParam->load() > 0.5f;
     voiceAllocator.updateActiveVoicesForPart (0, currentPatch, velToTl);
 
+    // Per-block pitch-bend application from the apvts mirror. This catches
+    // both UI drag and DAW automation of the pitch_bend_value parameter
+    // (which neither went through handlePitchBend nor reached the voices
+    // before). The MIDI dispatch in handlePitchBend still writes the mirror
+    // *and* calls voiceAllocator.setPitchBend immediately for low-latency
+    // MIDI response, so the value we read here is up-to-date on the very
+    // next block. setPitchBend is dirty-diff'd inside the voice, so calling
+    // it every block when the bend hasn't changed costs nothing.
+    if (pitchBendMirrorParam != nullptr && pitchBendRangeParam != nullptr)
+    {
+        const float bendNorm = juce::jlimit (-1.0f, 1.0f, pitchBendMirrorParam->load());
+        const int   range    = juce::jlimit (1, 12, juce::roundToInt (pitchBendRangeParam->load()));
+        const double semitones = static_cast<double> (bendNorm) * static_cast<double> (range);
+        voiceAllocator.setPitchBend (0, semitones, currentPatch, velToTl);
+    }
+
     const int numChannels = buffer.getNumChannels();
     float* left  = buffer.getWritePointer (0) + startSample;
     float* right = numChannels > 1 ? buffer.getWritePointer (1) + startSample
@@ -894,6 +939,19 @@ void GenVstAudioProcessor::renderSqBlock (juce::AudioBuffer<float>& buffer,
     {
         const float ms = psgGlideParam[t] != nullptr ? psgGlideParam[t]->load() : 0.0f;
         psgEngine.setGlideTimeMs (t, static_cast<double> (ms));
+    }
+
+    // Per-block pitch-bend application from the apvts mirror — same
+    // rationale as the FM path above. Catches UI drag and DAW automation
+    // of pitch_bend_value; MIDI dispatch still applies immediately for
+    // low-latency response.
+    if (pitchBendMirrorParam != nullptr && pitchBendRangeParam != nullptr)
+    {
+        const float bendNorm = juce::jlimit (-1.0f, 1.0f, pitchBendMirrorParam->load());
+        const int   range    = juce::jlimit (1, 12, juce::roundToInt (pitchBendRangeParam->load()));
+        const double semitones = static_cast<double> (bendNorm) * static_cast<double> (range);
+        for (int t = 0; t < kPsgCacheToneChs; ++t)
+            psgEngine.setPitchBendSemitones (t, semitones);
     }
 
     // apvts noise type choices are { "white", "periodic" } (0, 1).

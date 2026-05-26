@@ -62,8 +62,8 @@ endif()
 # ------------------------------------------------------------------------------
 
 juce_add_plugin(GenVst
-    COMPANY_NAME                "YourStudio"
-    COMPANY_WEBSITE             "https://example.com"
+    COMPANY_NAME                "Gen VST"
+    COMPANY_WEBSITE             "https://github.com/binbuf/gen-vst"
     PLUGIN_MANUFACTURER_CODE    GnVs
     PLUGIN_CODE                 Genv
     FORMATS                     VST3 AU Standalone
@@ -79,7 +79,7 @@ juce_add_plugin(GenVst
     COPY_PLUGIN_AFTER_BUILD     ${COPY_PLUGIN_AFTER_BUILD}
     VST3_CATEGORIES             "Instrument|Synth"
     DESCRIPTION                 "Sega Genesis YM2612+SN76489 emulation"
-    BUNDLE_ID                   "com.yourstudio.genvst"
+    BUNDLE_ID                   "com.genvst.genvst"
     VERSION                     "0.1.0")
 
 # --- Standalone patch directory (per-platform runtime data dir) ---------------
