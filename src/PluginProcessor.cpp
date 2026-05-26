@@ -22,10 +22,17 @@ namespace
     {
         if (wt == juce::AudioProcessor::wrapperType_Standalone)
         {
-           #ifdef GENVST_STANDALONE_PATCH_DIR
-            return std::filesystem::path { GENVST_STANDALONE_PATCH_DIR };
-           #else
-            return {};
+           #if ! JUCE_MAC
+            // macOS Standalone is a .app bundle — fall through to the bundle
+            // walk below, which finds Contents/Resources/patches/ relative to
+            // the executable just like the VST3/AU formats. Windows/Linux
+            // Standalone has no bundle, so it relies on the installer
+            // populating the compile-time user data directory.
+            #ifdef GENVST_STANDALONE_PATCH_DIR
+             return std::filesystem::path { GENVST_STANDALONE_PATCH_DIR };
+            #else
+             return {};
+            #endif
            #endif
         }
 

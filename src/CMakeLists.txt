@@ -121,32 +121,31 @@ file(MAKE_DIRECTORY "${FACTORY_STAGE}")
 file(MAKE_DIRECTORY "${FACTORY_STAGE}/sq")
 file(COPY ${FACTORY_FM} DESTINATION "${FACTORY_STAGE}")
 file(COPY ${FACTORY_SQ_PSG} DESTINATION "${FACTORY_STAGE}/sq")
-juce_add_bundle_resources_directory(GenVst "${FACTORY_STAGE}")
 
-# `juce_add_bundle_resources_directory` only sets MACOSX_PACKAGE_LOCATION on
-# every source — an Xcode-only attribute. On Windows + Linux the call is a
-# no-op (the files become HEADER_FILE_ONLY references and never land inside
-# the .vst3 bundle's Contents/Resources/patches/), so a stock Windows install
-# of the plugin would never find the factory bank — `resolveFactoryRoot` would
-# then fall back to GENVST_DEV_PATCH_DIR, which is absent on an end-user
-# machine. Task 11: mirror the macOS bundle layout into the Windows + Linux
-# artefacts with a POST_BUILD copy. macOS continues to use the JUCE/Xcode
-# path. Run for every plugin-format target that produces a bundle directory
-# (VST3 + AU); Standalone is covered by the install(FILES …) rule below.
-if(NOT APPLE)
-    foreach(plugin_format_target IN ITEMS GenVst_VST3 GenVst_AU)
-        if(TARGET ${plugin_format_target})
-            add_custom_command(TARGET ${plugin_format_target} POST_BUILD
-                COMMAND "${CMAKE_COMMAND}" -E rm -rf
-                    "$<TARGET_FILE_DIR:${plugin_format_target}>/../Resources/patches"
-                COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                    "${FACTORY_STAGE}"
-                    "$<TARGET_FILE_DIR:${plugin_format_target}>/../Resources/patches"
-                COMMENT "Staging factory patches into ${plugin_format_target} bundle"
-                VERBATIM)
-        endif()
-    endforeach()
-endif()
+# Generator-agnostic bundle staging. JUCE's `juce_add_bundle_resources_directory`
+# only sets MACOSX_PACKAGE_LOCATION on every source — an Xcode-only attribute,
+# and even on Xcode the embed step has been observed to no-op in CI (the
+# resulting .vst3/.component/.app shipped without Contents/Resources/patches/,
+# so PatchBrowser came up empty). A POST_BUILD `copy_directory` works for every
+# generator (Xcode, Ninja, MSBuild) and every plugin-format target that
+# produces a bundle directory (VST3 + AU + Standalone). The `..` step out of
+# TARGET_FILE_DIR lands at:
+#   * Windows/Linux: `<artefacts>/Resources/patches/`  (loose-binary layout,
+#     matched by resolveFactoryRoot's upward walk)
+#   * macOS bundles: `<bundle>/Contents/Resources/patches/`  (.vst3 / .component
+#     / .app — also matched by the same upward walk)
+foreach(plugin_format_target IN ITEMS GenVst_VST3 GenVst_AU GenVst_Standalone)
+    if(TARGET ${plugin_format_target})
+        add_custom_command(TARGET ${plugin_format_target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E rm -rf
+                "$<TARGET_FILE_DIR:${plugin_format_target}>/../Resources/patches"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${FACTORY_STAGE}"
+                "$<TARGET_FILE_DIR:${plugin_format_target}>/../Resources/patches"
+            COMMENT "Staging factory patches into ${plugin_format_target} bundle"
+            VERBATIM)
+    endif()
+endforeach()
 
 # Standalone has no bundle — install the factory patches to the data
 # directory, preserving the sq/ subfolder.

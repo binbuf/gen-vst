@@ -95,4 +95,8 @@ target_link_libraries(GenVstTests PRIVATE
     juce::juce_audio_processors)   # PsgPreset uses AudioProcessorValueTreeState
 
 include(GoogleTest)
-gtest_discover_tests(GenVstTests)
+# Default DISCOVERY_TIMEOUT is 5s — too tight for a freshly-linked Release
+# binary on macOS (cold dyld + JUCE static deps push first-load past the
+# limit and the POST_BUILD discovery step gets killed). 60s is the value
+# CMake's own docs suggest for slow-to-load discovery binaries.
+gtest_discover_tests(GenVstTests DISCOVERY_TIMEOUT 60)
