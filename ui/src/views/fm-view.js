@@ -168,7 +168,23 @@ function ensureStyles() {
       align-items: center;
       justify-content: center;
     }
-    .fm-panel .retrig-rate.is-hidden { visibility: hidden; }
+    .fm-panel .retrig-rate.is-disabled { opacity: 0.35; pointer-events: none; }
+
+    /* OP1 FB → op1 connector. Decorative-only short vertical line beneath the
+     * OP1 FB knob, hinting that FB affects operator 1's self-feedback only.
+     * Per 08-ui-views.md view 2 "routing connector". */
+    .fm-panel .op1-fb-cell { position: relative; }
+    .fm-panel .op1-fb-cell::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -10px;
+      width: 1px;
+      height: 14px;
+      background: var(--label-text);
+      opacity: 0.4;
+      pointer-events: none;
+    }
 
     /* Algorithm picker — 8-button 2x4 grid */
     .fm-panel .fm-algo-picker {
@@ -428,6 +444,7 @@ export function mount(root) {
   miscBlock.appendChild(retrigRateCell);
 
   const op1FbCell = makeKnobCell("OP1 FB", "fb", { size: 32 });
+  op1FbCell.host.classList.add("op1-fb-cell");
   miscBlock.appendChild(op1FbCell.host);
   topRow.appendChild(miscBlock);
 
@@ -657,8 +674,9 @@ export function mount(root) {
     opGrid.classList.toggle("is-int-mul", mode === FREQ_CTRL_MODE_INT);
     // Pill highlight.
     freqBtns.forEach((b, i) => b.classList.toggle("is-active", i === mode));
-    // RETRIG RATE visible only in AUTO_RETRIG.
-    retrigRateCell.classList.toggle("is-hidden",
+    // RETRIG RATE greyed (visible but non-interactive) when not in AUTO_RETRIG —
+    // matches the FIXED toggle's grey-out pattern in INT_MUL (.is-int-mul above).
+    retrigRateCell.classList.toggle("is-disabled",
                                     mode !== FREQ_CTRL_MODE_RETRIG);
   };
   freqCtrlCombo.onChange(updateGridForMode);

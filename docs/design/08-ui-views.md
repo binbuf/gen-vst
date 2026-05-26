@@ -293,7 +293,8 @@ inside each:
   `stepper-readout` — LCD value flanked by ▲/▼ buttons — bound to
   `retrig_rate`; visible only when `freq_ctrl_mode == AUTO_RETRIG`,
   greyed out otherwise; the RYM2612 reference shows `498`), and
-  `OP1 FB` (`knob` bound to `op1_fb`, the YM2612 `FB` field). The OP1
+  `OP1 FB` (`knob` bound to `fb`, the YM2612 `FB` field — applies to S1
+  self-feedback only). The OP1
   FB knob carries a short vertical connector line drawn beneath it
   (CSS pseudo-element, decoration only) pointing toward operator 1 in
   the grid below — the `FB` field affects op 1's self-feedback only,
