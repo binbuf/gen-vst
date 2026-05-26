@@ -74,8 +74,9 @@ const ALGOS = [
     lines: [[1, 4], [2, 3], [3, 4]],
     outputs: [4],
   },
-  // ALG 3 (label 4): 1→4, 2→4, 3→4 (three modulators into one carrier).
-  // This is the example diagram drawn in the mockup at commit 2120d65.
+  // ALG 3 (label 4): (S1→S2)+S3→S4. S1 modulates S2, then S2 and S3 both
+  // modulate the carrier S4. Matches docs/design/02-fm-synthesis.md
+  // "FM Algorithms" row 3.
   {
     boxes: [
       { op: 1, x: 14, y: 14 },
@@ -83,7 +84,7 @@ const ALGOS = [
       { op: 3, x: 14, y: 78 },
       { op: 4, x: 56, y: 46 },
     ],
-    lines: [[1, 4], [2, 4], [3, 4]],
+    lines: [[1, 2], [2, 4], [3, 4]],
     outputs: [4],
   },
   // ALG 4 (label 5): 1→2, 3→4 (two parallel chains), carriers=2,4.
