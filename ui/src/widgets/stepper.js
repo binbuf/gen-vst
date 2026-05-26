@@ -24,6 +24,12 @@ export function mount(host, opts = {}) {
     formatter = (intVal) => String(intVal),
     sizeMini = false,
     tipId = null,
+    // Optional sparse value list — e.g. [0, 8, 9, 10, 11, 12, 13, 14, 15] for
+    // SSG-EG, where 1..7 are not valid hardware states. When set, ▲/▼ cycle
+    // through the sequence, and any bound apvts value outside the sequence
+    // displays as the nearest lower entry (so a loaded patch with ssg=5
+    // reads as "OFF" rather than a misleading shape name).
+    valueSequence = null,
   } = opts;
 
   host.classList.add("stepper-readout");
@@ -87,6 +93,16 @@ export function mount(host, opts = {}) {
   let currentValue = 0;
   const updateLcd = () => lcd.setText(formatter(currentValue));
 
+  // Snap an arbitrary int to the largest sequence value ≤ n. SSG-EG: ssg=5
+  // → 0 (OFF), ssg=12 → 12. Only used when valueSequence is set.
+  const snap = (n) => {
+    if (!valueSequence || valueSequence.length === 0) return n;
+    for (let i = valueSequence.length - 1; i >= 0; --i) {
+      if (valueSequence[i] <= n) return valueSequence[i];
+    }
+    return valueSequence[0];
+  };
+
   const writeInt = (n, gesture = true) => {
     const { lo, hi } = range();
     currentValue = Math.max(lo, Math.min(hi, Math.round(n)));
@@ -94,8 +110,26 @@ export function mount(host, opts = {}) {
     updateLcd();
   };
 
-  const inc = () => writeInt(currentValue + step);
-  const dec = () => writeInt(currentValue - step);
+  const inc = () => {
+    if (valueSequence) {
+      const cur = snap(currentValue);
+      const idx = valueSequence.indexOf(cur);
+      const next = idx < 0 ? 0 : Math.min(valueSequence.length - 1, idx + 1);
+      writeInt(valueSequence[next]);
+    } else {
+      writeInt(currentValue + step);
+    }
+  };
+  const dec = () => {
+    if (valueSequence) {
+      const cur = snap(currentValue);
+      const idx = valueSequence.indexOf(cur);
+      const prev = idx <= 0 ? 0 : idx - 1;
+      writeInt(valueSequence[prev]);
+    } else {
+      writeInt(currentValue - step);
+    }
+  };
 
   // --- Click-and-hold ----------------------------------------------------
   const installHold = (btn, action) => {
@@ -152,6 +186,11 @@ export function mount(host, opts = {}) {
   if (bind) {
     unsub = bind.onChange((norm) => {
       currentValue = normToInt(norm);
+      // Display the snapped label when a sparse sequence is configured —
+      // a freshly loaded patch may carry a value that isn't on the grid
+      // (e.g. legacy TFI with ssg=5), and showing the raw value would
+      // misrepresent the hardware behaviour.
+      if (valueSequence) currentValue = snap(currentValue);
       updateLcd();
     });
   } else {

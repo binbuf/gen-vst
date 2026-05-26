@@ -194,7 +194,7 @@ const FM_OP_BASE = {
   sr:            { short: "SR",         desc: "Secondary decay rate — slope during the sustained portion. 0 flat hold, 31 falls toward zero." },
   rr:            { short: "RR",         desc: "Release rate — how quickly the envelope falls after key-off. 0 long tail, 15 instant cut." },
   sl:            { short: "SL",         desc: "Sustain level — the floor reached after the decay segment. 0 silent, max full." },
-  ssg:           { short: "SSG-EG",     desc: "SSG-EG envelope mode (0 off, 8..15 enabled) — alternative looping/inverting envelope shapes. Most patches leave at 0." },
+  ssg:           { short: "SSG-EG",     desc: "SSG-EG envelope shape (OFF + 8 named shapes). SDR=saw down repeat, SDO=saw down once, ALT=alternate (triangle), SDH=saw down then hold, SUR=saw up repeat, SUH=saw up then hold, ALU=alternate up, SUO=saw up once. Most patches leave at OFF." },
   amon:          { short: "AM ON",      desc: "Enable amplitude-modulation routing of the global LFO into this operator's TL. Off = static loudness." },
   mul_float:     { short: "MUL FLOAT",  desc: "Per-operator float frequency multiplier. Active in FLOAT MUL and AUTO RETRIG modes." },
   fixed:         { short: "FIXED",      desc: "Lock this operator to a fixed Hz (set on FREQ FIXED). Active in FLOAT MUL and AUTO RETRIG modes." },

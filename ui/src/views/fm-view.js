@@ -37,6 +37,24 @@ const FREQ_CTRL_MODE_INT     = 0;
 const FREQ_CTRL_MODE_FLOAT   = 1;
 const FREQ_CTRL_MODE_RETRIG  = 2;
 
+// SSG-EG: 9 valid hardware states (OFF + 8 named shapes per
+// 02-fm-synthesis.md *SSG-EG*). The apvts param is AudioParameterInt(0,15)
+// for TFI/VGI/DMP/Y12 round-trip; this table snaps the int onto the 9 valid
+// register values and surfaces a name for each. Values 1..7 are hardware-OFF
+// (SSGE bit 3 is 0); the stepper's `valueSequence` snap collapses them to 0.
+const SSG_VALUE_SEQUENCE = [0, 8, 9, 10, 11, 12, 13, 14, 15];
+const SSG_LABELS = {
+  0:  "OFF",   // SSG-EG disabled
+  8:  "SDR",   // saw down, repeat
+  9:  "SDO",   // saw down, one-shot
+  10: "ALT",   // alternate (triangle, down-first)
+  11: "SDH",   // saw down, then hold
+  12: "SUR",   // saw up, repeat
+  13: "SUH",   // saw up (rise), then hold
+  14: "ALU",   // alternate up (triangle, up-first)
+  15: "SUO",   // saw up, one-shot
+};
+
 // FM panel CSS — ported from the mvp2/01 mockup (deleted in task 04 per
 // docs/tasks/mvp2/01-static-ui-mockup.md). The mockup's mockup-fm.css is
 // the visual source-of-truth for the v2 FM layout; this stylesheet inlines
@@ -266,6 +284,14 @@ function ensureStyles() {
     .fm-panel .op-row {
       display: contents;   /* grid items continue from parent */
     }
+
+    /* SSG-EG cell — the stepper has to fit a ~1fr column. Tighten the
+     * .stepper-readout chrome and the .stepper-btn arrows so the LCD label
+     * (3 chars) stays readable without overflowing the column. */
+    .fm-panel .op-grid .ssg-cell { width: 100%; max-width: 70px; }
+    .fm-panel .op-grid .ssg-cell .stepper-readout { gap: 1px; padding: 1px 2px; }
+    .fm-panel .op-grid .ssg-cell .stepper-btn { padding: 0 2px; font-size: 9px; }
+    .fm-panel .op-grid .ssg-cell .lcd { min-width: 32px; padding: 1px 2px; }
 
     /* CH VOL master knob — sits above the operator grid, aligned to TL col. */
     .fm-panel .ch-vol-row {
@@ -584,8 +610,19 @@ export function mount(root) {
     mountKnob(rsHost, { bind: bindSlider(`ks_op${op}`), size: 24, tipId: `ks_op${op}` });
     opGrid.appendChild(rsHost);
 
-    const ssgHost = tagOp(el("div"), op);
-    mountKnob(ssgHost, { bind: bindSlider(`ssg_op${op}`), size: 24, tipId: `ssg_op${op}` });
+    // SSG-EG: stepper with named-shape readout per design 08-ui-views.md:342
+    // (Combo + 9 states). The widget uses ▲/▼ buttons to cycle through the
+    // 9 valid SSG-EG register values; the LCD shows the shape's short name.
+    // Wrapped in .ssg-cell so the CSS can tighten the stepper to fit the
+    // operator-grid column width.
+    const ssgHost = tagOp(el("div", { className: "ssg-cell" }), op);
+    mountStepper(ssgHost, {
+      bind: bindSlider(`ssg_op${op}`),
+      sizeMini: true,
+      valueSequence: SSG_VALUE_SEQUENCE,
+      formatter: (v) => SSG_LABELS[v] || "OFF",
+      tipId: `ssg_op${op}`,
+    });
     opGrid.appendChild(ssgHost);
 
     const mulHost = tagOp(el("div"), op);
