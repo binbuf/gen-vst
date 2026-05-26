@@ -202,7 +202,7 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
     for (auto& c : comboRelays)  options = options.withOptionsFrom (*c.relay);
 
     options = options
-        .withEventListener ("uiReady", [] (juce::var payload)
+        .withEventListener ("uiReady", [this] (juce::var payload)
         {
             // Carries the JS-side init() outcome: { ok: true } on success,
             // or { ok: false, error: "...", stack: "..." } when the
@@ -211,6 +211,28 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             // into a one-line entry in the host's juce::Logger output.
             juce::Logger::writeToLog ("Gen VST: uiReady received from WebView: "
                                       + juce::JSON::toString (payload));
+
+            // Synthesize a patchLoaded event for whatever's currently active
+            // in the processor. Without this, a cold-start default-preset
+            // load (which fires in prepareToPlay before the editor exists)
+            // updates apvts but the header LCD never hears about the patch
+            // name — it sits on its "— EMPTY —" placeholder even though a
+            // real patch is loaded. Reopening the editor on a project where
+            // a preset was already loaded has the same shape.
+            const auto mode = processor.currentMode();
+            if (mode != GenVstAudioProcessor::Mode::D)
+            {
+                const auto path = processor.activePathForMode (mode);
+                if (path.isNotEmpty())
+                {
+                    PatchLoadedNotifier note;
+                    note.name = juce::String (
+                        std::filesystem::path { path.toRawUTF8() }.stem().string());
+                    note.tag  = (mode == GenVstAudioProcessor::Mode::FM) ? Tag::FM : Tag::SQ;
+                    note.path = path;
+                    emitPatchLoaded (note);
+                }
+            }
         })
         // Task 08 — Settings → RESET ALL TO DEFAULTS confirmation handler.
         // Returns juce::var{} so the JS-side getNativeFunction promise resolves.

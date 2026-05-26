@@ -172,6 +172,13 @@ public:
     // instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // The active engine for the current block, as read from the mode_select
+    // apvts parameter. Public so the editor can synchronise its UI to the
+    // current mode without round-tripping through the apvts itself
+    // (e.g. the uiReady handler synthesises a patchLoaded event using
+    // currentMode() + activePathForMode()).
+    Mode currentMode() const noexcept;
+
 private:
     // juce::AudioProcessorValueTreeState::Listener — called when mode_select
     // changes (audio or message thread). We forward to the AsyncUpdater so
@@ -227,8 +234,6 @@ private:
     void handlePitchBend (int bend14bit);
     void handleControlChange (int cc, int value);
     void handleChannelPressure (int value);
-
-    Mode currentMode() const noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 

@@ -119,6 +119,14 @@ public:
     int  numIdleVoices()      const;   // free
     bool isNoteActive (int part, int note) const;
 
+    // True iff at least one voice is currently sounding — keyed on or in the
+    // release tail. Cheaper than calling numActiveVoices() + numReleasingVoices()
+    // separately because it short-circuits on the first non-Idle voice. Used
+    // by the FM render path to skip the chip-output / ladder-quantize chain
+    // when nothing is sounding (otherwise ymfm's LSB-level idle output gets
+    // amplified by the 8-bit ladder into audible background hiss).
+    bool hasAudibleVoice() const noexcept;
+
     // 16-bit voice-activity bitmap: bit i = voice slot i is Active (keyed on,
     // not yet released). Used by the editor's header telemetry feed
     // (08-ui-views.md view 1; ADR-0010).

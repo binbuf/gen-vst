@@ -325,6 +325,14 @@ bool VoiceAllocator::isNoteActive (int part, int note) const
     return false;
 }
 
+bool VoiceAllocator::hasAudibleVoice() const noexcept
+{
+    for (const auto& v : voices)
+        if (! v.isIdle())
+            return true;
+    return false;
+}
+
 std::uint32_t VoiceAllocator::activeVoiceMask() const noexcept
 {
     std::uint32_t m = 0;

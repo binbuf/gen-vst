@@ -858,7 +858,16 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
     std::fill_n (left, numSamples, 0.0f);
     if (numChannels > 1) std::fill_n (right, numSamples, 0.0f);
 
-    voiceAllocator.render (left, right, numSamples);
+    // Idle-silence clamp. When no voice is sounding (no Active or Released)
+    // we skip the voice-render path entirely and leave the output cleared
+    // above. The reason isn't pure efficiency — it's an audible background
+    // hiss: ymfm's idle output isn't a perfect zero (the chip's internal
+    // phase accumulators tick regardless of envelope state), and that
+    // LSB-level residue gets amplified by the LadderEffect's 8-bit
+    // quantizer below into audible noise. SQ mode doesn't hit this because
+    // Ladder is FM-only.
+    if (voiceAllocator.hasAudibleVoice())
+        voiceAllocator.render (left, right, numSamples);
 
     // FM DAC prescaler — sweeps the YM2612 DAC clock divider on the voice
     // summation bus, before the ladder / output-filter stages
