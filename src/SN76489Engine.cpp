@@ -301,7 +301,8 @@ void SN76489Engine::noteOnTone (int midiNote, int velocity)
         state.glideTargetMidi         = state.glideCurrentMidi;
         state.glideRateNotesPerSample = 0.0;
         writeToneFreq (target, static_cast<double> (midiNote)
-                                + (state.bendEnabled ? state.bendSemitones : 0.0));
+                                + (state.bendEnabled ? state.bendSemitones : 0.0)
+                                + state.detuneSemitones);
     }
 
     state.note      = midiNote;
@@ -374,7 +375,8 @@ void SN76489Engine::setPitchBendSemitones (int psgChannel, double semitones)
     // progress the current interpolated pitch is the base — bend rides on top
     // and renderAdd keeps re-writing the divider as the glide advances.
     if (psgChannel < kNumToneChs && state.active && state.bendEnabled)
-        writeToneFreq (psgChannel, state.glideCurrentMidi + semitones);
+        writeToneFreq (psgChannel, state.glideCurrentMidi + semitones
+                                     + state.detuneSemitones);
 }
 
 // --- Parameter setters -----------------------------------------------------
@@ -451,6 +453,25 @@ void SN76489Engine::setGlideTimeMs (int psgChannel, double ms) noexcept
     ch[static_cast<std::size_t> (psgChannel)].glideTimeMs = ms < 0.0 ? 0.0 : ms;
 }
 
+void SN76489Engine::setToneDetuneCents (int psgChannel, double cents) noexcept
+{
+    // Noise has no pitch; ignore. Tone channels store semitones internally so
+    // writeToneFreq can sum bend + glide + detune in one unit.
+    if (psgChannel < 0 || psgChannel >= kNumToneChs) return;
+    const double clamped = juce::jlimit (-100.0, 100.0, cents);
+    auto& state = ch[static_cast<std::size_t> (psgChannel)];
+    state.detuneSemitones = clamped / 100.0;
+
+    // Re-derive the divider for an already-sounding note so a knob twist or
+    // automation change is audible without waiting for the next note-on.
+    // While a glide is in progress renderAdd keeps re-writing the divider as
+    // it interpolates; here we cover the static (or sustained) case.
+    if (state.active && state.glideRateNotesPerSample == 0.0)
+        writeToneFreq (psgChannel, state.glideCurrentMidi
+                                     + (state.bendEnabled ? state.bendSemitones : 0.0)
+                                     + state.detuneSemitones);
+}
+
 // --- Per-block render ------------------------------------------------------
 
 void SN76489Engine::renderAdd (float* outL, float* outR, int numSamples)
@@ -485,7 +506,8 @@ void SN76489Engine::renderAdd (float* outL, float* outR, int numSamples)
         }
 
         writeToneFreq (t, state.glideCurrentMidi
-                            + (state.bendEnabled ? state.bendSemitones : 0.0));
+                            + (state.bendEnabled ? state.bendSemitones : 0.0)
+                            + state.detuneSemitones);
     }
 
     for (int chIdx = 0; chIdx < kNumChannels; ++chIdx)

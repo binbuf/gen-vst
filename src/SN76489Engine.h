@@ -152,6 +152,11 @@ public:
     // ignores this setter for any psgChannel >= kNumToneChs.
     void setGlideTimeMs (int psgChannel, double ms) noexcept;
 
+    // Per-tone-channel detune in cents (-100..+100). Added to the channel's
+    // MIDI note before the divider is computed, alongside pitch bend +
+    // glide. Noise has no pitch and ignores any psgChannel >= kNumToneChs.
+    void setToneDetuneCents (int psgChannel, double cents) noexcept;
+
     // --- Per-block render ----------------------------------------------------
 
     // Add the PSG output (host-rate, stereo) to the given buffers. PSG
@@ -199,7 +204,12 @@ private:
         int            note          = -1;
         int            velocity      = 0;
         bool           active        = false;
-        bool           bendEnabled   = false;
+        // v2: pitch bend is engine-global (no per-channel UI opt-in — the v1
+        // `psg_bend[0..3]` toggles were dropped, see docs/tasks/mvp2/02-strip-v1.md).
+        // Default ON so PluginProcessor::renderSqBlock's per-block
+        // setPitchBendSemitones reaches the chip; setChannelBendEnabled
+        // survives only as a test backdoor.
+        bool           bendEnabled   = true;
         double         bendSemitones = 0.0;
         std::uint64_t  timestamp     = 0;
         float          volumeGain    = 1.0f;
@@ -217,6 +227,11 @@ private:
         double         glideCurrentMidi        = 0.0;
         double         glideTargetMidi         = 0.0;
         double         glideRateNotesPerSample = 0.0;
+
+        // Per-channel detune in semitones (apvts cents / 100). Mirrored from
+        // apvts each block; added to the MIDI note before the divider write,
+        // alongside pitch bend + glide. Noise channel keeps it at 0.0.
+        double         detuneSemitones         = 0.0;
     };
 
     std::array<ChannelState, kNumChannels> ch;

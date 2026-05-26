@@ -152,7 +152,9 @@ TEST (SN76489Engine, PitchBendOptInDoesNotAffectChannelsWithoutBend)
     SN76489Engine eng;
     eng.prepare (44100.0, 64);
 
-    // Channel 0 bend disabled (default); channel 1 enabled.
+    // v2 default is bendEnabled = true (engine-global PB). Explicitly opt
+    // channel 0 out so the test still exercises both branches of the bend
+    // gate; channel 1 stays at the v2 default.
     eng.setChannelBendEnabled (0, false);
     eng.setChannelBendEnabled (1, true);
 

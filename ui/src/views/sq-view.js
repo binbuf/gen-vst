@@ -25,6 +25,7 @@ import { mount as mountKnob }       from "../widgets/knob.js";
 import { mount as mountSlider }     from "../widgets/slider.js";
 import { mount as mountEnvelope }   from "../widgets/envelope-curve.js";
 import { mount as mountMidiWheel }  from "../widgets/midi-wheel.js";
+import { applyTooltip }             from "../widgets/tooltip-content.js";
 
 const CHANNEL_SUFFIX = ["_ch1", "_ch2", "_ch3", "_noise"];
 const CHANNEL_LABEL  = ["Tone 1", "Tone 2", "Tone 3", "Noise"];
@@ -239,6 +240,7 @@ function makeKnobCell(label, paramId, opts = {}) {
 
 function makePillCell(paramId, choices) {
   const pill = el("div", { className: "btn-pill" });
+  applyTooltip(pill, paramId);
   const combo = bindCombo(paramId);
   const btns = choices.map((choice, idx) => {
     const btn = el("button", { className: "btn" });

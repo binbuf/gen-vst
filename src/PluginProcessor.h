@@ -270,7 +270,8 @@ private:
     std::atomic<float>* psgVelParam  [kPsgCacheChannels] {};
     std::atomic<float>* psgVolParam  [kPsgCacheChannels] {};
     std::atomic<float>* psgPanParam  [kPsgCacheChannels] {};
-    std::atomic<float>* psgGlideParam[kPsgCacheToneChs]  {};
+    std::atomic<float>* psgGlideParam [kPsgCacheToneChs] {};
+    std::atomic<float>* psgDetuneParam[kPsgCacheToneChs] {};
     std::atomic<float>* psgNoiseTypeParam = nullptr;
     std::atomic<float>* psgNoiseRateParam = nullptr;
     std::atomic<float>* psgNoiseAutoParam = nullptr;

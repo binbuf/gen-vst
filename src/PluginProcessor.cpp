@@ -505,7 +505,8 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     for (int t = 0; t < kPsgCacheToneChs; ++t)
     {
         const juce::String s { kPsgCacheSuffix[t] };
-        psgGlideParam[t] = apvts.getRawParameterValue ("psg_glide" + s);
+        psgGlideParam [t] = apvts.getRawParameterValue ("psg_glide"  + s);
+        psgDetuneParam[t] = apvts.getRawParameterValue ("psg_detune" + s);
     }
     psgNoiseTypeParam = apvts.getRawParameterValue ("psg_noise_type");
     psgNoiseRateParam = apvts.getRawParameterValue ("psg_noise_rate");
@@ -967,6 +968,8 @@ void GenVstAudioProcessor::renderSqBlock (juce::AudioBuffer<float>& buffer,
     {
         const float ms = psgGlideParam[t] != nullptr ? psgGlideParam[t]->load() : 0.0f;
         psgEngine.setGlideTimeMs (t, static_cast<double> (ms));
+        const float cents = psgDetuneParam[t] != nullptr ? psgDetuneParam[t]->load() : 0.0f;
+        psgEngine.setToneDetuneCents (t, static_cast<double> (cents));
     }
 
     // Per-block pitch-bend application from the apvts mirror — same
@@ -990,9 +993,18 @@ void GenVstAudioProcessor::renderSqBlock (juce::AudioBuffer<float>& buffer,
                                  ? juce::roundToInt (psgNoiseTypeParam->load())
                                  : 0;
     psgEngine.setNoiseType (apvtsNoiseType == 0 ? 1 : 0);
-    psgEngine.setNoiseShiftRate (psgNoiseRateParam != nullptr
-                                   ? juce::roundToInt (psgNoiseRateParam->load())
-                                   : 1);
+
+    // apvts noise rate choices are { "low", "mid", "high", "ch2" } (0..3),
+    // but SN76489 bits 2:1 of the noise control byte encode it as
+    // { 00=high, 01=mid, 10=low, 11=ch2 } (03-psg-synthesis.md "Shift Rates").
+    // The engine's `setNoiseShiftRate` writes its argument straight into
+    // those bits, so translate logical index -> hardware bit pattern here.
+    // Without this, picking "L" played HIGH noise and "H" played LOW.
+    static constexpr int kNoiseRateApvtsToHw[4] { 0b10, 0b01, 0b00, 0b11 };
+    const int apvtsNoiseRate = psgNoiseRateParam != nullptr
+                                 ? juce::roundToInt (psgNoiseRateParam->load())
+                                 : 1;
+    psgEngine.setNoiseShiftRate (kNoiseRateApvtsToHw[juce::jlimit (0, 3, apvtsNoiseRate)]);
     psgEngine.setNoiseAutoMode  (psgNoiseAutoParam != nullptr
                                    && psgNoiseAutoParam->load() > 0.5f);
 
