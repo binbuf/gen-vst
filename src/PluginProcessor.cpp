@@ -180,14 +180,33 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.8f));
 
     // --- FM (single patch) ---------------------------------------------------
+    // 1-bit register fields (lfo_enable, amon) ship as AudioParameterBool so the
+    // editor's per-parameter relay dispatch (PluginEditor.cpp dynamic_cast chain)
+    // picks WebToggleButtonRelay — matching the JS-side bindToggle("lfo_enable")
+    // / bindToggle("amon_op*") calls. Declaring them as AudioParameterInt(0,1)
+    // routes through WebSliderRelay, so the toggle events go to a phantom relay
+    // and UI clicks for LFO on/off and per-op AM-ON never reach audio.
     for (const auto& d : kPartParams)
-        layout.add (std::make_unique<juce::AudioParameterInt> (
-            juce::ParameterID { d.id, 1 }, displayName (d.id, -1),
-            d.lo, d.hi, d.lo));
+    {
+        if (std::string_view (d.id) == "lfo_enable")
+            layout.add (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { d.id, 1 }, displayName (d.id, -1), false));
+        else
+            layout.add (std::make_unique<juce::AudioParameterInt> (
+                juce::ParameterID { d.id, 1 }, displayName (d.id, -1),
+                d.lo, d.hi, d.lo));
+    }
 
     for (const auto& d : kOpParams)
         for (int op = 0; op < FmParamCache::kNumOps; ++op)
         {
+            if (std::string_view (d.id) == "amon")
+            {
+                layout.add (std::make_unique<juce::AudioParameterBool> (
+                    juce::ParameterID { opParamId (d.id, op), 1 },
+                    displayName (d.id, op), false));
+                continue;
+            }
             // TL / SL apvts surface is *level* (0 = silent, max = loud) per
             // 02-fm-synthesis.md *UI level vs hardware attenuation*. Default
             // each to its max so a fresh apvts is audible — the v1 default of
