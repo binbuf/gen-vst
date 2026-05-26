@@ -12,10 +12,11 @@
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <version>" >&2
+    echo "Usage: $0 <version> [arch-label]" >&2
     exit 2
 fi
 version="$1"
+arch_label="${2:-macos}"
 
 # ---- paths ------------------------------------------------------------------
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,7 +71,7 @@ sed "s/__VERSION__/${version}/g" "$distribution_src" > "$distribution_out"
 productbuild \
     --distribution "$distribution_out" \
     --package-path "$work_dir/components" \
-    "$out_dir/Gen-VST-${version}-macos.pkg"
+    "$out_dir/Gen-VST-${version}-${arch_label}.pkg"
 
-echo "Built: $out_dir/Gen-VST-${version}-macos.pkg"
+echo "Built: $out_dir/Gen-VST-${version}-${arch_label}.pkg"
 ls -lh "$out_dir/"
