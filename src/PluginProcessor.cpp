@@ -240,9 +240,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "pitch_bend_value", 1 }, "Pitch Bend",
         juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { "note_mode", 1 }, "Note Mode",
-        juce::StringArray { "RETRIG", "LEGATO" }, 0));
+    // Bool, not Choice — the UI binds it via bindToggle (two-way toggle),
+    // and JUCE 8's WebView relays are namespaced by type: a Choice param
+    // would need a WebComboBoxRelay that the toggle widget can't connect
+    // to. The audio side reads `noteModeParam->load() > 0.5f`, which
+    // behaves identically for Bool (false=RETRIG, true=LEGATO).
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "note_mode", 1 }, "Note Mode", false));
     layout.add (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { "poly_voices", 1 }, "Poly Voices", 1, 16, 16));
     layout.add (std::make_unique<juce::AudioParameterInt> (
@@ -462,6 +466,31 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     velocityToTlParam    = apvts.getRawParameterValue ("velocity_to_tl");
     hardwareStrictParam  = apvts.getRawParameterValue ("hardware_strict");
     aftertouchTargetParam = apvts.getRawParameterValue ("aftertouch_target");
+
+    // SQ engine param cache. Mirrors the suffix ordering in
+    // createParameterLayout() — ch1 / ch2 / ch3 / noise.
+    static constexpr const char* kPsgCacheSuffix[kPsgCacheChannels]
+        { "_ch1", "_ch2", "_ch3", "_noise" };
+    for (int i = 0; i < kPsgCacheChannels; ++i)
+    {
+        const juce::String s { kPsgCacheSuffix[i] };
+        psgAtkParam[i] = apvts.getRawParameterValue ("psg_atk" + s);
+        psgDr1Param[i] = apvts.getRawParameterValue ("psg_dr1" + s);
+        psgSusParam[i] = apvts.getRawParameterValue ("psg_sus" + s);
+        psgDr2Param[i] = apvts.getRawParameterValue ("psg_dr2" + s);
+        psgRrParam [i] = apvts.getRawParameterValue ("psg_rr"  + s);
+        psgVelParam[i] = apvts.getRawParameterValue ("psg_vel" + s);
+        psgVolParam[i] = apvts.getRawParameterValue ("psg_vol" + s);
+        psgPanParam[i] = apvts.getRawParameterValue ("psg_pan" + s);
+    }
+    for (int t = 0; t < kPsgCacheToneChs; ++t)
+    {
+        const juce::String s { kPsgCacheSuffix[t] };
+        psgGlideParam[t] = apvts.getRawParameterValue ("psg_glide" + s);
+    }
+    psgNoiseTypeParam = apvts.getRawParameterValue ("psg_noise_type");
+    psgNoiseRateParam = apvts.getRawParameterValue ("psg_noise_rate");
+    psgNoiseAutoParam = apvts.getRawParameterValue ("psg_noise_auto");
 
     // Task 09 — listen for `mode_select` changes to drive the default-load
     // on manual mode switches.
@@ -834,6 +863,53 @@ void GenVstAudioProcessor::renderSqBlock (juce::AudioBuffer<float>& buffer,
 {
     if (numSamples <= 0) return;
 
+    // Snapshot apvts → engine each block. The SN76489Engine setters
+    // (envelope rates, vel, volume, pan, noise mode, glide) are all
+    // contract-bound to be pushed by the processor every block per
+    // SN76489Engine.h:128-133 — without this push the engine sits at
+    // defaults and the SQ panel + .psg presets have no audible effect
+    // on envelope shape, stereo image, or noise voicing.
+    for (int ch = 0; ch < kPsgCacheChannels; ++ch)
+    {
+        const auto loadInt = [] (const std::atomic<float>* p) noexcept
+        {
+            return p != nullptr ? juce::roundToInt (p->load()) : 0;
+        };
+        const auto loadFloat = [] (const std::atomic<float>* p, float fb) noexcept
+        {
+            return p != nullptr ? p->load() : fb;
+        };
+
+        psgEngine.setEnvelopeRates (ch,
+                                    loadInt (psgAtkParam[ch]),
+                                    loadInt (psgDr1Param[ch]),
+                                    loadInt (psgSusParam[ch]),
+                                    loadInt (psgDr2Param[ch]),
+                                    loadInt (psgRrParam [ch]));
+        psgEngine.setEnvelopeVel   (ch, loadFloat (psgVelParam[ch], 1.0f));
+        psgEngine.setChannelVolume (ch, loadFloat (psgVolParam[ch], 1.0f));
+        psgEngine.setChannelPan    (ch, loadFloat (psgPanParam[ch], 0.0f));
+    }
+    for (int t = 0; t < kPsgCacheToneChs; ++t)
+    {
+        const float ms = psgGlideParam[t] != nullptr ? psgGlideParam[t]->load() : 0.0f;
+        psgEngine.setGlideTimeMs (t, static_cast<double> (ms));
+    }
+
+    // apvts noise type choices are { "white", "periodic" } (0, 1).
+    // SN76489Engine::setNoiseType convention is { periodic=0, white=1 }
+    // (matches the hardware bit-3 encoding). Invert so engine receives
+    // the right value.
+    const int apvtsNoiseType = psgNoiseTypeParam != nullptr
+                                 ? juce::roundToInt (psgNoiseTypeParam->load())
+                                 : 0;
+    psgEngine.setNoiseType (apvtsNoiseType == 0 ? 1 : 0);
+    psgEngine.setNoiseShiftRate (psgNoiseRateParam != nullptr
+                                   ? juce::roundToInt (psgNoiseRateParam->load())
+                                   : 1);
+    psgEngine.setNoiseAutoMode  (psgNoiseAutoParam != nullptr
+                                   && psgNoiseAutoParam->load() > 0.5f);
+
     const int numChannels = buffer.getNumChannels();
     float* left  = buffer.getWritePointer (0) + startSample;
     float* right = numChannels > 1 ? buffer.getWritePointer (1) + startSample
@@ -1061,12 +1137,13 @@ void GenVstAudioProcessor::handleControlChange (int cc, int value)
         return;
     }
 
-    // CC 7 — channel volume → master_volume.
-    if (cc == 7)
-    {
-        setParamNorm ("master_volume", norm127);
-        return;
-    }
+    // CC 7 (Channel Volume) intentionally NOT routed to master_volume.
+    // master_volume is a per-instance trim knob the user sets in the header;
+    // CC 7 is host-track-level volume already covered by the DAW's channel
+    // strip. Forwarding it overwrote the trim every time the host sent a
+    // CC 7 (track-fader automation, controller defaults), making the VOL
+    // knob appear to drift during playback. Users who want host automation
+    // on master_volume can use the host's parameter automation lane.
     // CC 10 — pan; mapped to D-mode mono toggle off / centered for now — no
     // dedicated FM/SQ pan apvts in v2 MVP (per panel design). Silent skip.
 

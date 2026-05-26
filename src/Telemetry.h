@@ -40,13 +40,10 @@ public:
     bool  noteOn()  const noexcept { return noteOnFlag.load (std::memory_order_relaxed); }
 
 private:
-    // Block-level peak accumulators — audio thread only.
-    float blockPeakL = 0.0f;
-    float blockPeakR = 0.0f;
-
     // VU envelope follower (fast attack, slow release). Audio thread only;
     // published values go out atomically. releaseCoef is recomputed in
-    // prepare() so the release time stays ~300 ms regardless of host rate.
+    // prepare() so the per-sample release time stays ~300 ms regardless of
+    // host rate — applied inside pushSamples on every input sample.
     float vuEnvL      = 0.0f;
     float vuEnvR      = 0.0f;
     float releaseCoef = 0.99f;

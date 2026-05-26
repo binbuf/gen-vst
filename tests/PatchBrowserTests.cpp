@@ -341,3 +341,44 @@ TEST (PatchBrowser, FactoryPatchByIndexBoundsCheck)
         EXPECT_FALSE (p->name.empty());
     }
 }
+
+// -- Factory `sq/` subfolder is eagerly scanned at startup ------------------
+// initialize() recursively scans the factory root's immediate subfolders so
+// the SQ chip filter in the preset browser (driven by listAllPresetsAsJson,
+// which only recurses into already-scanned subfolders) sees the 12 .psg
+// presets without the user having to manually expand the folder. Regression
+// test for the post-mvp2 "I didn't see more than 1 preset for SQ" report.
+TEST (PatchBrowser, FactorySqSubfolderEagerlyScannedAtStartup)
+{
+    genvst::PatchBrowser browser;
+    browser.initialize (factoryDir());
+
+    const auto& rootsVec = browser.roots();
+    ASSERT_FALSE (rootsVec.empty());
+    const auto& factoryFolder = *rootsVec[0]->folder;
+
+    // Find the sq/ subfolder.
+    const genvst::PatchFolder* sq = nullptr;
+    for (const auto& sub : factoryFolder.subfolders)
+        if (sub != nullptr && sub->name == juce::String ("sq"))
+        {
+            sq = sub.get();
+            break;
+        }
+
+    ASSERT_NE (sq, nullptr) << "factory/sq subfolder missing — did extern/patches/sq/ get committed?";
+    EXPECT_TRUE (sq->scanned) << "factory/sq must be scanned at startup so the SQ chip filter sees its presets";
+
+    // Every patch in sq/ should be tagged SQ (extension-derived; .psg → SQ
+    // per PatchSystem::tagFromExtension).
+    int sqCount = 0;
+    for (const auto& entry : sq->patches)
+    {
+        ++sqCount;
+        EXPECT_EQ (entry.tag, Tag::SQ)
+            << "factory/sq/" << entry.name.toStdString()
+            << " did not tag as SQ — extension dispatch broken?";
+    }
+    EXPECT_GE (sqCount, 12)
+        << "expected at least 12 factory .psg presets (Task 10 deliverable); found " << sqCount;
+}

@@ -101,6 +101,19 @@ void PatchBrowser::initialize (const fs::path& factoryRoot)
     factory->folder->path = pathString (factoryFs);
     scanImmediateChildren (*factory->folder);
 
+    // Eagerly scan one more level inside the factory root so subfolders
+    // like `sq/` (12 PSG presets, ADR-0026) are fully indexed at startup.
+    // Without this `listAllPresetsAsJson` skips unscanned subfolders
+    // (its walk only recurses into `sub->scanned == true`), so the
+    // SQ chip filter in the preset browser shows zero items until the
+    // user manually expands the folder. The factory bank ships with the
+    // plugin so the I/O cost is bounded and predictable. User-saved /
+    // user-imported / custom roots stay lazy — those can hold many
+    // thousands of files and we don't want to stall startup on them.
+    for (auto& sub : factory->folder->subfolders)
+        if (sub != nullptr)
+            scanImmediateChildren (*sub);
+
     // Populate the audio-thread factoryPatches list from the factory root's
     // top-level .tfi files (sorted by filename, like Task 06's enumeration).
     if (fs::is_directory (factoryFs))

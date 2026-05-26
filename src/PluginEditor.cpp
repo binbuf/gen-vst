@@ -127,6 +127,30 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& p)
     retryButton.onClick = [this] { tryInitWebView(); };
     addChildComponent (retryButton);
 
+    // Build the per-apvts-parameter relays exhaustively. The previous code
+    // declared named relays for only the header / Settings / Gallery params;
+    // the per-mode panel params (FM operator/part, SQ channel, D mono/dry)
+    // had no relays, so `bindSlider/bindToggle/bindCombo` on the JS side
+    // ran against phantom SliderState objects — `setValueNotifyingHost`
+    // from a preset load reached the audio thread but never echoed back
+    // to the UI, leaving the panel knobs stuck while the sound changed.
+    //
+    // AudioParameterBool inherits from AudioParameterChoice in JUCE 8 —
+    // test the more specific Bool first.
+    for (auto* param : processor.getParameters())
+    {
+        auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (param);
+        if (withId == nullptr) continue;
+        const juce::String id = withId->paramID;
+
+        if (dynamic_cast<juce::AudioParameterBool*> (param) != nullptr)
+            toggleRelays.push_back ({ id, std::make_unique<juce::WebToggleButtonRelay> (id) });
+        else if (dynamic_cast<juce::AudioParameterChoice*> (param) != nullptr)
+            comboRelays.push_back  ({ id, std::make_unique<juce::WebComboBoxRelay>     (id) });
+        else
+            sliderRelays.push_back ({ id, std::make_unique<juce::WebSliderRelay>       (id) });
+    }
+
     tryInitWebView();
 
     // ~30 Hz telemetry tick (05-ui-ux.md "C++ -> JS telemetry push"). Pushes
@@ -166,33 +190,18 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             .withUserDataFolder (juce::File::getSpecialLocation (
                 juce::File::SpecialLocationType::tempDirectory))
             .withBackgroundColour (juce::Colour (0xff1c1f24)))
-        .withNativeIntegrationEnabled()
-        .withOptionsFrom (tooltipsEnabledRelay)
-        // Task 08 — header + Settings relays.
-        .withOptionsFrom (modeSelectRelay)
-        .withOptionsFrom (outputFilterRelay)
-        .withOptionsFrom (ladderEffectRelay)
-        .withOptionsFrom (masterVolumeRelay)
-        .withOptionsFrom (fmDacPrescalerRelay)
-        .withOptionsFrom (prescalerRelay)
-        .withOptionsFrom (hardwareStrictRelay)
-        .withOptionsFrom (velocityToTlRelay)
-        .withOptionsFrom (aftertouchTargetRelay)
-        .withOptionsFrom (uiScaleRelay)
-        .withOptionsFrom (galleryKnobA)
-        .withOptionsFrom (galleryKnobB)
-        .withOptionsFrom (galleryKnobC)
-        .withOptionsFrom (galleryKnobD)
-        .withOptionsFrom (galleryToggleA)
-        .withOptionsFrom (galleryToggleB)
-        .withOptionsFrom (galleryToggleC)
-        .withOptionsFrom (galleryToggleD)
-        .withOptionsFrom (galleryComboA)
-        .withOptionsFrom (galleryAlgo)
-        .withOptionsFrom (galleryStepper)
-        .withOptionsFrom (galleryLevel)
-        .withOptionsFrom (galleryNoteOn)
-        .withOptionsFrom (galleryWheel)
+        .withNativeIntegrationEnabled();
+
+    // Register every apvts-parameter relay the editor owns. The relay
+    // vectors were populated in the editor constructor by iterating
+    // processor.getParameters(); each Options.withOptionsFrom call returns
+    // a new Options object that captures the relay reference, so we chain
+    // through the existing local.
+    for (auto& s : sliderRelays) options = options.withOptionsFrom (*s.relay);
+    for (auto& t : toggleRelays) options = options.withOptionsFrom (*t.relay);
+    for (auto& c : comboRelays)  options = options.withOptionsFrom (*c.relay);
+
+    options = options
         .withEventListener ("uiReady", [] (juce::var payload)
         {
             // Carries the JS-side init() outcome: { ok: true } on success,
@@ -264,33 +273,14 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
 
 void GenVstAudioProcessorEditor::tryInitWebView()
 {
-    // Tear down any previous attempt (Retry path).
-    tooltipsAttachment.reset();
-    modeSelectAtt.reset();
-    outputFilterAtt.reset();
-    ladderEffectAtt.reset();
-    masterVolumeAtt.reset();
-    fmDacPrescalerAtt.reset();
-    prescalerAtt.reset();
-    hardwareStrictAtt.reset();
-    velocityToTlAtt.reset();
-    aftertouchTargetAtt.reset();
-    uiScaleAtt.reset();
+    // Tear down any previous attempt (Retry path). Attachments must drop
+    // before the WebView so the relay ↔ apvts bridge unwinds cleanly; the
+    // relays themselves persist (they were built in the ctor) so a Retry
+    // can re-attach against them.
+    sliderAtts.clear();
+    toggleAtts.clear();
+    comboAtts.clear();
     uiScaleListener.reset();
-    galleryKnobAAtt.reset();
-    galleryKnobBAtt.reset();
-    galleryKnobCAtt.reset();
-    galleryKnobDAtt.reset();
-    galleryToggleAAtt.reset();
-    galleryToggleBAtt.reset();
-    galleryToggleCAtt.reset();
-    galleryToggleDAtt.reset();
-    galleryComboAAtt.reset();
-    galleryAlgoAtt.reset();
-    galleryStepperAtt.reset();
-    galleryLevelAtt.reset();
-    galleryNoteOnAtt.reset();
-    galleryWheelAtt.reset();
     webView.reset();
 
     try
@@ -318,46 +308,28 @@ void GenVstAudioProcessorEditor::tryInitWebView()
 
     auto& apvts = processor.getValueTreeState();
 
-    auto makeSliderAtt = [&] (const juce::String& id, juce::WebSliderRelay& relay)
-    {
-        if (auto* param = apvts.getParameter (id))
-            return std::make_unique<juce::WebSliderParameterAttachment> (
-                *param, relay, apvts.undoManager);
-        return std::unique_ptr<juce::WebSliderParameterAttachment> {};
-    };
-    auto makeToggleAtt = [&] (const juce::String& id, juce::WebToggleButtonRelay& relay)
-    {
-        if (auto* param = apvts.getParameter (id))
-            return std::make_unique<juce::WebToggleButtonParameterAttachment> (
-                *param, relay, apvts.undoManager);
-        return std::unique_ptr<juce::WebToggleButtonParameterAttachment> {};
-    };
-    auto makeComboAtt = [&] (const juce::String& id, juce::WebComboBoxRelay& relay)
-    {
-        if (auto* param = apvts.getParameter (id))
-            return std::make_unique<juce::WebComboBoxParameterAttachment> (
-                *param, relay, apvts.undoManager);
-        return std::unique_ptr<juce::WebComboBoxParameterAttachment> {};
-    };
+    // Build one attachment per registered relay. apvts.getParameter() looks
+    // up the parameter that owns the matching ID; the ctor seeded the relay
+    // vectors directly from processor.getParameters(), so every relay has a
+    // backing parameter and the null-check below is defensive only.
+    for (auto& s : sliderRelays)
+        if (auto* param = apvts.getParameter (s.id))
+            sliderAtts.push_back (std::make_unique<juce::WebSliderParameterAttachment> (
+                *param, *s.relay, apvts.undoManager));
+    for (auto& t : toggleRelays)
+        if (auto* param = apvts.getParameter (t.id))
+            toggleAtts.push_back (std::make_unique<juce::WebToggleButtonParameterAttachment> (
+                *param, *t.relay, apvts.undoManager));
+    for (auto& c : comboRelays)
+        if (auto* param = apvts.getParameter (c.id))
+            comboAtts.push_back (std::make_unique<juce::WebComboBoxParameterAttachment> (
+                *param, *c.relay, apvts.undoManager));
 
-    tooltipsAttachment = makeToggleAtt ("tooltips_enabled", tooltipsEnabledRelay);
-
-    // Task 08 — header + Settings attachments.
-    modeSelectAtt       = makeComboAtt  ("mode_select",       modeSelectRelay);
-    outputFilterAtt     = makeToggleAtt ("output_filter",     outputFilterRelay);
-    ladderEffectAtt     = makeToggleAtt ("ladder_effect",     ladderEffectRelay);
-    masterVolumeAtt     = makeSliderAtt ("master_volume",     masterVolumeRelay);
-    fmDacPrescalerAtt   = makeSliderAtt ("fm_dac_prescaler",  fmDacPrescalerRelay);
-    prescalerAtt        = makeSliderAtt ("prescaler",         prescalerRelay);
-    hardwareStrictAtt   = makeToggleAtt ("hardware_strict",   hardwareStrictRelay);
-    velocityToTlAtt     = makeToggleAtt ("velocity_to_tl",    velocityToTlRelay);
-    aftertouchTargetAtt = makeComboAtt  ("aftertouch_target", aftertouchTargetRelay);
-    uiScaleAtt          = makeComboAtt  ("ui_scale",          uiScaleRelay);
-
-    // UI scale listener — pulls the choice index, applies an integer zoom
-    // to the editor host bounds (ADR-0017 + ADR-0023). Hooked into the
-    // apvts parameter via juce::ParameterAttachment so the listener is
-    // disposed together with the WebView teardown.
+    // UI scale side-effect listener — pulls the choice index, applies an
+    // integer zoom to the editor host bounds (ADR-0017 + ADR-0023). This
+    // is independent of the combo relay/attachment built in the loop
+    // above; the relay handles the UI ↔ apvts bridge, this drives the
+    // resize side-effect.
     if (auto* uiScaleParam = apvts.getParameter ("ui_scale"))
     {
         uiScaleListener = std::make_unique<juce::ParameterAttachment> (
@@ -372,21 +344,6 @@ void GenVstAudioProcessorEditor::tryInitWebView()
             apvts.undoManager);
         uiScaleListener->sendInitialUpdate();
     }
-
-    galleryKnobAAtt    = makeSliderAtt ("gallery_knob_a",   galleryKnobA);
-    galleryKnobBAtt    = makeSliderAtt ("gallery_knob_b",   galleryKnobB);
-    galleryKnobCAtt    = makeSliderAtt ("gallery_knob_c",   galleryKnobC);
-    galleryKnobDAtt    = makeSliderAtt ("gallery_knob_d",   galleryKnobD);
-    galleryToggleAAtt  = makeToggleAtt ("gallery_toggle_a", galleryToggleA);
-    galleryToggleBAtt  = makeToggleAtt ("gallery_toggle_b", galleryToggleB);
-    galleryToggleCAtt  = makeToggleAtt ("gallery_toggle_c", galleryToggleC);
-    galleryToggleDAtt  = makeToggleAtt ("gallery_toggle_d", galleryToggleD);
-    galleryComboAAtt   = makeComboAtt  ("gallery_combo_a",  galleryComboA);
-    galleryAlgoAtt     = makeSliderAtt ("gallery_algo",     galleryAlgo);
-    galleryStepperAtt  = makeSliderAtt ("gallery_stepper",  galleryStepper);
-    galleryLevelAtt    = makeSliderAtt ("gallery_level",    galleryLevel);
-    galleryNoteOnAtt   = makeToggleAtt ("gallery_noteon",   galleryNoteOn);
-    galleryWheelAtt    = makeSliderAtt ("gallery_wheel",    galleryWheel);
 
     addAndMakeVisible (*webView);
     webView->setBounds (getLocalBounds());

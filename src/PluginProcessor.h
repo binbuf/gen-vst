@@ -251,6 +251,25 @@ private:
     std::atomic<float>* hardwareStrictParam = nullptr;
     std::atomic<float>* aftertouchTargetParam = nullptr;
 
+    // SQ engine param cache — pushed to psgEngine each renderSqBlock.
+    // SN76489Engine.h:128-133 contracts that the processor snapshots apvts
+    // into the engine every block; without that the engine sits at defaults
+    // and presets / panel knobs have no audible effect.
+    static constexpr int kPsgCacheChannels = 4;   // ch1/ch2/ch3/noise
+    static constexpr int kPsgCacheToneChs  = 3;
+    std::atomic<float>* psgAtkParam  [kPsgCacheChannels] {};
+    std::atomic<float>* psgDr1Param  [kPsgCacheChannels] {};
+    std::atomic<float>* psgSusParam  [kPsgCacheChannels] {};
+    std::atomic<float>* psgDr2Param  [kPsgCacheChannels] {};
+    std::atomic<float>* psgRrParam   [kPsgCacheChannels] {};
+    std::atomic<float>* psgVelParam  [kPsgCacheChannels] {};
+    std::atomic<float>* psgVolParam  [kPsgCacheChannels] {};
+    std::atomic<float>* psgPanParam  [kPsgCacheChannels] {};
+    std::atomic<float>* psgGlideParam[kPsgCacheToneChs]  {};
+    std::atomic<float>* psgNoiseTypeParam = nullptr;
+    std::atomic<float>* psgNoiseRateParam = nullptr;
+    std::atomic<float>* psgNoiseAutoParam = nullptr;
+
     FmParamCache         paramCache;
     VoiceAllocator       voiceAllocator;
     SN76489Engine        psgEngine;

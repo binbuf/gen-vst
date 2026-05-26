@@ -261,7 +261,9 @@ function makeChannelStrip(chIndex) {
 
   // ADSR envelope LCD canvas — same widget as FM, sized down.
   const envHost = el("div", { className: "sq-env-lcd" });
-  const envelope = mountEnvelope(envHost, { width: 140, height: 56 });
+  const envelope = mountEnvelope(envHost, {
+    width: 140, height: 56, tipId: "envelope_curve",
+  });
   strip.appendChild(envHost);
 
   // Env knobs split across two rows per the mockup:

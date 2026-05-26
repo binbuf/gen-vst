@@ -387,7 +387,9 @@ export function mount(root) {
   const envBlock = el("div", { className: "fm-block fm-env" });
   envBlock.appendChild(el("div", { className: "fm-block-title", text: "Envelope · Op 1" }));
   const envHost = el("div");
-  const envelope = mountEnvelope(envHost, { width: 240, height: 110 });
+  const envelope = mountEnvelope(envHost, {
+    width: 240, height: 110, tipId: "envelope_curve",
+  });
   envBlock.appendChild(envHost);
   topRow.appendChild(envBlock);
 
@@ -439,7 +441,9 @@ export function mount(root) {
   const topoBlock = el("div", { className: "fm-block fm-algo-diagram" });
   topoBlock.appendChild(el("div", { className: "fm-block-title", text: "Topology" }));
   const algoMiniHost = el("div");
-  const algoMini = mountAlgoMini(algoMiniHost, { size: 96 });
+  const algoMini = mountAlgoMini(algoMiniHost, {
+    size: 96, tipId: "algorithm_topology",
+  });
   topoBlock.appendChild(algoMiniHost);
 
   const algoBlock = el("div", { className: "fm-block fm-algo-picker" });
@@ -508,14 +512,21 @@ export function mount(root) {
   }
 
   const opBadgeCtrls = [];
+
+  // Tag every per-op host with dataset.op so the delegated pointerdown
+  // listener installed after this loop can identify which operator was
+  // touched and focus the envelope on it — see comment by the listener
+  // below for why this is pointer-based rather than onChange-based.
+  const tagOp = (host, op) => { host.dataset.op = String(op); return host; };
+
   for (let op = 1; op <= 4; ++op) {
     // TL — leftmost anchor knob (28px per mockup, slightly larger than
     // the 24px regular operator knobs so it reads as the column anchor).
-    const tlCell = makeKnobCell(null, `tl_op${op}`, { size: 28 }).host;
+    const tlCell = tagOp(makeKnobCell(null, `tl_op${op}`, { size: 28 }).host, op);
     opGrid.appendChild(tlCell);
 
     // op-badge: click to swap which operator the envelope-curve tracks.
-    const badgeHost = el("div");
+    const badgeHost = tagOp(el("div"), op);
     const badge = mountOpBadge(badgeHost, {
       index: op,
       onClick: (idx) => {
@@ -530,7 +541,7 @@ export function mount(root) {
     opGrid.appendChild(badgeHost);
 
     // AM toggle.
-    const amHost = el("div");
+    const amHost = tagOp(el("div"), op);
     mountToggle(amHost, { bind: bindToggle(`amon_op${op}`), tipId: `amon_op${op}` });
     opGrid.appendChild(amHost);
 
@@ -545,33 +556,35 @@ export function mount(root) {
       [arBind, "ar", 31], [drBind, "dr", 31], [slBind, "sl", 15],
       [srBind, "sr", 31], [rrBind, "rr", 15],
     ]) {
-      const host = el("div");
+      const host = tagOp(el("div"), op);
       mountKnob(host, { bind, size: 24, tipId: `${key}_op${op}` });
       opGrid.appendChild(host);
     }
     envBinds[op] = { ar: arBind, dr: drBind, sl: slBind, sr: srBind, rr: rrBind };
 
     // RS / SSG-EG / MUL knobs.
-    const rsHost = el("div");
+    const rsHost = tagOp(el("div"), op);
     mountKnob(rsHost, { bind: bindSlider(`ks_op${op}`), size: 24, tipId: `ks_op${op}` });
     opGrid.appendChild(rsHost);
 
-    const ssgHost = el("div");
+    const ssgHost = tagOp(el("div"), op);
     mountKnob(ssgHost, { bind: bindSlider(`ssg_op${op}`), size: 24, tipId: `ssg_op${op}` });
     opGrid.appendChild(ssgHost);
 
-    const mulHost = el("div");
+    const mulHost = tagOp(el("div"), op);
     mountKnob(mulHost, { bind: bindSlider(`mul_op${op}`), size: 24, tipId: `mul_op${op}` });
     opGrid.appendChild(mulHost);
 
     // FREQ — state-dependent LCD readout. Display updates on every relevant
     // change.
-    const freqCell = el("div", { className: "freq-lcd" });
-    const freqLcd = mountLcd(freqCell, { width: 40, height: 16, fontPx: 9 });
+    const freqCell = tagOp(el("div", { className: "freq-lcd" }), op);
+    const freqLcd = mountLcd(freqCell, {
+      width: 40, height: 16, fontPx: 9, tipId: "freq_lcd",
+    });
     opGrid.appendChild(freqCell);
 
     // FIXED toggle (greyed in INT_MUL).
-    const fixedCell = el("div", { className: "fixed-cell" });
+    const fixedCell = tagOp(el("div", { className: "fixed-cell" }), op);
     const fixedHost = el("div");
     fixedCell.appendChild(fixedHost);
     mountToggle(fixedHost, {
@@ -581,7 +594,7 @@ export function mount(root) {
     opGrid.appendChild(fixedCell);
 
     // DT knob.
-    const dtHost = el("div");
+    const dtHost = tagOp(el("div"), op);
     mountKnob(dtHost, { bind: bindSlider(`dt_op${op}`), size: 24, tipId: `dt_op${op}` });
     opGrid.appendChild(dtHost);
 
@@ -612,6 +625,32 @@ export function mount(root) {
     freqCtrlCombo.onChange(refreshFreq);
   }
   opGridBlock.appendChild(opGrid);
+
+  // Envelope op-focus follows touch within the operator grid. We use
+  // pointerdown — not bind.onChange — so a programmatic setValueNotifyingHost
+  // pass (preset load, state restore, host automation) doesn't rapidly
+  // cycle the envelope through all four operators. Each per-op host cell
+  // carries dataset.op set by tagOp() above; this listener walks up from
+  // the pointer target until it finds that attribute. Capture phase so the
+  // knob widget's own pointerdown handler can't preempt us via
+  // stopPropagation.
+  opGrid.addEventListener("pointerdown", (e) => {
+    let n = e.target;
+    while (n && n !== opGrid) {
+      if (n.dataset && n.dataset.op) {
+        const op = parseInt(n.dataset.op, 10);
+        if (op >= 1 && op <= 4 && op !== activeOp) {
+          activeOp = op;
+          opBadgeCtrls.forEach((b, i) => b.setActive(i + 1 === activeOp));
+          envBlock.querySelector(".fm-block-title").textContent
+            = `Envelope · Op ${activeOp}`;
+          refreshEnvelope();
+        }
+        return;
+      }
+      n = n.parentElement;
+    }
+  }, true);
 
   // FREQ_CTRL_MODE → operator-grid styling (greys out FIXED in INT_MUL).
   const updateGridForMode = (mode) => {
@@ -658,6 +697,12 @@ export function mount(root) {
     }
   }
   refreshEnvelope();
+  // Defensive re-fire after the synchronous mount path completes. Catches the
+  // case where a setStateInformation / preset-load relay value arrived during
+  // mount and the synchronous bind.onChange hadn't installed its listener
+  // yet — without this, the envelope canvas can sit on default rates until
+  // the user toggles an op badge or wiggles a knob.
+  queueMicrotask(refreshEnvelope);
   opBadgeCtrls[0].setActive(true);
 
   return {

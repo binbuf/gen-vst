@@ -149,6 +149,7 @@ export function mount(host, opts = {}) {
   const noteOn = mountNoteOn(noteOnHost, {
     fromTelemetry: true,
     caption: "NOTE ON",
+    tipId: "note_on",
   });
   host.appendChild(noteOnHost);
 
@@ -180,7 +181,10 @@ export function mount(host, opts = {}) {
   const prevBtn  = el("button", { className: "icon-btn", text: "◀" });
   prevBtn.type = "button";
   const lcdHost  = el("div", { className: "lcd lcd-patch lcd-patch-host" });
-  const patchLcd = mountPatchNameLcd(lcdHost, { initialText: IDLE_LCD_PLACEHOLDER });
+  const patchLcd = mountPatchNameLcd(lcdHost, {
+    initialText: IDLE_LCD_PLACEHOLDER,
+    tipId: "patch_lcd",
+  });
   const nextBtn  = el("button", { className: "icon-btn", text: "▶" });
   nextBtn.type = "button";
   const browseBtn = el("button", { className: "icon-btn", text: "📂" });
@@ -240,6 +244,7 @@ export function mount(host, opts = {}) {
   const lHost = el("div", { className: "level-meter level-meter-mini" });
   mountLevelMeter(lHost, {
     width: 96, height: 9, segments: 20, channel: "L",
+    tipId: "level_meter_l",
   });
   lRow.appendChild(lHost);
   metersWrap.appendChild(lRow);
@@ -248,6 +253,7 @@ export function mount(host, opts = {}) {
   const rHost = el("div", { className: "level-meter level-meter-mini" });
   mountLevelMeter(rHost, {
     width: 96, height: 9, segments: 20, channel: "R",
+    tipId: "level_meter_r",
   });
   rRow.appendChild(rHost);
   metersWrap.appendChild(rRow);

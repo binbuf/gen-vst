@@ -10,6 +10,7 @@
 // (09-visual-spec.md *Level meter*).
 
 import { onBackendEvent } from "../binding.js";
+import { applyTooltip } from "./tooltip-content.js";
 
 function cssVar(name, fallback = "#000") {
   const v = getComputedStyle(document.documentElement)
@@ -24,12 +25,14 @@ export function mount(host, opts = {}) {
     segments = 20,
     channel = null,             // "L" or "R" -> subscribes to meterData
     orientation = "horizontal", // currently only horizontal is drawn
+    tipId = null,
   } = opts;
   void orientation;
 
   host.style.display = "inline-block";
   host.style.width  = `${width}px`;
   host.style.height = `${height}px`;
+  if (tipId) applyTooltip(host, tipId);
 
   const canvas = document.createElement("canvas");
   canvas.style.width  = `${width}px`;

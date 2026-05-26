@@ -7,6 +7,10 @@
 
 import { mount as mountLcd } from "./lcd-readout.js";
 
+// `opts.tipId` is forwarded to lcd-readout via the spread, which already
+// supports tipId (lcd-readout.js applies it on its host). No extra wiring
+// needed here — the caller passes { tipId: "patch_lcd" } and the tooltip
+// data-attrs land on the same host element.
 export function mount(host, opts = {}) {
   return mountLcd(host, {
     width: 240,

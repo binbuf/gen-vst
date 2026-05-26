@@ -232,3 +232,123 @@ TEST (PsgEnvelope, NoiseChannelUsesEnvelopeToo)
     EXPECT_EQ (eng.channelStage (SN76489Engine::kNoiseCh),
                SN76489Engine::PsgEnvelope::Stage::Idle);
 }
+
+// --- Stereo pan: hard-left isolates output to the L buffer ------------------
+// Regression test for the post-mvp2 "L/R audio static" report: confirms the
+// engine's per-channel soft-pan path is wired correctly end-to-end. The
+// processor's renderSqBlock pushes apvts → engine each block; this test
+// stands in for the engine half of that contract.
+TEST (PsgEnvelope, HardLeftPanSilencesRightBufferForToneChannel)
+{
+    SN76489Engine eng;
+    eng.prepare (kSampleRate, kBlockSize);
+
+    // Hard-left pan on channel 0; volume max, envelope = step.
+    eng.setChannelPan    (0, -1.0f);
+    eng.setChannelVolume (0,  1.0f);
+    eng.setEnvelopeRates (0, 0, 0, 0, 0, 0);
+    eng.setEnvelopeVel   (0, 1.0f);
+
+    eng.noteOnTone (60, 127);
+
+    std::vector<float> L ((std::size_t) kBlockSize, 0.0f);
+    std::vector<float> R ((std::size_t) kBlockSize, 0.0f);
+    // A few blocks of warmup so the chip's LFSR / divider settle into a
+    // non-trivial output. SN76489's 4-bit PCM has stair-step output so a
+    // single sample may sit at zero by chance.
+    for (int b = 0; b < 16; ++b)
+    {
+        std::fill (L.begin(), L.end(), 0.0f);
+        std::fill (R.begin(), R.end(), 0.0f);
+        eng.renderAdd (L.data(), R.data(), kBlockSize);
+    }
+
+    float peakL = 0.0f, peakR = 0.0f;
+    for (int i = 0; i < kBlockSize; ++i)
+    {
+        peakL = std::max (peakL, std::abs (L[(std::size_t) i]));
+        peakR = std::max (peakR, std::abs (R[(std::size_t) i]));
+    }
+
+    EXPECT_GT (peakL, 0.01f) << "hard-left pan should leave the L buffer audible";
+    EXPECT_NEAR (peakR, 0.0f, 1.0e-6f) << "hard-left pan must silence the R buffer";
+}
+
+TEST (PsgEnvelope, HardRightPanSilencesLeftBufferForToneChannel)
+{
+    SN76489Engine eng;
+    eng.prepare (kSampleRate, kBlockSize);
+
+    eng.setChannelPan    (0, +1.0f);
+    eng.setChannelVolume (0,  1.0f);
+    eng.setEnvelopeRates (0, 0, 0, 0, 0, 0);
+    eng.setEnvelopeVel   (0, 1.0f);
+
+    eng.noteOnTone (60, 127);
+
+    std::vector<float> L ((std::size_t) kBlockSize, 0.0f);
+    std::vector<float> R ((std::size_t) kBlockSize, 0.0f);
+    for (int b = 0; b < 16; ++b)
+    {
+        std::fill (L.begin(), L.end(), 0.0f);
+        std::fill (R.begin(), R.end(), 0.0f);
+        eng.renderAdd (L.data(), R.data(), kBlockSize);
+    }
+
+    float peakL = 0.0f, peakR = 0.0f;
+    for (int i = 0; i < kBlockSize; ++i)
+    {
+        peakL = std::max (peakL, std::abs (L[(std::size_t) i]));
+        peakR = std::max (peakR, std::abs (R[(std::size_t) i]));
+    }
+
+    EXPECT_NEAR (peakL, 0.0f, 1.0e-6f) << "hard-right pan must silence the L buffer";
+    EXPECT_GT (peakR, 0.01f) << "hard-right pan should leave the R buffer audible";
+}
+
+// --- Channel volume scales the chip output proportionally ------------------
+// Regression test for the post-mvp2 "presets change sound but UI doesn't
+// follow" report: confirms channel volume reaches the mix. Combined with the
+// processor's new renderSqBlock snapshot push, SQ vol sliders + .psg vol
+// fields now take audible effect.
+TEST (PsgEnvelope, ChannelVolumeScalesOutputAmplitude)
+{
+    SN76489Engine eng;
+    eng.prepare (kSampleRate, kBlockSize);
+
+    eng.setChannelPan    (0, 0.0f);
+    eng.setEnvelopeRates (0, 0, 0, 0, 0, 0);
+    eng.setEnvelopeVel   (0, 1.0f);
+
+    eng.setChannelVolume (0, 1.0f);
+    eng.noteOnTone (60, 127);
+
+    std::vector<float> L ((std::size_t) kBlockSize, 0.0f);
+    std::vector<float> R ((std::size_t) kBlockSize, 0.0f);
+    float peakHigh = 0.0f;
+    for (int b = 0; b < 16; ++b)
+    {
+        std::fill (L.begin(), L.end(), 0.0f);
+        std::fill (R.begin(), R.end(), 0.0f);
+        eng.renderAdd (L.data(), R.data(), kBlockSize);
+        for (int i = 0; i < kBlockSize; ++i)
+            peakHigh = std::max (peakHigh, std::abs (L[(std::size_t) i]));
+    }
+    eng.noteOffTone (60);
+
+    eng.setChannelVolume (0, 0.25f);
+    eng.noteOnTone (60, 127);
+    float peakLow = 0.0f;
+    for (int b = 0; b < 16; ++b)
+    {
+        std::fill (L.begin(), L.end(), 0.0f);
+        std::fill (R.begin(), R.end(), 0.0f);
+        eng.renderAdd (L.data(), R.data(), kBlockSize);
+        for (int i = 0; i < kBlockSize; ++i)
+            peakLow = std::max (peakLow, std::abs (L[(std::size_t) i]));
+    }
+
+    EXPECT_GT (peakHigh, 0.01f);
+    EXPECT_GT (peakLow,  0.0f);
+    EXPECT_LT (peakLow,  peakHigh * 0.5f) << "channel volume 0.25 should be substantially quieter than volume 1.0";
+}

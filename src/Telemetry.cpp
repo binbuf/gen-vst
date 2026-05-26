@@ -16,14 +16,20 @@ void Telemetry::pushSamples (const float* L, const float* R, int numSamples) noe
 {
     if (numSamples <= 0 || L == nullptr) return;
 
+    // VU envelope follower: instant attack to the input magnitude, exponential
+    // release at `releaseCoef` *per sample*. `releaseCoef` is calibrated for
+    // per-sample application in prepare(); applying it once per block (the
+    // previous behaviour) inflated the effective release time by the block
+    // size, leaving the meter sitting near its peak for tens of seconds —
+    // "remains static" was the user-visible symptom.
     if (R != nullptr)
     {
         for (int i = 0; i < numSamples; ++i)
         {
             const float absL = std::fabs (L[i]);
             const float absR = std::fabs (R[i]);
-            if (absL > blockPeakL) blockPeakL = absL;
-            if (absR > blockPeakR) blockPeakR = absR;
+            vuEnvL = absL > vuEnvL ? absL : vuEnvL * releaseCoef;
+            vuEnvR = absR > vuEnvR ? absR : vuEnvR * releaseCoef;
         }
     }
     else
@@ -31,24 +37,16 @@ void Telemetry::pushSamples (const float* L, const float* R, int numSamples) noe
         for (int i = 0; i < numSamples; ++i)
         {
             const float absL = std::fabs (L[i]);
-            if (absL > blockPeakL) blockPeakL = absL;
-            if (absL > blockPeakR) blockPeakR = absL;
+            vuEnvL = absL > vuEnvL ? absL : vuEnvL * releaseCoef;
+            vuEnvR = vuEnvL;       // mono path mirrors L into R for the UI.
         }
     }
 }
 
 void Telemetry::finishBlock() noexcept
 {
-    // VU envelope: instant attack to the block peak, exponential release per
-    // block.
-    if (blockPeakL > vuEnvL) vuEnvL = blockPeakL;
-    else                     vuEnvL *= releaseCoef;
-    if (blockPeakR > vuEnvR) vuEnvR = blockPeakR;
-    else                     vuEnvR *= releaseCoef;
-
+    // Publish the per-sample envelope state; no per-block release here — that
+    // double-counted against the per-sample release above.
     publishedVuL.store (std::min (1.0f, vuEnvL), std::memory_order_relaxed);
     publishedVuR.store (std::min (1.0f, vuEnvR), std::memory_order_relaxed);
-
-    blockPeakL = 0.0f;
-    blockPeakR = 0.0f;
 }
