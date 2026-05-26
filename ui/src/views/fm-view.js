@@ -157,6 +157,11 @@ function ensureStyles() {
       gap: 6px;
       padding-top: 4px;
     }
+    .fm-panel .note-mode-left {
+      align-items: flex-start;
+      margin-top: 10px;
+      padding-left: 2px;
+    }
     .fm-panel .stepper-cell {
       display: flex;
       flex-direction: column;
@@ -440,7 +445,7 @@ export function mount(root) {
   lfoBlock.appendChild(stepperRow);
 
   // LEGATO / RETRIG two-way toggle.
-  const noteModeWrap = el("div", { className: "knob-cell" });
+  const noteModeWrap = el("div", { className: "knob-cell note-mode-left" });
   const noteModeHost = el("div");
   noteModeWrap.appendChild(noteModeHost);
   noteModeWrap.appendChild(el("div", { className: "knob-label", text: "Note Mode" }));

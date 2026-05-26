@@ -256,9 +256,8 @@ canvas {
   height: 88px;
   display: grid;
   /* note-on | wordmark | mode pill | patch LCD (1fr) | filter | ladder |
-   *   DAC PRESCALER | L/R meters | VOL | TIPS | gear  — established in
-   * the mvp2/01 mockup pages; Tasks 08+ fill in the inner cells. */
-  grid-template-columns: auto auto auto 1fr auto auto auto auto auto auto auto;
+   *   L/R meters | DAC PRESCALER | VOL | TIPS | INIT | gear */
+  grid-template-columns: auto auto auto 1fr auto auto auto auto auto auto auto auto;
   align-items: center;
   gap: 8px;
   padding: 0 12px;

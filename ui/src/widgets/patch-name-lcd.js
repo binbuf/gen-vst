@@ -13,7 +13,7 @@ import { mount as mountLcd } from "./lcd-readout.js";
 // data-attrs land on the same host element.
 export function mount(host, opts = {}) {
   return mountLcd(host, {
-    width: 240,
+    width: 260,
     height: 34,
     fontPx: 18,
     align: "center",

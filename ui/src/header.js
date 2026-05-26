@@ -80,7 +80,7 @@ function ensureStyles() {
       pointer-events: none;
     }
     .hdr .hdr-patch .lcd-patch-host {
-      flex: 1 1 auto;
+      flex: 0 0 auto;
     }
     .hdr .hdr-output {
       display: inline-flex;
@@ -180,7 +180,7 @@ export function mount(host, opts = {}) {
   const patchWrap = el("div", { className: "hdr-patch" });
   const prevBtn  = el("button", { className: "icon-btn", text: "◀" });
   prevBtn.type = "button";
-  const lcdHost  = el("div", { className: "lcd lcd-patch lcd-patch-host" });
+  const lcdHost  = el("div", { className: "lcd-patch-host" });
   const patchLcd = mountPatchNameLcd(lcdHost, {
     initialText: IDLE_LCD_PLACEHOLDER,
     tipId: "patch_lcd",
@@ -321,7 +321,18 @@ export function mount(host, opts = {}) {
   });
   host.appendChild(tipsCell);
 
-  // --- 11. ⚙ Gear icon (open Settings) ---------------------------------
+  // --- 11. INIT button (quick reset, no confirmation) ------------------
+  // Calls resetAllToDefaults directly — for live performance / testing use.
+  // The Settings modal has the same action gated behind a confirm dialog.
+  const initBtn = el("button", { className: "btn", text: "INIT" });
+  initBtn.type = "button";
+  applyTooltip(initBtn, "init_patch");
+  let initResetFn = null;
+  try { initResetFn = getNativeFunction("resetAllToDefaults"); } catch (_e) { initResetFn = null; }
+  initBtn.addEventListener("click", () => { if (initResetFn) initResetFn(); });
+  host.appendChild(initBtn);
+
+  // --- 12. ⚙ Gear icon (open Settings) ---------------------------------
   const gearBtn = el("button", { className: "icon-btn", text: "⚙" });
   gearBtn.type = "button";
   applyTooltip(gearBtn, "settings");

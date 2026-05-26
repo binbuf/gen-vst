@@ -58,6 +58,10 @@ export const TOOLTIPS = {
     name: "SETTINGS",
     desc: "Open the Settings panel — hardware strict, UI scale, aftertouch routing.",
   },
+  "init_patch": {
+    name: "INIT",
+    desc: "Immediately reset all parameters to their factory defaults — useful for starting fresh during live performance or testing.",
+  },
   "hardware_strict": {
     name: "HARDWARE STRICT",
     desc: "Clamp to YM2612-faithful limits — 6 voices, single FLOAT_MUL/AUTO_RETRIG, filter/ladder forced on.",

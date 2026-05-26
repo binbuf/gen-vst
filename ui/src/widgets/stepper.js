@@ -37,19 +37,15 @@ export function mount(host, opts = {}) {
   host.innerHTML = "";
   if (tipId) applyTooltip(host, tipId);
 
-  // LCD cell -- styled via the .lcd recipe so the host's CSS captures the
-  // recessed chrome; the canvas readout draws the glowing digits inside.
+  // LCD cell — canvas-only; the canvas draws its own background, border, and
+  // glow. No .lcd CSS class here because that class adds padding + overflow:
+  // hidden which clips the canvas inside a smaller visible area.
   const lcdCell = document.createElement("div");
-  lcdCell.className = "lcd";
-  if (sizeMini) {
-    lcdCell.style.minWidth = "38px";
-    lcdCell.style.padding  = "2px 4px";
-  }
   host.appendChild(lcdCell);
 
   const lcd = mountLcd(lcdCell, {
     width:  sizeMini ? 36 : 52,
-    height: sizeMini ? 14 : 16,
+    height: sizeMini ? 14 : 20,
     fontPx: sizeMini ? 9  : 11,
     align:  "center",
     initialText: "0",
