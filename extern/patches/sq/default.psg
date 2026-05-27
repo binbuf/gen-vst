@@ -2,14 +2,46 @@
   "version": 1,
   "name": "Default Lead",
   "channels": {
-    "tone1": { "atk": 0, "dr1": 0, "sus": 0, "dr2": 0, "rr": 5,
-               "vol": 1.0, "pan": 0.0, "detune": 0 },
-    "tone2": { "atk": 0, "dr1": 0, "sus": 0, "dr2": 0, "rr": 0,
-               "vol": 0.0, "pan": 0.0, "detune": 0 },
-    "tone3": { "atk": 0, "dr1": 0, "sus": 0, "dr2": 0, "rr": 0,
-               "vol": 0.0, "pan": 0.0, "detune": 0 },
-    "noise": { "atk": 0, "dr1": 0, "sus": 0, "dr2": 0, "rr": 0,
-               "vol": 0.0, "pan": 0.0,
-               "type": "white", "rate": "mid" }
+    "tone1": {
+      "atk": 0,
+      "dr1": 4,
+      "sus": 2,
+      "dr2": 0,
+      "rr": 6,
+      "detune": 0,
+      "vol": 1.0,
+      "pan": 0.0
+    },
+    "tone2": {
+      "atk": 0,
+      "dr1": 0,
+      "sus": 0,
+      "dr2": 0,
+      "rr": 0,
+      "detune": 0,
+      "vol": 0.0,
+      "pan": 0.0
+    },
+    "tone3": {
+      "atk": 0,
+      "dr1": 0,
+      "sus": 0,
+      "dr2": 0,
+      "rr": 0,
+      "detune": 0,
+      "vol": 0.0,
+      "pan": 0.0
+    },
+    "noise": {
+      "atk": 0,
+      "dr1": 0,
+      "sus": 0,
+      "dr2": 0,
+      "rr": 0,
+      "vol": 0.0,
+      "pan": 0.0,
+      "type": "white",
+      "rate": "mid"
+    }
   }
 }

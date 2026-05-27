@@ -45,15 +45,19 @@ anchored by concrete register data — not generic DX7 advice.
 
 ## Setup
 
+No pip packages required. The script uses the `claude -p` CLI pipe mode from
+Claude Code — no separate API key needed, just the same Claude Code session
+you're already running.
+
+Verify the CLI is on your PATH:
 ```
-pip install -r tools/patch-gen/requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
+claude --version
 ```
 
 ## Usage
 
 ```bash
-# Dry-run: preview generated JSON, no API calls, no file writes
+# Dry-run: preview what would be generated, no Claude calls, no file writes
 python tools/patch-gen/generate.py --mode fm --category bass --dry-run
 
 # Generate all bass FM patches → extern/patches/fm/bass/ (Task 03 dirs must exist)
@@ -72,7 +76,7 @@ python tools/patch-gen/generate.py --mode sq
 python tools/patch-gen/generate.py --mode fm --category bass \
   --vgm ~/vgm/game1.vgz ~/vgm/game2.vgz
 
-# Use Sonnet instead of Opus for faster/cheaper generation
+# Use a specific model (default: claude's current default)
 python tools/patch-gen/generate.py --mode fm --all --model claude-sonnet-4-6
 
 # Write to a staging dir instead of directly into extern/patches/
@@ -201,8 +205,8 @@ self-contained.
   downloads them from public archives (vgmrips.net / Project2612) and uses
   them locally. The generated patches do not reproduce the VGM register values
   directly; they are inspired-by-category examples, not copies.
-- The `anthropic` package is a dev dependency for tooling only — not linked
-  into the plugin binary, not shipped with the release.
+- The pipeline uses `claude -p` (Claude Code CLI) — no external dependencies,
+  not linked into the plugin binary, not shipped with the release.
 
 ## Verification
 
