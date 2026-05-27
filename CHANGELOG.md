@@ -6,7 +6,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased] — v0.2.0 candidate
+## [0.2.1] — 2026-05-27
 
 ### Added
 
@@ -32,9 +32,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   amplified by the Ladder 8-bit quantizer into audible background noise between
   notes. Threshold constants (`kAutoIdleThreshold`, `kAutoIdleAmplitude`) are
   documented with derivation comments in `Voice.cpp`.
+- **Preset browser modal layout** — the popup now holds a fixed-height layout
+  with internally-scrolling tree/list panes. `openModal()` in `modal-host.js`
+  now accepts an optional `panelClass`, which the preset browser passes as
+  `preset-browser-panel`; previously that class was referenced only in CSS and
+  never attached to any element, so the override block (95vh height,
+  `overflow: hidden`, 720px width) was dead. Without it the panel inherited
+  the base `max-height: 480px; overflow: auto` and the patch list re-flowed
+  on every folder selection, overflowing the popup. Also reworked the inner
+  grid template (`grid-template-rows: auto auto 1fr auto`) so the panes row
+  — not the chip row — receives the flex `1fr`, giving `.pb-tree` and
+  `.pb-list` a defined containing block for their `overflow-y: auto`.
 
 ### Changed
 
+- **Factory patches reorganized into category subfolders** (`extern/patches/fm/<category>/*`,
+  `extern/patches/sq/`) — the flat `extern/patches/*.tfi|.vgi|.dmp|.y12|.opm|.psg`
+  layout is replaced by per-instrument-family folders (bass, brass, drums,
+  keys, lead, pad, …). `PatchBrowser`, the patch-loader tests, and the
+  `build.ps1` / `build.sh` patch-install steps were updated to walk the new
+  tree recursively.
 - macOS x86_64 CI runner migrated from the retired `macos-13` to `macos-15-intel`.
 
 ---

@@ -57,7 +57,7 @@ TEST (PatchLoader, AllFactoryFilesLoad)
     ASSERT_TRUE (fs::is_directory (factoryDir())) << factoryDir();
 
     int count = 0;
-    for (const auto& entry : fs::directory_iterator (factoryDir()))
+    for (const auto& entry : fs::recursive_directory_iterator (factoryDir()))
     {
         if (! entry.is_regular_file() || entry.path().extension() != ".tfi")
             continue;
@@ -77,7 +77,7 @@ TEST (PatchLoader, LoadedValuesAreInHardwareRange)
 {
     ASSERT_TRUE (fs::is_directory (factoryDir())) << factoryDir();
 
-    for (const auto& entry : fs::directory_iterator (factoryDir()))
+    for (const auto& entry : fs::recursive_directory_iterator (factoryDir()))
     {
         if (! entry.is_regular_file() || entry.path().extension() != ".tfi")
             continue;
@@ -92,7 +92,7 @@ TEST (PatchLoader, LoadedValuesAreInHardwareRange)
 // The patch name is taken from the file's stem.
 TEST (PatchLoader, NameComesFromFilename)
 {
-    const PatchLoadResult result = loadTFI (factoryDir() / "organ.tfi");
+    const PatchLoadResult result = loadTFI (factoryDir() / "fm" / "keys" / "organ.tfi");
     ASSERT_TRUE (result.patch.has_value());
     EXPECT_EQ (result.patch->name, "organ");
 }

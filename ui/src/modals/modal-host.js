@@ -156,7 +156,7 @@ function installEsc() {
   document.addEventListener("keydown", escHandler);
 }
 
-export function openModal({ build, onClose }) {
+export function openModal({ build, onClose, panelClass }) {
   ensureStyles();
   ensureHost();
   installEsc();
@@ -165,7 +165,7 @@ export function openModal({ build, onClose }) {
   if (currentClose) currentClose();
 
   panelEl = document.createElement("div");
-  panelEl.className = "modal-panel";
+  panelEl.className = "modal-panel" + (panelClass ? " " + panelClass : "");
   // Absorb clicks inside the panel so they don't bubble to the dim-layer
   // dismiss handler.
   panelEl.addEventListener("mousedown", (e) => e.stopPropagation());

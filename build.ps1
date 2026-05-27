@@ -138,17 +138,20 @@ Write-Step "Building $config (this also builds the Vite web UI bundle)"
 Invoke-CMake --build $buildDir --config $config
 
 # ---- install factory patches ------------------------------------------------
-# Copy the factory .tfi patches into the per-user data directory the Standalone
-# reads at runtime. `cmake --install` is intentionally NOT used: it would also
-# run JUCE's own framework install rules. Top-level *.tfi only — the gitignored
-# extra/ developer set is never shipped (ADR-0004).
+# Mirror the full extern/patches/ tree (fm/<category>/*, sq/*) into the per-
+# user data dir so the Standalone reads the same layout the VST3 bundle has.
+# `cmake --install` is intentionally NOT used: it would also run JUCE's own
+# framework install rules. The gitignored extra/ developer set never reaches
+# this glob — it lives in a sibling directory (ADR-0004).
 Write-Step "Installing factory patches"
 $patchDir    = Join-Path $env:LOCALAPPDATA 'GenVst\patches'
 $patchSrcDir = Join-Path $PSScriptRoot 'extern\patches'
-$patchFiles  = @(Get-ChildItem -Path $patchSrcDir -Filter '*.tfi' -File)
-if ($patchFiles.Count -eq 0) { Fail "No factory patches (*.tfi) found in $patchSrcDir" }
-New-Item -ItemType Directory -Force -Path $patchDir | Out-Null
-Copy-Item -Path $patchFiles.FullName -Destination $patchDir -Force
+$patchExts   = '*.tfi','*.vgi','*.dmp','*.y12','*.opm','*.psg'
+$patchFiles  = @(Get-ChildItem -Path $patchSrcDir -File -Recurse -Include $patchExts)
+if ($patchFiles.Count -eq 0) { Fail "No factory patches found in $patchSrcDir" }
+if (Test-Path $patchDir) { Remove-Item -Recurse -Force $patchDir }
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $patchDir) | Out-Null
+Copy-Item -Recurse -Force -Path $patchSrcDir -Destination $patchDir
 Write-Info "$($patchFiles.Count) patch file(s) -> $patchDir"
 
 # ---- deploy the VST3 --------------------------------------------------------

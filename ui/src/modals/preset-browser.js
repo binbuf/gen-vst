@@ -44,18 +44,28 @@ function ensureStyles() {
   style.id = "genvst-preset-browser-style";
   style.textContent = `
     .modal-panel.preset-browser-panel {
+      box-sizing: border-box;
       width: 720px;
       max-width: 720px;
-      max-height: 460px;
+      /* Repeat max-height to override the .modal-panel base rule        */
+      /* (max-height: 480px). Inner panes pb-tree / pb-list manage their */
+      /* own overflow, so the panel itself never scrolls.                */
+      height: 95vh;
+      max-height: 95vh;
       min-width: 0;
+      overflow: hidden;
     }
     .preset-browser {
-      display: flex;
-      flex-direction: column;
+      /* Grid rather than flex so the panes row gets exactly the remaining */
+      /* space (1fr) and never grows with content. min-height: 0 lets the  */
+      /* grid item shrink below its content's intrinsic size so overflow   */
+      /* on pb-tree / pb-list actually engages.                            */
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
       gap: 8px;
       width: 100%;
       height: 100%;
-      min-height: 360px;
+      min-height: 0;
     }
     .preset-browser .pb-chiprow {
       display: flex;
@@ -71,7 +81,7 @@ function ensureStyles() {
       box-sizing: border-box;
       font: 500 11px/1 "IBM Plex Mono", monospace;
       letter-spacing: 0.10em;
-      color: var(--text-on-chassis);
+      color: var(--label-text);
       background: linear-gradient(180deg,
         var(--lcd-bg-top, #1c1f24) 0%,
         var(--lcd-bg-bottom, #14171b) 100%);
@@ -81,15 +91,17 @@ function ensureStyles() {
       outline: none;
     }
     .preset-browser .pb-panes {
-      flex: 1 1 auto;
       display: grid;
       grid-template-columns: 230px 1fr;
+      align-items: stretch;
       gap: 8px;
       min-height: 0;
+      overflow: hidden;
     }
     .preset-browser .pb-tree,
     .preset-browser .pb-list {
-      overflow: auto;
+      overflow-y: auto;
+      overflow-x: hidden;
       background: linear-gradient(180deg,
         var(--lcd-bg-top, #1c1f24) 0%,
         var(--lcd-bg-bottom, #14171b) 100%);
@@ -97,7 +109,8 @@ function ensureStyles() {
       border-radius: 3px;
       padding: 4px 4px;
       min-height: 0;
-      color: var(--text-on-chassis);
+      height: 100%;
+      color: var(--label-text);
       font: 500 11px/1.4 "IBM Plex Mono", monospace;
       letter-spacing: 0.06em;
     }
@@ -260,6 +273,7 @@ export function open() {
   let teardown = () => {};
 
   return openModal({
+    panelClass: "preset-browser-panel",
     build: (close) => {
       const modeCombo = bindCombo("mode_select");
       const initialMode = modeCombo.getIndex();

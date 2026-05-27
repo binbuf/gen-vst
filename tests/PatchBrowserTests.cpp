@@ -44,16 +44,17 @@ namespace
     }
 }
 
-// -- Factory root resolution: 39 patches ------------------------------------
+// -- Factory root resolution: recursive FM bank -----------------------------
 TEST (PatchBrowser, FactoryRootLoadsFactoryPatches)
 {
     genvst::PatchBrowser browser;
     browser.initialize (factoryDir());
 
-    // The repo ships ~39 .tfi files at the top of extern/patches/; the
-    // browser should expose them all as the factory bank for Program Change
-    // and as the factory root's top-level entries.
-    EXPECT_GT (browser.numFactoryPatches(), 30);
+    // After Task 03's category move the FM bank lives under
+    // `extern/patches/fm/<category>/...` — `numFactoryPatches()` walks
+    // the factory root recursively, so the Program Change pool should
+    // see the full bank (~47 Furnace tfilib + ~40 Task 04 originals).
+    EXPECT_GT (browser.numFactoryPatches(), 80);
 
     const auto& rootsVec = browser.roots();
     // factory + user-saved + user-imported (Task 14: the writable root was
@@ -62,12 +63,34 @@ TEST (PatchBrowser, FactoryRootLoadsFactoryPatches)
 
     const auto& factoryFolder = *rootsVec[0]->folder;
     EXPECT_TRUE (factoryFolder.scanned);
-    EXPECT_EQ ((int) factoryFolder.patches.size(), browser.numFactoryPatches());
+    // Top level of `extern/patches/` holds no patch files anymore —
+    // only the `fm/` and `sq/` category trees. Direct-children patches
+    // should therefore be empty.
+    EXPECT_EQ (factoryFolder.patches.size(), 0u);
 
-    // One subfolder: extern/patches/sq/ (the SQ factory presets shipped
-    // alongside the flat top-level Furnace tfilib). Task 09 added this.
-    EXPECT_EQ (factoryFolder.subfolders.size(), 1u);
-    EXPECT_EQ (factoryFolder.subfolders.front()->name, juce::String ("sq"));
+    // Two subfolders: extern/patches/fm/ (sound-design Task 04 originals,
+    // organised by category) and extern/patches/sq/ (12 PSG presets).
+    // Both are eagerly recursed at initialize so prev/next navigation
+    // and `listAllPresetsAsJson` see every patch on cold open without
+    // requiring a manual tree expansion in the popup browser.
+    ASSERT_EQ (factoryFolder.subfolders.size(), 2u);
+    EXPECT_EQ (factoryFolder.subfolders[0]->name, juce::String ("fm"));
+    EXPECT_EQ (factoryFolder.subfolders[1]->name, juce::String ("sq"));
+
+    // Every fm category subfolder (bass, brass, drums, fx, keys, lead,
+    // pad) is scanned recursively so its patches are reachable from
+    // the walkers in PluginProcessor.
+    const auto& fmFolder = *factoryFolder.subfolders[0];
+    EXPECT_TRUE (fmFolder.scanned);
+    EXPECT_GT (fmFolder.subfolders.size(), 0u);
+    for (const auto& cat : fmFolder.subfolders)
+    {
+        ASSERT_NE (cat, nullptr);
+        EXPECT_TRUE (cat->scanned)
+            << "fm/" << cat->name.toStdString() << " should be eagerly scanned";
+        EXPECT_GT (cat->patches.size(), 0u)
+            << "fm/" << cat->name.toStdString() << " should ship patches";
+    }
 
     EXPECT_EQ (rootsVec[0]->id, juce::String ("factory"));
     EXPECT_EQ (rootsVec[1]->id, juce::String ("user-saved"));
@@ -157,10 +180,16 @@ TEST (PatchBrowser, DeletePatchRefusesFactoryAndSucceedsOnSaved)
     genvst::PatchBrowser browser;
     browser.initialize (factoryDir());
 
-    // Refuses any factory file. Pick the first factory entry and try.
+    // Refuses any factory file. Top-level holds only category folders
+    // after Task 03's move; descend into fm/<first-category>/ for a
+    // concrete file to attempt deletion on.
     const auto& factoryFolder = *browser.roots()[0]->folder;
-    ASSERT_FALSE (factoryFolder.patches.empty());
-    const auto factoryPath = factoryFolder.patches[0].path;
+    ASSERT_FALSE (factoryFolder.subfolders.empty());
+    const auto& fmFolder = *factoryFolder.subfolders[0];
+    ASSERT_FALSE (fmFolder.subfolders.empty());
+    const auto& categoryFolder = *fmFolder.subfolders[0];
+    ASSERT_FALSE (categoryFolder.patches.empty());
+    const auto factoryPath = categoryFolder.patches[0].path;
 
     const auto factoryErr = browser.deletePatchFile (factoryPath);
     EXPECT_FALSE (factoryErr.empty()) << "Delete must reject factory paths";
@@ -261,7 +290,7 @@ TEST (PatchBrowser, LoadIntoPartPushesValidPatchToQueue)
     genvst::PatchBrowser browser;
     browser.initialize (factoryDir());
 
-    const auto organ = (factoryDir() / "organ.tfi").string();
+    const auto organ = (factoryDir() / "fm" / "keys" / "organ.tfi").string();
     const auto err = browser.loadIntoPart (1, juce::String (organ));
     EXPECT_TRUE (err.empty()) << err;
 

@@ -1718,14 +1718,16 @@ juce::String GenVstAudioProcessor::defaultPresetPathForMode (Mode mode) const
         return {};
     }
 
-    // FM — prefer extern/patches/bass.tfi, fall back to the first sorted
-    // factory .tfi file.
-    const auto bass = factoryRootPath / "bass.tfi";
+    // FM — prefer extern/patches/fm/bass/bass.tfi (post-Task-03 path),
+    // fall back to the first sorted factory .tfi file found anywhere
+    // under the recursive FM tree.
+    const auto bass = factoryRootPath / "fm" / "bass" / "bass.tfi";
     if (fs::is_regular_file (bass, ec))
         return juce::String (bass.string());
 
     std::vector<fs::path> candidates;
-    for (const auto& entry : fs::directory_iterator (factoryRootPath, ec))
+    for (const auto& entry : fs::recursive_directory_iterator (
+             factoryRootPath, fs::directory_options::skip_permission_denied, ec))
     {
         if (! entry.is_regular_file (ec)) continue;
         const auto ext = entry.path().extension().string();
@@ -2044,7 +2046,7 @@ juce::String GenVstAudioProcessor::patchNavigate (int direction)
                 if (effective == targetTag) entries.push_back ({ p.name, p.path });
             }
             for (const auto& sub : f.subfolders)
-                if (sub != nullptr && sub->scanned)
+                if (sub != nullptr)
                     walk (*sub);
         };
         walk (*root->folder);
@@ -2111,7 +2113,7 @@ juce::var GenVstAudioProcessor::listAllPresetsAsJson() const
                 out.add (juce::var (obj));
             }
             for (const auto& sub : f.subfolders)
-                if (sub != nullptr && sub->scanned)
+                if (sub != nullptr)
                     walk (*sub);
         };
         walk (*root->folder);

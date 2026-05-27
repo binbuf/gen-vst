@@ -5,6 +5,7 @@
 #include <cctype>
 #include <chrono>
 #include <fstream>
+#include <functional>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -101,37 +102,57 @@ void PatchBrowser::initialize (const fs::path& factoryRoot)
     factory->folder->path = pathString (factoryFs);
     scanImmediateChildren (*factory->folder);
 
-    // Eagerly scan one more level inside the factory root so subfolders
-    // like `sq/` (12 PSG presets, ADR-0026) are fully indexed at startup.
-    // Without this `listAllPresetsAsJson` skips unscanned subfolders
-    // (its walk only recurses into `sub->scanned == true`), so the
-    // SQ chip filter in the preset browser shows zero items until the
-    // user manually expands the folder. The factory bank ships with the
-    // plugin so the I/O cost is bounded and predictable. User-saved /
-    // user-imported / custom roots stay lazy — those can hold many
-    // thousands of files and we don't want to stall startup on them.
-    for (auto& sub : factory->folder->subfolders)
-        if (sub != nullptr)
-            scanImmediateChildren (*sub);
+    // Recursively scan every descendant of the factory root so patches
+    // at any depth are indexed at startup. `patchNavigate` and
+    // `listAllPresetsAsJson` walk only `subfolders` already populated
+    // by `scanImmediateChildren`; without eager recursion they miss
+    // patches under `fm/<category>/` (Task 04 originals) and
+    // `sq/<category>/`. The factory bank ships with the plugin so the
+    // I/O cost is bounded; user-saved / user-imported / custom roots
+    // stay lazy because they can hold many thousands of files.
+    std::function<void (PatchFolder&)> scanRecursive;
+    scanRecursive = [&] (PatchFolder& folder)
+    {
+        for (auto& sub : folder.subfolders)
+            if (sub != nullptr)
+            {
+                scanImmediateChildren (*sub);
+                scanRecursive (*sub);
+            }
+    };
+    scanRecursive (*factory->folder);
 
-    // Populate the audio-thread factoryPatches list from the factory root's
-    // top-level .tfi files (sorted by filename, like Task 06's enumeration).
+    // Populate the audio-thread factoryPatches list (the FM Program
+    // Change pool) by walking the factory root recursively. Task 03
+    // moved every FM patch under `fm/<category>/...`; SQ `.psg` files
+    // under `sq/` are skipped because they're a different mode. Stable
+    // sort is depth-first by path relative to the factory root, so the
+    // Program Change index is reproducible across runs.
     if (fs::is_directory (factoryFs))
     {
-        std::vector<fs::path> tfiFiles;
+        std::vector<fs::path> fmFiles;
         std::error_code ec;
-        for (const auto& entry : fs::directory_iterator (factoryFs, ec))
-            if (entry.is_regular_file (ec) && isPatchExtension (entry.path()))
-                tfiFiles.push_back (entry.path());
+        for (const auto& entry : fs::recursive_directory_iterator (
+                 factoryFs, fs::directory_options::skip_permission_denied, ec))
+        {
+            if (! entry.is_regular_file (ec)) continue;
+            const auto& p = entry.path();
+            if (! isPatchExtension (p))     continue;
+            if (p.extension() == ".psg")    continue;   // SQ, not FM
+            fmFiles.push_back (p);
+        }
 
-        std::sort (tfiFiles.begin(), tfiFiles.end(),
-                   [] (const fs::path& a, const fs::path& b)
+        std::sort (fmFiles.begin(), fmFiles.end(),
+                   [&factoryFs] (const fs::path& a, const fs::path& b)
                    {
-                       return a.filename() < b.filename();
+                       std::error_code rec;
+                       const auto ra = fs::relative (a, factoryFs, rec);
+                       const auto rb = fs::relative (b, factoryFs, rec);
+                       return ra < rb;
                    });
 
-        factoryPatches.reserve (tfiFiles.size());
-        for (const auto& path : tfiFiles)
+        factoryPatches.reserve (fmFiles.size());
+        for (const auto& path : fmFiles)
             if (auto r = dispatchLoad (path); r.patch.has_value())
                 factoryPatches.push_back (std::move (*r.patch));
     }

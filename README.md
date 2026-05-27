@@ -29,7 +29,7 @@ Two global toggles in the header colour the output: the **Output Filter** models
 - **Multi-format patch import.** Furnace and DefleMask instruments are first-class citizens; VGM banks too.
 - **Modern hardware-VST UI.** 1200×560 dark canvas, IBM Plex Mono, layered shadows. JUCE 8 WebView under the hood — HTML/CSS/JS bundled by Vite, embedded into the plugin binary.
 - **Cross-platform.** VST3 on Windows / macOS / Linux. AU on macOS. Standalone everywhere.
-- **Validated.** 196 unit tests; verified against `pluginval --strictness-level 8` on Windows VST3.
+- **Validated.** 201 unit tests; verified against `pluginval --strictness-level 8` on Windows VST3.
 
 ## Download
 
@@ -134,7 +134,13 @@ Full design docs (architecture, ADRs, visual spec) live under [`docs/design/`](d
 
 ## Factory patches
 
-The plugin ships with **39 FM `.tfi` patches** sourced from the Furnace [`tfilib`](https://github.com/tildearrow/furnace/tree/master/instruments/OPN/tfilib) instrument set, plus **12 hand-tuned `.psg` SQ presets**. All factory patches use generic timbre names (`bass.tfi`, `piano.tfi`, `pulse-arp.psg`, …) and contain **no game titles, publisher names, or other trademarked identifiers**. No game-derived patch collections are distributed with this project.
+The plugin ships with two FM banks and an SQ bank, all organised by category:
+
+- **~40 original Genesis-idiom FM patches** authored for this project — slap bass, sine bell lead, FM piano, brass stab, breath sax, kick/snare/hat, pads, FX. Distributed across `fm/{bass,brass,drums,fx,keys,lead,pad}/`.
+- **47 community FM patches** from the Furnace [`tfilib`](https://github.com/tildearrow/furnace/tree/master/instruments/OPN/tfilib) instrument set (GPL-compatible), categorised into the same `fm/<category>/` folders alongside the originals.
+- **12 hand-tuned `.psg` SQ presets** in `sq/` covering leads, basses, percussion, and FX.
+
+All factory patches use generic timbre names (`slap-bass-1.tfi`, `fm-piano-bright.tfi`, `pulse-arp.psg`, …) and contain **no game titles, publisher names, or other trademarked identifiers**. No game-derived patch collections are distributed with this project — users wanting game-original timbres can extract them from VGM logs at [vgmrips.net](https://vgmrips.net) through the in-plugin **Import Bank** path.
 
 Load additional patches via the in-plugin browser, by dragging a folder onto the plugin window, or by pointing a custom root at any directory tree.
 

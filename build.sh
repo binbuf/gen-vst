@@ -111,19 +111,20 @@ else
 fi
 
 # ---- install factory patches ------------------------------------------------
-# Copy the factory .tfi patches into the per-user data directory the Standalone
-# reads at runtime. `cmake --install` is intentionally NOT used: it would also
-# run JUCE's own framework install rules. Top-level *.tfi only — the gitignored
-# extra/ developer set is never shipped (ADR-0004).
+# Mirror the full extern/patches/ tree (fm/<category>/*, sq/*) into the per-
+# user data dir so the Standalone reads the same layout the VST3 bundle has.
+# `cmake --install` is intentionally NOT used: it would also run JUCE's own
+# framework install rules. The gitignored extra/ developer set never reaches
+# this find — it lives in a sibling directory (ADR-0004).
 step "Installing factory patches"
 patch_src="$SCRIPT_DIR/extern/patches"
-mkdir -p "$patch_dir"
-patch_count=0
-for f in "$patch_src"/*.tfi; do
-    [ -e "$f" ] || fail "No factory patches (*.tfi) found in $patch_src"
-    cp -f "$f" "$patch_dir/"
-    patch_count=$((patch_count + 1))
-done
+patch_count=$(find "$patch_src" -type f \( \
+    -name '*.tfi' -o -name '*.vgi' -o -name '*.dmp' \
+    -o -name '*.y12' -o -name '*.opm' -o -name '*.psg' \) | wc -l)
+[ "$patch_count" -gt 0 ] || fail "No factory patches found in $patch_src"
+rm -rf "$patch_dir"
+mkdir -p "$(dirname "$patch_dir")"
+cp -R "$patch_src" "$patch_dir"
 info "$patch_count patch file(s) -> $patch_dir"
 
 # ---- deploy -----------------------------------------------------------------

@@ -28,9 +28,9 @@ three:
 
 | Path | What ships | Authority |
 |------|------------|-----------|
-| **Original works** authored "in the style of" Genesis sound design (slap bass, sine bell lead, FM piano, etc.) — named generically | Tasks `01`, `03` | Project copyright; same model as the 12 factory `.psg` files (ADR-0004) |
-| **GPL / CC-licensed community banks** with clear provenance, bundled as named subfolders with attribution | Task `04` | ADR-0004 (Furnace `tfilib` precedent — GPL-compatible community FM bank) |
-| **User-supplied VGM register logs** from public archives (vgmrips.net, Project2612) extracted via the existing `VgmExtract` pipeline | Task `05` (discoverability only — pipeline already built) | ADR-0019 |
+| **Original works** authored "in the style of" Genesis sound design (slap bass, sine bell lead, FM piano, etc.) — named generically | Tasks `02` (SQ), `04` (FM) | Project copyright; same model as the 12 factory `.psg` files (ADR-0004) |
+| **GPL / CC-licensed community banks** with clear provenance, bundled as named subfolders with attribution | Furnace `tfilib` (already shipped, recategorised by Task `03`); Task `05` (additional packs) | ADR-0004 (Furnace `tfilib` precedent — GPL-compatible community FM bank) |
+| **User-supplied VGM register logs** from public archives (vgmrips.net, Project2612) extracted via the existing `VgmExtract` pipeline | Task `06` (discoverability only — pipeline already built) | ADR-0019 |
 
 **Never shipped:** patches extracted from game ROMs, patches named
 after specific games / publishers / characters / level titles. This
