@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -172,6 +173,12 @@ public:
     // instance required).
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // Inject a synthetic note event from the on-screen keyboard. Called on the
+    // message thread (WebView native function callback); drained into the MIDI
+    // buffer at the start of the next processBlock on the audio thread.
+    void injectNoteOn  (int pitch, int velocity);
+    void injectNoteOff (int pitch);
+
     // The active engine for the current block, as read from the mode_select
     // apvts parameter. Public so the editor can synchronise its UI to the
     // current mode without round-tripping through the apvts itself
@@ -329,6 +336,20 @@ private:
     // setStateInformation-before-createEditor flow common in real hosts).
     std::function<void (const juce::String&, const juce::String&)> stateRestoreToastCallback;
     std::vector<std::pair<juce::String, juce::String>>             pendingStateRestoreToasts;
+
+    // On-screen keyboard note injection. The message thread writes via
+    // injectNoteOn/Off; the audio thread drains into midiMessages at the
+    // start of processBlock. SPSC — one producer (message thread), one
+    // consumer (audio thread).
+    struct PendingNoteEvent
+    {
+        int  pitch    = 0;
+        int  velocity = 0;
+        bool isNoteOn = false;
+    };
+    static constexpr int kNoteQueueSize = 64;
+    juce::AbstractFifo                             noteQueueFifo { kNoteQueueSize };
+    std::array<PendingNoteEvent, kNoteQueueSize>   noteQueueData {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenVstAudioProcessor)
 };

@@ -33,11 +33,39 @@ public:
         noteOnFlag.store (on, std::memory_order_relaxed);
     }
 
+    // Set / clear the active state of a specific MIDI pitch (0-127). Used to
+    // drive lit keys on the on-screen keyboard. Safe to call from the audio thread.
+    void setNoteActive (int pitch, bool on) noexcept
+    {
+        if (pitch < 0 || pitch > 127) return;
+        if (pitch < 64)
+        {
+            const uint64_t bit = uint64_t (1) << pitch;
+            if (on) activeNotesMask0.fetch_or  (bit, std::memory_order_relaxed);
+            else    activeNotesMask0.fetch_and (~bit, std::memory_order_relaxed);
+        }
+        else
+        {
+            const uint64_t bit = uint64_t (1) << (pitch - 64);
+            if (on) activeNotesMask1.fetch_or  (bit, std::memory_order_relaxed);
+            else    activeNotesMask1.fetch_and (~bit, std::memory_order_relaxed);
+        }
+    }
+
+    // Clear all active-note bits (e.g. on mode switch or all-notes-off).
+    void clearAllNotes() noexcept
+    {
+        activeNotesMask0.store (0, std::memory_order_relaxed);
+        activeNotesMask1.store (0, std::memory_order_relaxed);
+    }
+
     // --- Message-thread reads -----------------------------------------------
 
-    float vuLeft()  const noexcept { return publishedVuL.load (std::memory_order_relaxed); }
-    float vuRight() const noexcept { return publishedVuR.load (std::memory_order_relaxed); }
-    bool  noteOn()  const noexcept { return noteOnFlag.load (std::memory_order_relaxed); }
+    float    vuLeft()  const noexcept { return publishedVuL.load (std::memory_order_relaxed); }
+    float    vuRight() const noexcept { return publishedVuR.load (std::memory_order_relaxed); }
+    bool     noteOn()  const noexcept { return noteOnFlag.load (std::memory_order_relaxed); }
+    uint64_t activeNotesLow()  const noexcept { return activeNotesMask0.load (std::memory_order_relaxed); }
+    uint64_t activeNotesHigh() const noexcept { return activeNotesMask1.load (std::memory_order_relaxed); }
 
 private:
     // VU envelope follower (fast attack, slow release). Audio thread only;
@@ -48,7 +76,9 @@ private:
     float vuEnvR      = 0.0f;
     float releaseCoef = 0.99f;
 
-    std::atomic<float> publishedVuL { 0.0f };
-    std::atomic<float> publishedVuR { 0.0f };
-    std::atomic<bool>  noteOnFlag   { false };
+    std::atomic<float>    publishedVuL    { 0.0f };
+    std::atomic<float>    publishedVuR    { 0.0f };
+    std::atomic<bool>     noteOnFlag      { false };
+    std::atomic<uint64_t> activeNotesMask0 { 0 };  // pitches 0-63
+    std::atomic<uint64_t> activeNotesMask1 { 0 };  // pitches 64-127
 };

@@ -351,6 +351,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
         juce::StringArray { "1x", "2x", "3x" }, 0));
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "tooltips_enabled", 1 }, "Tooltips", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "keyboard_visible", 1 }, "Show Keyboard", true));
 
     // --- Gallery scratch params (Task 04 widget gallery) --------------------
     // Bound by ui/gallery.html so every widget kind can be developed and
@@ -710,6 +712,26 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     ptr->store (static_cast<float> (p.*(kPartParams[d].field)),
                                 std::memory_order_relaxed);
         });
+
+    // Drain on-screen keyboard note events (injected from the message thread
+    // via injectNoteOn/Off). Prepend at sample position 0 so they play at the
+    // very start of the block — fine for a manual keyboard.
+    {
+        const auto scope = noteQueueFifo.read (noteQueueFifo.getNumReady());
+        auto drain = [&] (int start, int count)
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                const auto& ev = noteQueueData[(size_t) (start + i)];
+                const auto msg = ev.isNoteOn
+                    ? juce::MidiMessage::noteOn  (1, ev.pitch, (uint8_t) ev.velocity)
+                    : juce::MidiMessage::noteOff (1, ev.pitch);
+                midiMessages.addEvent (msg, 0);
+            }
+        };
+        drain (scope.startIndex1, scope.blockSize1);
+        drain (scope.startIndex2, scope.blockSize2);
+    }
 
     // VGM logger ticks once per block.
     vgmLogger.recordWaitSamples (numSamples);
@@ -1081,6 +1103,24 @@ void GenVstAudioProcessor::renderDBlock (juce::AudioBuffer<float>& buffer,
     }
 }
 
+void GenVstAudioProcessor::injectNoteOn (int pitch, int velocity)
+{
+    const auto scope = noteQueueFifo.write (1);
+    if (scope.blockSize1 > 0)
+        noteQueueData[(size_t) scope.startIndex1] = { pitch, velocity, true };
+    else if (scope.blockSize2 > 0)
+        noteQueueData[(size_t) scope.startIndex2] = { pitch, velocity, true };
+}
+
+void GenVstAudioProcessor::injectNoteOff (int pitch)
+{
+    const auto scope = noteQueueFifo.write (1);
+    if (scope.blockSize1 > 0)
+        noteQueueData[(size_t) scope.startIndex1] = { pitch, 0, false };
+    else if (scope.blockSize2 > 0)
+        noteQueueData[(size_t) scope.startIndex2] = { pitch, 0, false };
+}
+
 void GenVstAudioProcessor::dispatchMidi (const juce::MidiMessage& msg)
 {
     if (msg.isNoteOn())
@@ -1143,11 +1183,13 @@ void GenVstAudioProcessor::handleNoteOn (int note, int velocity)
             voiceAllocator.noteOn (0, note, velocity, /*bend*/ 0.0,
                                    velToTl, noteOnPatch);
             telemetry.setNoteOn (true);
+            telemetry.setNoteActive (note, true);
             break;
         }
         case Mode::SQ:
             psgEngine.noteOnTone (note, velocity);
             telemetry.setNoteOn (true);
+            telemetry.setNoteActive (note, true);
             break;
         case Mode::D:
             // D mode has no note triggering.
@@ -1163,10 +1205,12 @@ void GenVstAudioProcessor::handleNoteOff (int note)
         case Mode::FM:
             voiceAllocator.noteOff (0, note, /*sustainHeld*/ false);
             telemetry.setNoteOn (voiceAllocator.numActiveVoices() > 0);
+            telemetry.setNoteActive (note, false);
             break;
         case Mode::SQ:
             psgEngine.noteOffTone (note);
             telemetry.setNoteOn (false);
+            telemetry.setNoteActive (note, false);
             break;
         case Mode::D:
             break;

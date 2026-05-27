@@ -21,6 +21,7 @@ import { mount as mountDView }  from "./views/d-view.js";
 import { open as openSettings }      from "./modals/settings.js";
 import { open as openAbout }         from "./modals/about.js";
 import { open as openPresetBrowser } from "./modals/preset-browser.js";
+import { mount as mountKeyboard }    from "./widgets/keyboard.js";
 
 const MODE_FM = 0;
 const MODE_SQ = 1;
@@ -85,6 +86,10 @@ function init() {
       };
       modeBind.onChange(mountForMode);
     }
+
+    // On-screen keyboard strip — always mounted regardless of mode.
+    const keyboardHost = document.getElementById("keyboard-strip");
+    if (keyboardHost) mountKeyboard(keyboardHost);
 
     // Signal mount. The C++ side logs it (PluginEditor::makeOptions).
     if (window.__JUCE__ && window.__JUCE__.backend) {

@@ -6,7 +6,7 @@
 #include "PluginProcessor.h"
 
 // The v2 editor hosts the Vite-built WebView UI (ADR-0001) in a fixed
-// 1200x560 window (ADR-0023). It owns the parameter relays + attachments and
+// 1200x660 window (ADR-0023 + keyboard strip). It owns the parameter relays + attachments and
 // pushes telemetry via a juce::Timer at ~30 Hz (05-ui-ux.md *C++ -> JS
 // telemetry push*).
 //
@@ -133,9 +133,22 @@ private:
     std::unique_ptr<juce::ParameterAttachment> uiScaleListener;
 
     // Apply integer scale `n` (1, 2, or 3) to the WebView host bounds. The
-    // base canvas is 1200x560 at 1x (ADR-0023); 2x and 3x grow the host so
-    // the WebView naturally upscales the page bitmap.
+    // base canvas is 1200x660 at 1x (keyboard visible) or 1200x560 (keyboard
+    // hidden); 2x and 3x grow proportionally.
     void applyUiScale (int n);
+
+    // Show or hide the keyboard strip. Resizes the editor window accordingly.
+    void applyKeyboardVisible (bool visible);
+
+    // Recompute and apply the window size from the cached scale + visibility.
+    void applyWindowSize();
+
+    // Cached state for the combined resize calculation.
+    int  currentUiScale    = 1;
+    bool keyboardVisible   = true;
+
+    // ParameterAttachment for keyboard_visible (analogous to uiScaleListener).
+    std::unique_ptr<juce::ParameterAttachment> keyboardVisibleListener;
 
     // --- Fallback panel (shown when WebView fails to initialise) -----------
     // Lives next to the WebView in the component tree; only one is ever

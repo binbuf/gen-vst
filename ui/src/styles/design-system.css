@@ -153,8 +153,8 @@
 html,
 body {
   width: 1200px;
-  height: 560px;
-  overflow: hidden;                /* fixed 1200×560 — ADR-0023 */
+  height: 100%;
+  overflow: hidden;                /* fills the WebView viewport (660px or 560px depending on keyboard visibility) */
   background: var(--chassis-bg-mid);
   color: var(--label-text);
   font-family: "IBM Plex Mono", ui-monospace, "Cascadia Mono", "SF Mono",
@@ -267,6 +267,14 @@ canvas {
   flex: 1;
   padding: 14px;
   position: relative;
+}
+
+.keyboard-strip {
+  height: 92px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  position: relative;
+  overflow: hidden;
 }
 
 .mode-title {

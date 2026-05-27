@@ -103,8 +103,8 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& p)
     : juce::AudioProcessorEditor (&p),
       processor (p)
 {
-    // ADR-0023 -- fixed 1200x560 editor.
-    setSize (1200, 560);
+    // ADR-0023 -- fixed 1200x660 editor (100px added for on-screen keyboard strip).
+    setSize (1200, 660);
     setOpaque (true);
 
     // Fallback chrome -- only made visible when the WebView fails. Built
@@ -283,7 +283,27 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
         .withNativeFunction ("getPatchRoots",
             [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
-            { doGetPatchRoots (args, std::move (completion)); });
+            { doGetPatchRoots (args, std::move (completion)); })
+        // On-screen keyboard: inject synthetic note events into the audio thread.
+        .withNativeFunction ("noteOn",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                const int pitch    = args.size() > 0 ? static_cast<int> (args[0]) : -1;
+                const int velocity = args.size() > 1 ? static_cast<int> (args[1]) : 100;
+                if (pitch >= 0 && pitch <= 127)
+                    processor.injectNoteOn (pitch, juce::jlimit (1, 127, velocity));
+                completion (juce::var{});
+            })
+        .withNativeFunction ("noteOff",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                const int pitch = args.size() > 0 ? static_cast<int> (args[0]) : -1;
+                if (pitch >= 0 && pitch <= 127)
+                    processor.injectNoteOff (pitch);
+                completion (juce::var{});
+            });
 
    #if ! GENVST_DEV_SERVER
     options = options.withResourceProvider (
@@ -303,6 +323,7 @@ void GenVstAudioProcessorEditor::tryInitWebView()
     toggleAtts.clear();
     comboAtts.clear();
     uiScaleListener.reset();
+    keyboardVisibleListener.reset();
     webView.reset();
 
     try
@@ -367,6 +388,20 @@ void GenVstAudioProcessorEditor::tryInitWebView()
         uiScaleListener->sendInitialUpdate();
     }
 
+    // Keyboard-visibility side-effect listener — resizes the editor window
+    // when the user toggles "Show Keyboard" in Settings.
+    if (auto* kbParam = apvts.getParameter ("keyboard_visible"))
+    {
+        keyboardVisibleListener = std::make_unique<juce::ParameterAttachment> (
+            *kbParam,
+            [this] (float normalised)
+            {
+                applyKeyboardVisible (normalised > 0.5f);
+            },
+            apvts.undoManager);
+        keyboardVisibleListener->sendInitialUpdate();
+    }
+
     addAndMakeVisible (*webView);
     webView->setBounds (getLocalBounds());
 
@@ -394,15 +429,22 @@ void GenVstAudioProcessorEditor::tryInitWebView()
 
 void GenVstAudioProcessorEditor::applyUiScale (int n)
 {
-    // ADR-0017 + ADR-0023 — integer presets only; resize the editor's
-    // outer bounds so the host's window grows with the scale, then the
-    // WebView naturally upscales the 1200x560 page bitmap. The page
-    // itself does not need to know about the scale; the WebView's nearest-
-    // neighbour upscale handles it cleanly.
-    const int scale = juce::jlimit (1, 3, n);
-    setSize (1200 * scale, 560 * scale);
-    // resized() lays out the WebView (and the fallback chrome) against
-    // getLocalBounds(), so it picks up the new size on the next call.
+    currentUiScale = juce::jlimit (1, 3, n);
+    applyWindowSize();
+}
+
+void GenVstAudioProcessorEditor::applyKeyboardVisible (bool visible)
+{
+    keyboardVisible = visible;
+    applyWindowSize();
+}
+
+void GenVstAudioProcessorEditor::applyWindowSize()
+{
+    // ADR-0017 + ADR-0023. Base dimensions: 1200 wide, 660 tall with keyboard
+    // strip or 560 without. Scale multiplied for 2×/3× zoom.
+    const int baseH = keyboardVisible ? 660 : 560;
+    setSize (1200 * currentUiScale, baseH * currentUiScale);
     if (webView != nullptr)
         webView->setBounds (getLocalBounds());
 }
@@ -453,6 +495,17 @@ void GenVstAudioProcessorEditor::timerCallback()
     obj->setProperty ("peakL",  t.vuLeft());
     obj->setProperty ("peakR",  t.vuRight());
     obj->setProperty ("noteOn", t.noteOn());
+
+    // Build activeNotes array from 128-bit note mask for on-screen keyboard.
+    juce::Array<juce::var> activeNotes;
+    const uint64_t lo = t.activeNotesLow();
+    const uint64_t hi = t.activeNotesHigh();
+    for (int i = 0; i < 64; ++i)
+        if (lo & (uint64_t (1) << i)) activeNotes.add (juce::var (i));
+    for (int i = 0; i < 64; ++i)
+        if (hi & (uint64_t (1) << i)) activeNotes.add (juce::var (64 + i));
+    obj->setProperty ("activeNotes", juce::var (activeNotes));
+
     webView->emitEventIfBrowserIsVisible ("meterData", juce::var (obj));
 }
 

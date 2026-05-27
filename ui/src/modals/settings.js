@@ -122,6 +122,13 @@ export function open() {
       });
       body.appendChild(makeRow("TOOLTIPS", tipsHost));
 
+      // --- SHOW KEYBOARD ----------------------------------------------
+      const kbHost = el("div");
+      mountToggle(kbHost, {
+        bind: bindToggle("keyboard_visible"),
+      });
+      body.appendChild(makeRow("SHOW KEYBOARD", kbHost));
+
       // --- Section: actions -------------------------------------------
       body.appendChild(el("div", {
         className: "modal-section-title",
