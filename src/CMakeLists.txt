@@ -122,6 +122,13 @@ file(MAKE_DIRECTORY "${FACTORY_STAGE}/sq")
 file(COPY ${FACTORY_FM} DESTINATION "${FACTORY_STAGE}")
 file(COPY ${FACTORY_SQ_PSG} DESTINATION "${FACTORY_STAGE}/sq")
 
+# LLM-generated original FM patches, organised under extern/patches/fm/<category>/.
+# Safe to glob recursively here — extra/ is a sibling of fm/, not inside it.
+if(EXISTS "${CMAKE_SOURCE_DIR}/extern/patches/fm")
+    file(COPY "${CMAKE_SOURCE_DIR}/extern/patches/fm"
+         DESTINATION "${FACTORY_STAGE}")
+endif()
+
 # Generator-agnostic bundle staging. JUCE's `juce_add_bundle_resources_directory`
 # only sets MACOSX_PACKAGE_LOCATION on every source — an Xcode-only attribute,
 # and even on Xcode the embed step has been observed to no-op in CI (the
