@@ -51,12 +51,14 @@ this doc fixes the content and structure, not the precise pixels.
 | 8 | Notification toast | Transient overlay | System-triggered (`notify` event) |
 | 9 | WebView fallback panel | Native (non-WebView) | Shown when the WebView fails to init |
 | 10 | Native file choosers | Native OS dialog | Import/Export/Add-Folder buttons |
+| 11 | On-screen keyboard strip | Persistent base (optional) | Always visible when `keyboard_visible = true` |
 
 The v1-style **bottom status bar is gone** — its output level meters
 moved into the header as a stacked L/R cell, and the version string
-moved into the About modal (view 7). The 1200×560 canvas now hosts only
-two persistent regions (header + mode panel) and the swappable modal
-overlays above them.
+moved into the About modal (view 7). When the keyboard strip (view 11)
+is visible the canvas is 1200×660; when hidden it is 1200×560 (two
+persistent regions: header + mode panel). Modal overlays sit above
+whichever height is active.
 
 ---
 
@@ -798,3 +800,53 @@ The following v1 views no longer exist:
   Settings (whole-instance, since there's nothing finer than the
   instance).
 - **Per-instrument routing strip** (v1) — removed entirely.
+
+---
+
+## 11. On-screen keyboard strip (optional persistent)
+
+A Canvas-rendered piano keyboard docked below the mode panel. Visibility is
+controlled by the `keyboard_visible` apvts parameter (bool, default **true**),
+surfaced as a **`SHOW KEYBOARD`** row in Settings (view 6). When the strip is
+hidden the editor retracts to 1200×560 (the base ADR-0023 size); when visible
+the editor extends to 1200×660 — the extra 100 px is the strip height.
+
+```
+┌─ KEYBOARD STRIP ─────────────────────────────────────────────────────────────┐
+│  │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │ │    │
+│  │█│ │█│ │ │█│ │█│ │█│ │ │█│ │█│ │█│ │ │█│ │█│ │█│ │ │█│ │█│ │█│ │ │█│    │
+│  └─┘ └─┘ │ └─┘ └─┘ └─┘ │ └─┘ └─┘ └─┘ │ └─┘ └─┘ └─┘ │ └─┘ └─┘ └─┘ │ └─┘  │
+│    C1          C2          C3          C4          C5 …                B7    │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Range:** MIDI 24 (C1) through 107 (B7) — 7 octaves, 49 white keys, 36 black
+keys. Proportions follow standard piano black-key placement offsets.
+
+**Active note display.** C++→JS telemetry pushes a 128-bit `activeNotes` bitmask
+(two `uint64_t` atomic words in `Telemetry`) at ~30 Hz. Keys in the bitmask are
+drawn in a highlight colour (`#5ad4f8` white, `#2196f3` black) — matching the
+palette tokens in `design-system.css`.
+
+**Click-to-play.** A `mousedown` on a key fires the `noteOn` native function with
+the MIDI pitch and a fixed velocity (100). `mouseup` / `mouseleave` fires `noteOff`.
+The note event is written into a lock-free FIFO (`AbstractFifo`-backed queue in
+`PluginProcessor`) and drained at the very start of the next `processBlock` call
+at sample offset 0 — fine for a manual keyboard with no sample-accuracy
+requirement.
+
+**Telemetry integration.** `handleNoteOn` / `handleNoteOff` in `PluginProcessor`
+call `telemetry.setNoteActive(pitch, on)`. All-notes-off and mode switches call
+`telemetry.clearAllNotes()`.
+
+**Resize behaviour.** The editor holds `currentUiScale` and `keyboardVisible`
+and recomputes window bounds via `applyWindowSize()` whenever either changes —
+so a keyboard toggle at 2× scale correctly produces 2400×1320 (visible) or
+2400×1120 (hidden) rather than 1× dimensions.
+
+**D mode.** The keyboard strip is always visible when `keyboard_visible = true`,
+regardless of the active mode. In D mode clicking keys still fires `noteOn` /
+`noteOff` into the audio thread — D mode ignores MIDI, so the events have no
+audible effect, but the lit-key telemetry still updates. This is intentional:
+hiding the keyboard when switching to D mode would be a surprise; the user
+controls visibility explicitly.

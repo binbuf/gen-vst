@@ -93,6 +93,13 @@ applied to avoid clicks at the mode boundary.
   in release phase are preferred for stealing.
 - MIDI events from the host channel (any channel — the plugin is not
   channel-filtered) go straight to the voice allocator.
+- **Per-voice auto-idle** (`Voice::renderAdd`): a Released voice monitors its
+  own chip output and transitions to `Idle` after 256 consecutive native-rate
+  samples where both stereo outputs fall below amplitude 512 (~4.8 ms at
+  53,267 Hz). This is needed because ymfm's phase accumulators keep ticking
+  regardless of envelope state, producing a non-zero LSB-level residue on
+  "silent" voices that the Ladder 8-bit quantizer amplifies into audible hiss.
+  The two threshold constants and their derivation are documented in `Voice.cpp`.
 
 ### SQ mode
 

@@ -148,6 +148,13 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 - [x] `NOTE ON` indicator LED (single LED, not 16) *(mvp2/08)*
 - [x] Modern hardware-VST aesthetic ([ADR-0022](adr/0022-modern-vst-aesthetic.md)) *(mvp2/01 mockup → mvp2/05-08 implementation)*
 - [x] **Hover tooltips** for every interactive control (full name + one-sentence description). Gated by the global `tooltips_enabled` apvts param, surfaced as both a header `TIPS` toggle (quick access while learning the layout) and a Settings `TOOLTIPS` row (set-and-forget). Default **on**. Content schema + widget recipe per [`05-ui-ux.md`](05-ui-ux.md) *Tooltip system* and [`09-visual-spec.md`](09-visual-spec.md) § *Tooltip*. *(mvp2/04 widget + mvp2/08 settings)*
+- [x] **On-screen piano roll keyboard strip** — Canvas-rendered 7-octave keyboard
+  (C1–B7, MIDI 24–107) docked below the mode panel. Active MIDI notes light up
+  in real time from the C++→JS telemetry `activeNotes` bitmask; clicking keys
+  injects synthetic note events into the audio thread via a lock-free FIFO
+  (native functions `noteOn` / `noteOff`). Toggled via `keyboard_visible` apvts
+  param (surfaced in Settings). Editor window resizes: 1200×560 hidden, 1200×660
+  visible. See [`08-ui-views.md`](08-ui-views.md) view 11.
 
 ### Microtuning
 - [x] Scala `.scl` import — 12-degree scales, MIDI 69 = 440 Hz root, FM + SQ share one table, path persisted in DAW project. (Shipped Task 30; retained in v2 — code is mode-agnostic.)

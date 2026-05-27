@@ -6,26 +6,38 @@
 gen-vst/
 ├── CMakeLists.txt           ← root: project, FetchContent JUCE, add_subdirectory
 ├── CMakePresets.json        ← developer presets (Debug/Release per platform)
+├── CHANGELOG.md             ← version history
 ├── LICENSE                  ← GPL v3 (ADR-0003)
+├── update-version.sh        ← release helper: rewrites all pinned version strings
 ├── .gitmodules              ← ymfm + libvgm submodules
+├── .github/workflows/
+│   └── release.yml          ← CI/CD: build + auto-publish on v* tag push
+├── packaging/
+│   └── macos/build-pkg.sh   ← .pkg assembly script (pkgbuild + productbuild)
 ├── third_party/             ← code submodules
 │   ├── ymfm/                ← git submodule: aaronsgiles/ymfm
 │   └── libvgm/              ← git submodule: ValleyBell/libvgm (SN76489 core only — ADR-0009)
 ├── src/
 │   ├── CMakeLists.txt       ← juce_add_plugin, sources, link libraries
 │   ├── PluginProcessor.h/cpp
-│   ├── PluginEditor.h/cpp   ← hosts juce::WebBrowserComponent
-│   ├── PartManager.h/cpp
+│   ├── PluginEditor.h/cpp   ← hosts juce::WebBrowserComponent + keyboard strip resize logic
 │   ├── VoiceAllocator.h/cpp
+│   ├── Voice.h/cpp          ← single YM2612 voice (auto-idle silence detection)
 │   ├── SN76489Engine.h/cpp
-│   ├── DACPlayer.h/cpp
-│   └── PatchSystem.h/cpp
+│   ├── DspDecimator.h/cpp
+│   ├── LadderEffect.h/cpp
+│   ├── OutputFilter.h/cpp
+│   ├── PatchSystem.h/cpp
+│   ├── Telemetry.h          ← C++ → JS telemetry push (VU, noteOn, activeNotes bitmask)
+│   └── PluginState.h        ← DAW state XML helpers
 ├── ui/                      ← Vite web UI project (HTML/CSS/JS + Canvas — ADR-0001)
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── vite.config.js
 │   ├── index.html
 │   └── src/
+│       └── widgets/
+│           └── keyboard.js  ← on-screen piano roll keyboard strip
 ├── extern/                  ← data assets (not code)
 │   ├── fonts/               ← bitmap/segment fonts, consumed by the ui/ build
 │   │   ├── press-start-2p/
@@ -50,7 +62,7 @@ the UI is the web app under `ui/` ([ADR-0001](adr/0001-juce8-webview-ui.md)).
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
-project(GenVst VERSION 0.1.0 LANGUAGES C CXX)   # C: libvgm sn764xx.c
+project(GenVst VERSION 0.2.0 LANGUAGES C CXX)   # C: libvgm sn764xx.c
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -174,7 +186,7 @@ juce_add_plugin(GenVst
     VST3_CATEGORIES             "Instrument|Synth"
     DESCRIPTION                 "Sega Genesis YM2612+SN76489 emulation"
     BUNDLE_ID                   "com.genvst.genvst"
-    VERSION                     "0.1.0"
+    VERSION                     "0.2.0"
 )
 
 # --- Standalone patch directory (runtime data dir, per platform) --------------
@@ -205,11 +217,15 @@ install(FILES ${FACTORY_PATCHES} DESTINATION "${GENVST_STANDALONE_PATCH_DIR}")
 target_sources(GenVst PRIVATE
     PluginProcessor.cpp  PluginProcessor.h
     PluginEditor.cpp     PluginEditor.h
-    PartManager.cpp      PartManager.h
     VoiceAllocator.cpp   VoiceAllocator.h
+    Voice.cpp            Voice.h
     SN76489Engine.cpp    SN76489Engine.h
-    DACPlayer.cpp        DACPlayer.h
+    DspDecimator.cpp     DspDecimator.h
+    LadderEffect.cpp     LadderEffect.h
+    OutputFilter.cpp     OutputFilter.h
     PatchSystem.cpp      PatchSystem.h
+    Telemetry.h
+    PluginState.h
 )
 
 # ymfm sources — inline into the plugin target, NOT a separate static lib
@@ -326,11 +342,21 @@ The installer tool (WiX, Inno Setup, …) is an implementation choice. For offli
 installers the WebView2 **Fixed Version** runtime (~150 MB+) is the documented
 alternative to the bootstrapper.
 
-### macOS — bundles (MVP)
+### macOS — `.pkg` installers
 
-WKWebView is part of macOS, so there is no runtime to install. macOS ships as raw
-VST3/AU bundles for the MVP; a signed/notarized `.pkg` is post-MVP and needs an
-Apple Developer certificate (see *GitHub Actions CI*).
+WKWebView is part of macOS, so there is no runtime to install. macOS ships as
+two separate **unsigned `.pkg` installers** — one for Apple Silicon (arm64) and
+one for Apple Intel (x86_64). Each installs the VST3 bundle, the AU component,
+and the Standalone. Factory patches are embedded in each bundle's `Resources/`
+directory via `juce_add_bundle_resources_directory`.
+
+**Gatekeeper on macOS 15 (Tahoe)+:** since the packages are unsigned, users
+must approve them via System Settings → Privacy & Security → Open Anyway (the
+right-click → Open shortcut no longer suffices on Tahoe). Documented in
+the README.
+
+Code signing and notarization requires an Apple Developer certificate in GitHub
+Secrets; defer to a dedicated signing task before a commercial release.
 
 ### Linux — bundles (MVP)
 
@@ -370,56 +396,57 @@ panel rather than a blank window — specified in
 
 ---
 
-## GitHub Actions CI
+## GitHub Actions CI / Release
 
-Three platform jobs in `.github/workflows/build.yml`. Every job checks out
+The workflow lives in `.github/workflows/release.yml`. Every job checks out
 submodules **and** installs Node.js, because the CMake build drives the `ui/`
-web build.
+web build. On every push it runs all three platform builds and uploads
+workflow artifacts. On a `v*` tag push it additionally creates a **GitHub
+Release** and attaches the installer packages automatically.
 
 ```yaml
+on:
+  push:
+    branches: [main]
+    tags: ['v*']   # triggers the release-publish step
+
 jobs:
   build-windows:
     runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: cmake --preset windows-release
-      - run: cmake --build build/windows-release --config Release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: GenVst-Windows-VST3
-          path: build/windows-release/GenVst_artefacts/Release/VST3/
+    # Builds VST3 + Standalone; packages as a .exe installer.
 
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: cmake --preset macos-release
-      - run: cmake --build build/macos-release --config Release
-      # auval validation (no-display CI may need a workaround)
+  build-macos-arm64:
+    runs-on: macos-latest         # Apple Silicon runner
+    # Builds VST3 + AU + Standalone; packages as arm64 .pkg via packaging/macos/build-pkg.sh.
+
+  build-macos-x86_64:
+    runs-on: macos-15-intel       # Intel runner (migrated from macos-13)
+    # Builds VST3 + AU + Standalone; packages as x86_64 .pkg.
 
   build-linux:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: sudo apt-get install -y libasound2-dev libx11-dev libxcursor-dev
-             libxrandr-dev libxinerama-dev libfreetype6-dev libgl-dev
-             libwebkit2gtk-4.1-dev
-      - run: cmake --preset linux-release
-      - run: cmake --build build/linux-release
+    # Installs libwebkit2gtk-4.1-dev + audio/graphics libs.
+    # Adds JUCE_USE_CURL=0 to both the plugin and test targets.
+    # Links webkit2gtk via NEEDS_WEB_BROWSER in src/CMakeLists.txt.
+    # Packages VST3 as .tar.gz.
 ```
 
-Release artifacts (VST3 bundles) upload on tag push via an additional
-`on: push: tags: ['v*']` condition. macOS code signing requires an Apple
-Developer certificate in GitHub Secrets — defer until pre-release.
+**macOS packaging note.** The two macOS jobs produce separate installers —
+`GenVst-arm64.pkg` and `GenVst-x86_64.pkg` — rather than a single universal
+binary package. The `build-pkg.sh` script under `packaging/macos/` drives the
+`.pkg` creation with `pkgbuild` + `productbuild`; it copies the factory patches
+into the bundle's `Resources/` directory as part of the package assembly.
+
+**Factory patches in macOS bundles.** `src/CMakeLists.txt` uses
+`juce_add_bundle_resources_directory` to embed the `factory-patches` staging
+directory into the VST3/AU `.component` bundles. At runtime the Standalone walks
+the bundle to locate the patches (via the macOS `CFBundleGetMainBundle`
+path-resolution path). The Windows and Linux builds still use the
+`install(FILES …)` path to drop patches into the app-data directory.
+
+Release artifacts (VST3 bundles, installers) upload on tag push; macOS code
+signing requires an Apple Developer certificate in GitHub Secrets — defer until
+a dedicated signing task.
 
 ---
 
@@ -480,6 +507,35 @@ git submodule add https://github.com/ValleyBell/libvgm.git third_party/libvgm
 # Initialize on a fresh clone:
 git submodule update --init --recursive
 ```
+
+---
+
+## Version bumping (`update-version.sh`)
+
+`update-version.sh` is a release helper at the repo root. It accepts a single
+version argument and rewrites every pinned version string in one pass:
+
+```bash
+./update-version.sh 0.3.0
+```
+
+Files it touches:
+- `CMakeLists.txt` — `project(GenVst VERSION …)`
+- `src/CMakeLists.txt` — `VERSION "…"` inside `juce_add_plugin`
+- `ui/package.json` + `ui/package-lock.json` — `"version": "…"`
+- Vite define for `__APP_VERSION__` in `vite.config.js` (if present)
+- About modal HTML fallback version string
+- `release.yml` dev-build fallback version
+
+After running the script, review the diff, commit it with a message like
+`chore: bump version to vX.Y.Z`, then push and tag:
+
+```bash
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+The `release.yml` `on: push: tags: ['v*']` trigger picks up the tag and
+publishes the release automatically.
 
 ---
 
