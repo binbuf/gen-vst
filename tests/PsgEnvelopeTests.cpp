@@ -213,6 +213,32 @@ TEST (PsgEnvelope, VelocitySensitivityScalesPeakAmplitude)
     EXPECT_NEAR (eng.channelAmplitude (0), 1.0f, 1.0e-6f);
 }
 
+// --- Noise channel activation (Audit Item #3) -------------------------------
+// Pins the engine-side noteOn/Off-Noise API used by the SQ note-range split in
+// PluginProcessor::handleNoteOn/Off. Before the fix `noteOnNoise` had zero
+// callers — the noise channel was unreachable via MIDI.
+TEST (SN76489Engine, NoteOnNoiseActivatesNoiseChannel)
+{
+    SN76489Engine eng;
+    eng.prepare (kSampleRate, kBlockSize);
+
+    EXPECT_FALSE (eng.isNoiseChannelActive());
+
+    eng.noteOnNoise (36, 100);
+
+    EXPECT_TRUE  (eng.isNoiseChannelActive());
+    EXPECT_EQ    (eng.noiseChannelNote(), 36);
+    // Tone channels should still be untouched — the split is INSTEAD-OF, not
+    // in-addition-to.
+    EXPECT_FALSE (eng.isToneChannelActive (0));
+    EXPECT_FALSE (eng.isToneChannelActive (1));
+    EXPECT_FALSE (eng.isToneChannelActive (2));
+
+    eng.noteOffNoise (36);
+
+    EXPECT_FALSE (eng.isNoiseChannelActive());
+}
+
 // --- Noise channel envelope -------------------------------------------------
 
 TEST (PsgEnvelope, NoiseChannelUsesEnvelopeToo)

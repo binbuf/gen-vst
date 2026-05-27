@@ -13,9 +13,9 @@
 // Implemented as a 512-entry lookup over the 9-bit DAC code space:
 // `idx = clamp(round(s * 256), -256, 255) + 256` then `out = table[idx]`.
 //
-// The initial curve is piecewise linear over both halves, with the documented
-// "8× gap" at the -1 → 0 DAC-code boundary left as a calibration follow-up
-// (see 07-feature-spec.md *Open Questions* #5).
+// The curve is piecewise linear over both halves, with the negative branch
+// shifted so DAC code -1 sits at -8/256 instead of -1/256. This realises the
+// YM2612's ~8× gap at the zero crossing per jsgroth's measurements.
 class LadderEffect
 {
 public:

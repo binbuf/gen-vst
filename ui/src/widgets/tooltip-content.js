@@ -284,6 +284,7 @@ Object.assign(TOOLTIPS, {
   psg_noise_type: { name: "NOISE TYPE", desc: "Noise generator mode — W (white, random LFSR) or P (periodic, short looping pattern)." },
   psg_noise_rate: { name: "NOISE RATE", desc: "Noise clock divider — L/M/H presets, or CH2 to track tone channel 2's frequency for tuned noise." },
   psg_noise_auto: { name: "NOISE AUTO", desc: "When on, the noise channel automatically follows tone channel 2's pitch (locked to RATE = CH2)." },
+  noise_split_note: { name: "NOISE SPLIT", desc: "MIDI note threshold — keys at or below the split route to noise; keys above route to the tone pool." },
 });
 
 // Helper used by each widget mount(): writes data-tip-name / data-tip-desc

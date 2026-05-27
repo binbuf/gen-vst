@@ -7,21 +7,24 @@ namespace
 {
     // Build the ladder lookup at process start. Computed once, then frozen.
     //
-    //   indices  0..255 → DAC codes -256..-1 → linear from -1.0 to -1/256
+    //   indices  0..255 → DAC codes -256..-1 → linear from -1.0 to -8/256
     //   index    256    → DAC code   0       → 0
     //   indices 257..511→ DAC codes +1..+255 → linear from +1/256 to +1.0
     //
-    // The "8× gap at the -1 → 0 boundary" documented in 02-fm-synthesis.md is
-    // not yet baked in; the calibration follow-up (07-feature-spec.md *Open
-    // Questions* #5) will retune the negative branch's upper end against the
-    // measured reference clips and re-run the test.
+    // The negative branch is shifted so the value at DAC code -1 is -8/256
+    // (≈ -0.03125) rather than -1/256, producing the YM2612's characteristic
+    // ~8× gap at the zero crossing (per jsgroth's "Emulating the YM2612 —
+    // Part 5"; see 02-fm-synthesis.md *Ladder Effect DSP*). The realised
+    // ratio at the boundary lands around 8.2× because of integer-rounding
+    // in the lookup, which is consistent with the measured hardware.
     std::array<float, LadderEffect::kTableSize> buildTable() noexcept
     {
         std::array<float, LadderEffect::kTableSize> t {};
 
-        // Negative branch — linear from -1.0 (idx 0) to -1/256 (idx 255).
+        // Negative branch — linear from -1.0 (idx 0) to -8/256 (idx 255).
+        // Inside step ≈ (1 − 8/256) / 255 ≈ 1/263 per code.
         constexpr float negStart = -1.0f;
-        constexpr float negEnd   = -1.0f / 256.0f;
+        constexpr float negEnd   = -8.0f / 256.0f;
         for (int i = 0; i < 256; ++i)
         {
             const float u = static_cast<float> (i) / 255.0f;

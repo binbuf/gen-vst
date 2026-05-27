@@ -242,6 +242,20 @@ private:
     void handleControlChange (int cc, int value);
     void handleChannelPressure (int value);
 
+    // MIDI Program Change handler. Called from the audio thread via
+    // dispatchMidi; defers the actual patch load to the message thread via
+    // juce::MessageManager::callAsync. PC selects the Nth tagged patch of
+    // the current mode in sorted order across all roots (07-feature-spec.md
+    // *Program Change*). PC NEVER switches modes (ADR-0025). D mode is a
+    // no-op (no preset format).
+    void handleProgramChange (int programNumber);
+
+    // Message-thread companion to handleProgramChange. Walks the patch
+    // browser's roots for tagged patches matching `mode`, sorts by name,
+    // and loads the `programNumber % poolSize`-th entry via
+    // loadPresetFromPath. No-op if the pool is empty.
+    void loadProgramChangePatch (Mode mode, int programNumber);
+
     juce::AudioProcessorValueTreeState apvts;
 
     // Cached raw pointers — all touched on the audio thread.
@@ -282,6 +296,10 @@ private:
     std::atomic<float>* psgNoiseTypeParam = nullptr;
     std::atomic<float>* psgNoiseRateParam = nullptr;
     std::atomic<float>* psgNoiseAutoParam = nullptr;
+    // Note-range split: MIDI notes <= this value route to the noise channel;
+    // notes > this value route to the tone pool. Default 47 (B2). Audit
+    // Item #3 fix — see 03-psg-synthesis.md "MIDI note dispatch".
+    std::atomic<float>* noiseSplitParam   = nullptr;
 
     FmParamCache         paramCache;
     VoiceAllocator       voiceAllocator;
@@ -311,6 +329,13 @@ private:
     // dispatch (handleChannelPressure); read once per FM render block to drive
     // the AFTERTOUCH routing (LFO PMS or Carrier TL) per Settings view 6.
     std::atomic<float> channelPressureNorm { 0.0f };
+
+    // CC 64 sustain pedal latch — written by handleControlChange (message or
+    // audio thread depending on MIDI source) and read by handleNoteOff on the
+    // audio thread. While true, note-offs flag voices as sustained instead of
+    // releasing; pedal-up (false) triggers releaseSustained for the held set.
+    // FM only — the SQ engine has no sustain hook (07-feature-spec.md MIDI CC).
+    std::atomic<bool> sustainPedalDown { false };
 
     // Task 09: per-mode active patch paths + factory-root path cache. Empty
     // string = "no preset has been loaded for this mode". Read by the manual

@@ -221,6 +221,15 @@ separate modes and never share an instance.
 - **Tone ch0–ch2:** Round-robin for 3-note polyphony. 4th note steals the oldest active tone channel (LRU).
 - **Noise ch3:** Monophonic, last-note priority. New note-on immediately updates noise registers and volume.
 
+**MIDI note dispatch (single-instance composite voice).** Within one SQ
+instance, incoming MIDI notes split between the 3 tone channels and the
+1 noise channel by a configurable note threshold (`noise_split_note`
+apvts param, default MIDI 47 = B2). Notes ≤ threshold route to noise
+(monophonic, last-note priority); notes > threshold route to the tone
+pool (round-robin LRU, polyphonic). This matches the chiptune-tracker
+convention of using the low end of the keyboard for percussion / noise
+hits while reserving the upper range for tone melodies.
+
 Portamento/glide on PSG: if requested, linearly interpolate N-value toward target N over a configurable number of samples. The hardware responds instantly to frequency register writes, so software-side interpolation is required.
 
 ---

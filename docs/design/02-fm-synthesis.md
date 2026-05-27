@@ -677,10 +677,10 @@ multiplication, no lookup.
 
 ## Output Filtering DSP
 
-The other half of ADR-0024 is the **Output Filter** — a model of the
-Sega Model-1 console's analog audio stage (RC low-pass + amp coloration
-+ DAC reconstruction characteristic). Applied at the **mix bus**, in all
-three modes (FM, SQ, D), before the master soft-clip.
+The other half of ADR-0024 is the **Output Filter** — a hand-tuned filter
+chain that approximates the Sega Model-1 console's analog audio stage
+character (RC low-pass + amp coloration). Applied at the **mix bus**, in
+all three modes (FM, SQ, D), before the master soft-clip.
 
 - **Topology.** One-pole RC low-pass at ≈3.4 kHz (−3 dB knee), followed
   by a light high-shelf to tame the upper midrange the way the Model-1

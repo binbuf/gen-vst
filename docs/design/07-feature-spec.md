@@ -113,11 +113,11 @@ both are replaced by the multi-instance + audio-FX D mode design above.
 
 ### MIDI (FM and SQ modes; D mode ignores MIDI)
 - [x] MIDI CC automation for all parameters (full map below) *(mvp2/05)*
-- [x] Sustain pedal (CC 64): hold voices through note-off *(mvp2/05)*
+- [x] Sustain pedal (CC 64): hold voices through note-off — **FM only**; SQ engine has no sustain hook so the pedal silently passes through in SQ mode *(mvp2/05)*
 - [x] All Sound Off (CC 120) *(mvp2/05)*
-- [ ] Reset All Controllers (CC 121) — *post-MVP; not wired in `handleControlChange`. MW + pitch-bend + sustain reset semantics not implemented; clients that need a clean controller reset use CC 120 (All Sound Off) which silences notes and resets PSG state.*
+- [x] Reset All Controllers (CC 121) — resets MW / pitch-bend mirrors and channel pressure to 0, releases sustain pedal, zeros active-voice bend. Does not reset apvts patch params (those persist as patch state).
 - [x] All Notes Off (CC 123) *(mvp2/05)*
-- [ ] Program Change: load the Nth patch of the **current mode** — *post-MVP; `PatchBrowser::factoryPatchByIndex` exists for the source-of-truth pool but `dispatchMidi` doesn't yet handle `juce::MidiMessage::isProgramChange`. Wiring it is a one-block change in PluginProcessor.cpp but needs a per-mode "current pool" cache to keep the audio thread allocation-free; deferred so it can land alongside a small dedicated task.*
+- [x] Program Change: load the Nth patch of the **current mode** (sorted across all roots; D mode ignored; mode never auto-switches — ADR-0025)
 - [x] Aftertouch (channel pressure): default LFO depth (PMS); off / carrier TL alternates *(mvp2/08)*
 
 ### SQ Features
@@ -128,6 +128,9 @@ both are replaced by the multi-instance + audio-FX D mode design above.
       block — see `08-ui-views.md` view 3. *(mvp2/06)*
 - [x] PSG velocity → attenuation mapping *(mvp2/06)*
 - [x] Per-PSG-channel soft panning (L/R gain) *(mvp2/06)*
+- [x] Noise channel MIDI routing — configurable note-range split
+      (`noise_split_note`, default MIDI 47 = B2). Notes ≤ split route
+      to noise; notes > split route to the tone pool.
 
 ### D Mode (PCM2612-style audio FX)
 - [x] Audio input bus on plugin *(mvp2/03)*
@@ -181,7 +184,7 @@ active mode are silently ignored.
 |----|-----------|---------------|-------|-------|
 | 1  | Mod Wheel → PMS (vibrato) | 0–7 | FM | Standard modwheel; also mirrored into `mod_wheel_value` apvts param for the GLOBAL IN MW wheel |
 | 7  | *(intentionally ignored)* | — | — | Not routed to `master_volume` — the VOL knob is a per-instance trim and the DAW track fader already covers host-side level. Forwarding CC 7 made VOL appear to drift under controller defaults / fader automation. Host parameter automation on `master_volume` is the supported path. |
-| 10 | Pan (L/R) | 0–127 | FM, SQ | Standard pan |
+| 10 | *(no-op in v2)* | — | — | No per-instance pan apvts exists in v2 MVP (per panel design); CC 10 is silently dropped in all modes. Per-channel SQ pan and a future FM pan control would be the right vehicle — deferred to post-MVP backlog. |
 | 14 | Algorithm (ALG) | 0–7 | FM | |
 | 15 | Feedback (FB) | 0–7 | FM | |
 | 16–19 | TL OP1–OP4 | 0–127 | FM | |
@@ -193,7 +196,7 @@ active mode are silently ignored.
 | 40–43 | RR OP1–OP4 | 0–15 | FM | |
 | 44–47 | SL OP1–OP4 | 0–15 | FM | |
 | 48–51 | KS OP1–OP4 | 0–3 | FM | |
-| 64 | Sustain Pedal | 0/127 | FM, SQ | Standard |
+| 64 | Sustain Pedal | 0/127 | FM | FM only — SQ engine has no sustain hold; sustain pedal CC silently passes through in SQ mode. |
 | 70 | LFO Enable | 0/127 | FM | |
 | 71 | LFO Rate | 0–7 | FM | |
 | 72 | AMS | 0–3 | FM | |
@@ -277,6 +280,8 @@ re-think of POLY voice allocation when one note grabs N voices.
 ---
 
 ## Program Change
+
+*Implemented 2026-05-27.*
 
 A Program Change message loads the Nth patch **of the currently active
 mode** in sorted order from the active mode's pool. Program-change
@@ -372,9 +377,9 @@ Most former open questions are now resolved by ADRs (see
 2. **Host quirks for instrument-with-audio-input** — Logic, Pro Tools,
    and some older hosts may need special handling for the audio input bus
    on what they classify as an instrument plugin. Verified in v2/02 task.
-3. **Ladder effect curve calibration** — the lookup table in
-   `src/LadderEffect.{h,cpp}` needs final calibration against measured
-   YM2612 reference clips during Task v2/08.
+3. **Ladder effect curve calibration** — *Resolved 2026-05-27* — negative
+   branch shifted to produce ~8× gap at zero crossing per jsgroth
+   measurements; see `src/LadderEffect.cpp`.
 
 Resolved during the post-mockup review (no longer open):
 - *Mono default*: `note_mode = RETRIG`; the LEGATO/RETRIG toggle on the FM

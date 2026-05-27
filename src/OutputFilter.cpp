@@ -5,10 +5,11 @@
 
 namespace
 {
-    // Model-1 calibration starting points (02-fm-synthesis.md *Output Filtering
-    // DSP*): -3 dB LPF knee at ~3.4 kHz, plus a light +0.5 dB high-shelf at
-    // ~5 kHz, Q ~0.6. Frozen by the spectrum test in OutputFilterTests.cpp; a
-    // later pass against measured Model-1 reference clips may retune them.
+    // Hand-tuned approximation of the Sega Model-1 audio stage character
+    // (02-fm-synthesis.md *Output Filtering DSP*): -3 dB LPF knee at ~3.4 kHz
+    // plus a light +0.5 dB high-shelf at ~5 kHz, Q ~0.6. Fixed for v2 — these
+    // are the intentional v2 coefficients, not a placeholder, and the spectrum
+    // test in OutputFilterTests.cpp pins them.
     constexpr float kLpfHz       = 3400.0f;
     constexpr float kShelfHz     = 5000.0f;
     constexpr float kShelfGainDb = 0.5f;

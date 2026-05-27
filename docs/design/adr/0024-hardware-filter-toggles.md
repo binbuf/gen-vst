@@ -92,8 +92,12 @@ The exact filter coefficients and ladder curve live in
   filter and ladder characteristic; the toggles do not need to be
   represented in the file.
 - Tests cover each stage in isolation: a known input through the filter
-  off → filter on → ladder off → ladder on combinations, with golden
-  spectra / waveforms checked against measured Model-1 reference clips.
+  off → filter on → ladder off → ladder on combinations. The Ladder
+  effect's golden waveform is checked against jsgroth's published
+  YM2612 ladder DAC measurements; the Output Filter's golden spectrum
+  pins the hand-tuned coefficients (which are an intentional Model-1
+  approximation, not a clip-by-clip calibration — see
+  `docs/design/02-fm-synthesis.md` *Output Filtering DSP*).
 
 ## Alternatives considered
 

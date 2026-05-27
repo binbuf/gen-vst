@@ -25,7 +25,18 @@ import { mount as mountKnob }       from "../widgets/knob.js";
 import { mount as mountSlider }     from "../widgets/slider.js";
 import { mount as mountEnvelope }   from "../widgets/envelope-curve.js";
 import { mount as mountMidiWheel }  from "../widgets/midi-wheel.js";
+import { mount as mountStepper }    from "../widgets/stepper.js";
 import { applyTooltip }             from "../widgets/tooltip-content.js";
+
+// MIDI note number -> short label (e.g. 47 -> "B2", 60 -> "C4"). Used by the
+// noise SPLIT stepper so the LCD reads as a note name rather than a raw int.
+// MIDI 0 = C-1 (a.k.a. octave-1 convention).
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function midiNoteName(n) {
+  const note   = NOTE_NAMES[n % 12];
+  const octave = Math.floor(n / 12) - 1;
+  return `${note}${octave}`;
+}
 
 const CHANNEL_SUFFIX = ["_ch1", "_ch2", "_ch3", "_noise"];
 const CHANNEL_LABEL  = ["Tone 1", "Tone 2", "Tone 3", "Noise"];
@@ -388,6 +399,23 @@ function makeChannelStrip(chIndex) {
     rateVal.appendChild(makePillCell("psg_noise_rate", ["L", "M", "H", "CH2"]));
     rateRow.appendChild(rateVal);
     extras.appendChild(rateRow);
+
+    // SPLIT stepper — the MIDI note threshold dispatched by
+    // PluginProcessor::handleNoteOn/Off (Audit Item #3). Keys ≤ split route
+    // to this noise channel; keys > split go to the tone pool. LCD shows
+    // the note name (e.g. "B2") so the user reads it in keyboard terms.
+    const splitRow = el("div", { className: "sq-bottom-row" });
+    splitRow.appendChild(el("span", { className: "label-col", text: "Split" }));
+    const splitVal = el("span", { className: "value-col" });
+    const splitHost = el("div");
+    splitVal.appendChild(splitHost);
+    mountStepper(splitHost, {
+      bind: bindSlider("noise_split_note"),
+      tipId: "noise_split_note",
+      formatter: midiNoteName,
+    });
+    splitRow.appendChild(splitVal);
+    extras.appendChild(splitRow);
 
     bottom.appendChild(extras);
   }

@@ -330,6 +330,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "psg_noise_auto", 1 }, "PSG Noise Auto", false));
 
+    // Note-range split: MIDI notes <= splitNote route to the noise channel
+    // (monophonic, last-note priority); notes > splitNote route to the tone
+    // pool (round-robin LRU, 3-voice). Default MIDI 47 (B2) matches the
+    // typical drum-zone position on a 61-key controller and aligns with
+    // chiptune-tracker conventions. Audit Item #3 fix — see
+    // `03-psg-synthesis.md` "MIDI note dispatch".
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "noise_split_note", 1 }, "Noise Split",
+        0, 127, 47));
+
     // --- D -------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "prescaler", 1 }, "Prescaler",
@@ -520,6 +530,7 @@ GenVstAudioProcessor::GenVstAudioProcessor()
     psgNoiseTypeParam = apvts.getRawParameterValue ("psg_noise_type");
     psgNoiseRateParam = apvts.getRawParameterValue ("psg_noise_rate");
     psgNoiseAutoParam = apvts.getRawParameterValue ("psg_noise_auto");
+    noiseSplitParam   = apvts.getRawParameterValue ("noise_split_note");
 
     // Task 09 — listen for `mode_select` changes to drive the default-load
     // on manual mode switches.
@@ -1133,6 +1144,79 @@ void GenVstAudioProcessor::dispatchMidi (const juce::MidiMessage& msg)
         handleChannelPressure (msg.getChannelPressureValue());
     else if (msg.isController())
         handleControlChange (msg.getControllerNumber(), msg.getControllerValue());
+    else if (msg.isProgramChange())
+        handleProgramChange (msg.getProgramChangeNumber());
+}
+
+void GenVstAudioProcessor::handleProgramChange (int programNumber)
+{
+    // 07-feature-spec.md *Program Change*: PC loads the Nth tagged patch of
+    // the **current mode**; it never flips mode (ADR-0025). D mode has no
+    // preset format — silently ignore.
+    const Mode mode = currentMode();
+    if (mode == Mode::D)
+        return;
+
+    // Patch loading parses files and writes apvts — both are message-thread
+    // operations (loadPresetFromPath → applyFmPatch/applyPsgPreset call
+    // setValueNotifyingHost). Snapshot the program number on the audio
+    // thread and defer the actual load to the message thread.
+    const int pn = juce::jlimit (0, 127, programNumber);
+    juce::MessageManager::callAsync ([this, mode, pn]
+    {
+        loadProgramChangePatch (mode, pn);
+    });
+}
+
+void GenVstAudioProcessor::loadProgramChangePatch (Mode mode, int programNumber)
+{
+    if (mode == Mode::D)
+        return;   // double-guard — handleProgramChange already filters.
+
+    const Tag targetTag = (mode == Mode::SQ) ? Tag::SQ : Tag::FM;
+
+    // Same enumeration shape as patchNavigate(): walk every root, collect
+    // patches matching the target tag, resolve any leftover Pending `.dmp`
+    // entries via tagFromFile, sort by name for a reproducible Nth-of-pool
+    // mapping across runs.
+    struct Entry { juce::String name; juce::String path; };
+    std::vector<Entry> entries;
+    for (const auto& root : patchBrowser.roots())
+    {
+        if (root == nullptr || root->folder == nullptr) continue;
+        std::function<void (const genvst::PatchFolder&)> walk;
+        walk = [&] (const genvst::PatchFolder& f)
+        {
+            for (const auto& p : f.patches)
+            {
+                Tag effective = p.tag;
+                if (effective == Tag::Pending)
+                {
+                    const std::filesystem::path fsP { p.path.toRawUTF8() };
+                    const auto t = tagFromFile (fsP);
+                    if (! t.has_value()) continue;
+                    effective = *t;
+                }
+                if (effective == targetTag) entries.push_back ({ p.name, p.path });
+            }
+            for (const auto& sub : f.subfolders)
+                if (sub != nullptr)
+                    walk (*sub);
+        };
+        walk (*root->folder);
+    }
+
+    if (entries.empty())
+        return;   // no preset pool for this mode — silently no-op.
+
+    std::sort (entries.begin(), entries.end(),
+               [] (const Entry& a, const Entry& b)
+               { return a.name.compareIgnoreCase (b.name) < 0; });
+
+    // PC values past the pool size wrap (so a 12-patch pool still picks
+    // something reasonable for PC 64). Pool is guaranteed non-empty above.
+    const int idx = programNumber % static_cast<int> (entries.size());
+    loadPresetFromPath (entries[(std::size_t) idx].path);
 }
 
 void GenVstAudioProcessor::handleChannelPressure (int value)
@@ -1187,10 +1271,22 @@ void GenVstAudioProcessor::handleNoteOn (int note, int velocity)
             break;
         }
         case Mode::SQ:
-            psgEngine.noteOnTone (note, velocity);
+        {
+            // Note-range split: notes <= splitNote go to the noise channel
+            // (monophonic), notes > splitNote go to the tone pool (poly).
+            // Matches the chiptune-tracker convention of low keys = noise.
+            // Audit Item #3 fix — see 03-psg-synthesis.md "MIDI note dispatch".
+            const int splitNote = noiseSplitParam != nullptr
+                                    ? juce::jlimit (0, 127, juce::roundToInt (noiseSplitParam->load()))
+                                    : 47;
+            if (note <= splitNote)
+                psgEngine.noteOnNoise (note, velocity);
+            else
+                psgEngine.noteOnTone (note, velocity);
             telemetry.setNoteOn (true);
             telemetry.setNoteActive (note, true);
             break;
+        }
         case Mode::D:
             // D mode has no note triggering.
             break;
@@ -1203,15 +1299,28 @@ void GenVstAudioProcessor::handleNoteOff (int note)
     switch (mode)
     {
         case Mode::FM:
-            voiceAllocator.noteOff (0, note, /*sustainHeld*/ false);
+            voiceAllocator.noteOff (0, note,
+                                    sustainPedalDown.load (std::memory_order_relaxed));
             telemetry.setNoteOn (voiceAllocator.numActiveVoices() > 0);
             telemetry.setNoteActive (note, false);
             break;
         case Mode::SQ:
-            psgEngine.noteOffTone (note);
+        {
+            // Mirror the note-range split from handleNoteOn so the right
+            // channel sees the note-off. The pre-fix `setNoteOn(false)` is
+            // overly aggressive (it ignores other still-held voices); kept
+            // as-is to match existing SQ behaviour.
+            const int splitNote = noiseSplitParam != nullptr
+                                    ? juce::jlimit (0, 127, juce::roundToInt (noiseSplitParam->load()))
+                                    : 47;
+            if (note <= splitNote)
+                psgEngine.noteOffNoise (note);
+            else
+                psgEngine.noteOffTone (note);
             telemetry.setNoteOn (false);
             telemetry.setNoteActive (note, false);
             break;
+        }
         case Mode::D:
             break;
     }
@@ -1296,15 +1405,17 @@ void GenVstAudioProcessor::handleControlChange (int cc, int value)
     // CC 10 — pan; mapped to D-mode mono toggle off / centered for now — no
     // dedicated FM/SQ pan apvts in v2 MVP (per panel design). Silent skip.
 
-    // CC 64 — sustain pedal. >=64 holds; <64 releases. FM only — SQ ignores.
+    // CC 64 — sustain pedal. >=64 holds; <64 releases. FM only — SQ ignores
+    // (SN76489Engine has no sustain hook; the pedal silently passes through
+    // in SQ mode). Latch pedal state into sustainPedalDown so subsequent
+    // note-offs in handleNoteOff route through Voice::markSustained instead
+    // of immediate release; on pedal-up flush every voice currently sustained
+    // via VoiceAllocator::releaseSustained.
     if (cc == 64)
     {
-        // Sustain pedal handling is wired by the noteOff path's sustainHeld
-        // flag, but the per-voice markSustained/clearSustained transition is
-        // governed here. The v1 path tracked this via a per-part flag in
-        // PluginProcessor; for v2 MVP we forward to allocator's
-        // releaseSustained on pedal-up.
-        if (value < 64)
+        const bool pedalDown = value >= 64;
+        sustainPedalDown.store (pedalDown, std::memory_order_relaxed);
+        if (! pedalDown)
             voiceAllocator.releaseSustained (0);
         return;
     }
@@ -1332,6 +1443,42 @@ void GenVstAudioProcessor::handleControlChange (int cc, int value)
     if (cc == 90)
     {
         setParamNorm ("fm_dac_prescaler", norm127);
+        return;
+    }
+
+    // CC 121 — Reset All Controllers. Snap live controller state back to
+    // defaults: mod wheel 0, pitch bend center, channel pressure 0, sustain
+    // pedal up. apvts patch parameters are NOT reset — they're the patch,
+    // not controller state.
+    if (cc == 121)
+    {
+        if (modWheelMirrorParam != nullptr)
+            modWheelMirrorParam->store (0.0f, std::memory_order_relaxed);
+        if (pitchBendMirrorParam != nullptr)
+            pitchBendMirrorParam->store (0.0f, std::memory_order_relaxed);
+        channelPressureNorm.store (0.0f, std::memory_order_relaxed);
+
+        // Pedal up + release any held sustained voices (FM only; SQ has no
+        // sustain hook — see Item #2 of the audit).
+        sustainPedalDown.store (false, std::memory_order_relaxed);
+        voiceAllocator.releaseSustained (0);
+
+        // Zero the pitch bend on active FM voices so the next render block
+        // doesn't keep applying the previous bend amount. Per-block bend
+        // re-application in renderFmBlock will read the now-zero mirror and
+        // confirm it. SQ does the same via the per-block setPitchBendSemitones.
+        if (currentMode() == Mode::FM)
+        {
+            paramCache.readPatch (currentPatch);
+            const bool velToTl = velocityToTlParam != nullptr
+                                   && velocityToTlParam->load() > 0.5f;
+            voiceAllocator.setPitchBend (0, 0.0, currentPatch, velToTl);
+        }
+        else if (currentMode() == Mode::SQ)
+        {
+            for (int t = 0; t < kPsgTones; ++t)
+                psgEngine.setPitchBendSemitones (t, 0.0);
+        }
         return;
     }
 

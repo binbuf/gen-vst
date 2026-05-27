@@ -154,6 +154,72 @@ TEST (VoiceAllocator, AllSoundOffFreesEveryVoice)
     EXPECT_EQ (alloc.numIdleVoices(), VoiceAllocator::kNumVoices);
 }
 
+// --- Sustain pedal (CC 64) --------------------------------------------------
+
+TEST (VoiceAllocator, SustainHeldNoteOffKeepsVoiceActiveAndSustained)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.noteOn (0, 60, 100, 0.0, false, makePatch());
+    ASSERT_EQ (alloc.numActiveVoices(), 1);
+
+    // Pedal-down note-off: the voice must remain Active (not Released) and
+    // be flagged sustained so the pedal-up flush picks it up.
+    alloc.noteOff (0, 60, /*sustainHeld*/ true);
+
+    EXPECT_EQ (alloc.numActiveVoices(), 1);
+    EXPECT_EQ (alloc.numReleasingVoices(), 0);
+    EXPECT_TRUE (alloc.isNoteActive (0, 60));
+
+    bool foundSustained = false;
+    for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+    {
+        const auto& v = alloc.voiceAt (i);
+        if (v.isActive() && v.part() == 0 && v.note() == 60)
+        {
+            EXPECT_TRUE (v.isSustained());
+            foundSustained = true;
+        }
+    }
+    EXPECT_TRUE (foundSustained);
+}
+
+TEST (VoiceAllocator, ReleaseSustainedFreesSustainedVoiceAfterPedalUp)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.noteOn (0, 60, 100, 0.0, false, makePatch());
+    alloc.noteOff (0, 60, /*sustainHeld*/ true);
+    ASSERT_EQ (alloc.numActiveVoices(), 1);   // still sustained
+
+    // Pedal-up: every sustained voice on this part transitions to Released.
+    alloc.releaseSustained (0);
+
+    EXPECT_EQ (alloc.numActiveVoices(), 0);
+    EXPECT_EQ (alloc.numReleasingVoices(), 1);
+}
+
+TEST (VoiceAllocator, ReleaseSustainedLeavesNonSustainedVoicesUntouched)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    const Patch p = makePatch();
+
+    // Two notes: one sustained via pedal, one still genuinely held.
+    alloc.noteOn (0, 60, 100, 0.0, false, p);
+    alloc.noteOn (0, 64, 100, 0.0, false, p);
+    alloc.noteOff (0, 60, /*sustainHeld*/ true);   // sustained
+    ASSERT_EQ (alloc.numActiveVoices(), 2);
+
+    alloc.releaseSustained (0);
+
+    // Only the sustained voice released; the truly-held note continues.
+    EXPECT_EQ (alloc.numActiveVoices(), 1);
+    EXPECT_EQ (alloc.numReleasingVoices(), 1);
+    EXPECT_TRUE  (alloc.isNoteActive (0, 64));
+    EXPECT_FALSE (alloc.isNoteActive (0, 60));
+}
+
 // --- Dirty-diff parameter updates -------------------------------------------
 
 TEST (VoiceAllocator, UpdateActiveVoicesAppliesParamEditsWithoutRetrigger)

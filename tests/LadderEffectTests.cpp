@@ -6,12 +6,12 @@
 
 #include "LadderEffect.h"
 
-// Task 03 — YM2612 ladder DAC stepwise nonlinearity. The initial curve in
-// LadderEffect.cpp is plain piecewise linear over both halves of the DAC
-// code space; the "8x gap" calibration is a documented follow-up
-// (07-feature-spec.md *Open Questions* #5). These tests pin the four
-// endpoint pinch points the design doc names + monotonicity + bypass identity
-// so the calibration pass can't silently break the shape.
+// Task 03 — YM2612 ladder DAC stepwise nonlinearity. The curve in
+// LadderEffect.cpp is piecewise linear over both halves of the DAC code
+// space, with the negative branch shifted to realise the ~8× gap at the
+// zero crossing per jsgroth's hardware measurements. These tests pin the
+// four endpoint pinch points the design doc names + monotonicity +
+// bypass identity so the calibrated shape can't silently regress.
 
 // --- Endpoint pinch points -------------------------------------------------
 
@@ -20,7 +20,7 @@ TEST (LadderEffect, PinchPointsMatchPublishedCurveEndpoints)
     constexpr float oneOver256 = 1.0f / 256.0f;
 
     EXPECT_FLOAT_EQ (LadderEffect::lookup (-1.0f),         -1.0f);
-    EXPECT_NEAR     (LadderEffect::lookup (-oneOver256),   -oneOver256, 1.0e-5f);
+    EXPECT_NEAR     (LadderEffect::lookup (-oneOver256),   -8.0f * oneOver256, 1.0e-5f);
     EXPECT_FLOAT_EQ (LadderEffect::lookup ( 0.0f),          0.0f);
     EXPECT_NEAR     (LadderEffect::lookup ( oneOver256),    oneOver256, 1.0e-5f);
     EXPECT_FLOAT_EQ (LadderEffect::lookup ( 1.0f),          1.0f);
@@ -40,13 +40,14 @@ TEST (LadderEffect, TableIsMonotonicNonDecreasing)
         EXPECT_GE (t[i], t[i - 1]) << "non-monotone at index " << i;
 }
 
-// --- Boundary gap relationship (relaxed) -----------------------------------
+// --- Boundary gap relationship (calibrated) --------------------------------
 //
 // The design doc cites an "8x gap exactly at the -1 -> 0 boundary" measured
-// in jsgroth's article. The committed linear curve doesn't realise that yet;
-// the gap ratio is currently 1. This test guards monotonicity at the
-// boundary and pins the lookup's known step there, so the calibration pass
-// in Task 08 can tighten the assertion in a single deliberate edit.
+// in jsgroth's article. With the negative branch shifted so DAC code -1
+// sits at -8/256, the realised ratio lands around 8.2× (integer rounding
+// inside the lookup nudges it slightly off a pure 8.0). Bound the ratio
+// to [6, 10] so a regression in either direction (drifting back toward 1
+// or over-amplifying past hardware) trips the test.
 
 TEST (LadderEffect, ZeroCrossingGapIsMonotonicAndPositive)
 {
@@ -59,10 +60,9 @@ TEST (LadderEffect, ZeroCrossingGapIsMonotonicAndPositive)
 
     EXPECT_GT (gap_in,   0.0f);
     EXPECT_GT (gap_edge, 0.0f);
-    // Ratio is 1.0 on the committed linear curve; the calibration pass will
-    // raise this to ~8. Asserting >= 1 catches any regression where the
-    // negative branch over-shoots into the positive half.
-    EXPECT_GE (gap_edge / gap_in, 1.0f);
+    // Calibrated ~8.2× gap at the zero crossing.
+    EXPECT_GE (gap_edge / gap_in,  6.0f);
+    EXPECT_LE (gap_edge / gap_in, 10.0f);
 }
 
 // --- Bypass produces identity ----------------------------------------------
