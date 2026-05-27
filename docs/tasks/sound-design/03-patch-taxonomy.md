@@ -1,4 +1,4 @@
-# Task 02 — Subfolder taxonomy + CMake staging + browser verification
+# Task 03 — Subfolder taxonomy + CMake staging + browser verification
 
 > **Milestone:** Patch tree is navigable — factory patches are organised
 > by category in the browser, the bundle layout reflects the same
@@ -155,7 +155,7 @@ suggests most strongly.
 > and `guitar.tfi` are arguably their own category, but a 7-folder tree
 > is enough granularity for ~50 files; deeper splits add navigation
 > cost without saving search effort. Stick to the seven FM categories
-> listed unless a Task 03 / Task 04 audit changes the count.
+> listed unless a Task 04 / Task 05 audit changes the count.
 
 **SQ tree** (`extern/patches/sq/`):
 
@@ -273,8 +273,8 @@ suggests most strongly.
 ## Out of scope
 
 - Adding any new patches. This task only **moves** existing files and
-  updates the build / scan paths. Task 03 authors new FM patches into
-  the new structure; Task 04 bundles additional community packs.
+  updates the build / scan paths. Task 04 authors new FM patches into
+  the new structure; Task 05 bundles additional community packs.
 - Deeper subfolders (`fm/bass/distortion/`, etc.). The taxonomy is
   exactly two levels deep; deeper splits are a follow-up if the
   patch count grows enough to warrant them.

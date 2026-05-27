@@ -53,34 +53,33 @@ Same conventions as `mvp2/README.md`:
 
 | After task | Milestone | What changes for the user |
 |-----------|-----------|---------------------------|
-| 01 | **SQ feels musical** | The 12 factory `.psg` presets have real ADSR shapes, idiomatic chorus detunes, and multi-channel patches that actually use multiple channels — flipping through the SQ bank reveals 12 distinct, useful sounds |
-| 02 | **Patch tree is navigable** | Factory patches are organised by category (`bass/`, `lead/`, `keys/`, `brass/`, `pad/`, `drums/`, `fx/`) for FM and (`lead/`, `bass/`, `perc/`, `fx/`) for SQ; the browser tree reflects this; CMake stages the new layout into the bundle |
-| 03 | **FM feels like Genesis** | ~40 original FM patches authored in the Genesis idiom (slap bass, brass stab, sine bell lead, FM piano, breath sax, kick/snare/hat, pads) ship alongside the Furnace `tfilib` set; users hear recognisable 16-bit sounds the moment they cycle through the factory bank |
-| 04 | **Bank breadth** | One or more additional GPL / CC-licensed community FM banks ship as named, attributed subfolders, giving users hundreds of additional patches with clean provenance |
-| 05 | **Game-original path is discoverable** | The patch browser's empty state, the About dialog, and the README all point users at `vgmrips.net` and the **Import Bank** button as the lawful way to extract patches from any Genesis game's audio |
+| 01 | **Generation tool ready** | `tools/patch-gen/` script can generate all FM and SQ patches via Claude API; dry-run works without API key |
+| 02 | **SQ feels musical** | The 12 factory `.psg` presets have real ADSR shapes, idiomatic chorus detunes, and multi-channel patches that actually use multiple channels — flipping through the SQ bank reveals 12 distinct, useful sounds |
+| 03 | **Patch tree is navigable** | Factory patches are organised by category (`bass/`, `lead/`, `keys/`, `brass/`, `pad/`, `drums/`, `fx/`) for FM and (`lead/`, `bass/`, `perc/`, `fx/`) for SQ; the browser tree reflects this; CMake stages the new layout into the bundle |
+| 04 | **FM feels like Genesis** | ~40 original FM patches authored in the Genesis idiom (slap bass, brass stab, sine bell lead, FM piano, breath sax, kick/snare/hat, pads) ship alongside the Furnace `tfilib` set; users hear recognisable 16-bit sounds the moment they cycle through the factory bank |
+| 05 | **Bank breadth** | One or more additional GPL / CC-licensed community FM banks ship as named, attributed subfolders, giving users hundreds of additional patches with clean provenance |
+| 06 | **Game-original path is discoverable** | The patch browser's empty state, the About dialog, and the README all point users at `vgmrips.net` and the **Import Bank** button as the lawful way to extract patches from any Genesis game's audio |
 
 ## Task index
 
 | # | Task | Delivers | Depends on |
 |---|------|----------|-----------|
-| 01 | [Re-tune the 12 factory SQ presets](01-sq-preset-retune.md) | SQ feels musical | — (mvp2/10 ships the 12 stubs) |
-| 02 | [Subfolder taxonomy + CMake staging + browser verification](02-patch-taxonomy.md) | Patch tree is navigable | mvp2/09 (browser is live) |
-| 03 | [Original Genesis-idiom FM bank (~40 patches)](03-fm-original-bank.md) | FM feels like Genesis | 02 |
-| 04 | [Bundle additional GPL / CC community FM banks](04-gpl-community-packs.md) | Bank breadth | 02 |
-| 05 | [VGM Import discoverability](05-vgm-import-discoverability.md) | Game-original path is discoverable | mvp2/09 |
+| 01 | [LLM patch generation pipeline](01-llm-patch-pipeline.md) | Generation tool ready | — |
+| 02 | [Re-tune the 12 factory SQ presets](02-sq-preset-retune.md) | SQ feels musical | 01 (use pipeline to generate) |
+| 03 | [Subfolder taxonomy + CMake staging + browser verification](03-patch-taxonomy.md) | Patch tree is navigable | mvp2/09 (browser is live) |
+| 04 | [Original Genesis-idiom FM bank (~40 patches)](04-fm-original-bank.md) | FM feels like Genesis | 01, 03 |
+| 05 | [Bundle additional GPL / CC community FM banks](05-gpl-community-packs.md) | Bank breadth | 03 |
+| 06 | [VGM Import discoverability](06-vgm-import-discoverability.md) | Game-original path is discoverable | mvp2/09 |
 
 Sequencing notes:
 
-- `01` has no dependencies on this chain and ships standalone value;
-  do it first.
-- `02` is the structural prerequisite for `03` and `04` — the new
-  patches go into subfolders that don't exist yet. Doing `02` first
-  also lets `01` move the 12 `.psg` files into `sq/lead/`, `sq/bass/`,
-  `sq/perc/`, `sq/fx/` in the same pass if convenient (but it's not a
-  hard dependency; flat `sq/` works fine for the 12 files alone).
-- `03` and `04` can run in either order or in parallel — they touch
+- `01` sets up the generation tool; run it first. `02` can use it immediately
+  (SQ output goes into the existing flat `sq/` dir, no taxonomy needed).
+- `03` is the structural prerequisite for `04` and `05` — FM patches go into
+  subfolders that don't exist until `03` runs.
+- `04` and `05` can run in either order or in parallel after `03` — they touch
   different subfolders.
-- `05` is independent UI/copy work and can land any time after `02`
+- `06` is independent UI/copy work and can land any time after `03`
   (so the empty-state hint appears in the reorganised browser).
 
 ## Task file structure

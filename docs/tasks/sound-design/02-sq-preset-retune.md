@@ -1,4 +1,4 @@
-# Task 01 — Re-tune the 12 factory SQ presets
+# Task 02 — Re-tune the 12 factory SQ presets
 
 > **Milestone:** SQ feels musical — flipping through the factory `.psg`
 > bank produces 12 distinct, useful sounds, not 12 minor variations on

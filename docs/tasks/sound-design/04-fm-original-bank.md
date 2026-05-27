@@ -1,10 +1,10 @@
-# Task 03 — Original Genesis-idiom FM bank
+# Task 04 — Original Genesis-idiom FM bank
 
 > **Milestone:** FM feels like Genesis — when a user cycles through the
 > factory FM bank they hear recognisable 16-bit timbres (slap bass,
 > sine bell lead, FM piano, brass stab, breath sax, kick/snare/hat),
 > not a generic OPN library.
-> **Depends on:** `02-patch-taxonomy.md` (the `fm/<category>/` folders
+> **Depends on:** `03-patch-taxonomy.md` (the `fm/<category>/` folders
 > exist; `factoryPatches` enumerates recursively).
 > **Design references:** `docs/design/02-fm-synthesis.md` (operator
 > algorithms, envelope semantics, register ranges),
@@ -14,7 +14,7 @@
 ## Objective
 
 Ship ~40 original FM patches authored in the Genesis idiom, organised
-into the seven `fm/<category>/` folders from Task 02. Patches are
+into the seven `fm/<category>/` folders from Task 03. Patches are
 **original works** authored from scratch — no values copied from game
 ROMs, SMPS drivers, or any copyrighted source — named generically.
 Distributed file format is `.tfi` (primary) with `.vgi` for patches
@@ -211,7 +211,7 @@ original work under the project's GPLv3 copyright.
 
 ### No code changes
 
-- No edits to loaders, browser, CMake, or tests. Task 02's CMake
+- No edits to loaders, browser, CMake, or tests. Task 03's CMake
   recursive glob picks up the new files automatically; the browser
   enumerates them automatically; existing loader tests still pass
   because the loaders are unchanged.
@@ -221,7 +221,7 @@ original work under the project's GPLv3 copyright.
 - A new patch format for v2-native FM features (`freq_ctrl_mode`,
   `vel[]`, `channel_tl`, `fm_dac_prescaler`). Listed in
   `README.md` *Out of scope for this chain* — needs an ADR.
-- Authoring SQ patches (handled by Task 01's re-tune + the existing
+- Authoring SQ patches (handled by Task 02's re-tune + the existing
   `mvp2/10` set).
 - Retiring or replacing Furnace `tfilib` files. They stay as the
   GPL-attributed community bank; this task adds an *additional*
@@ -232,7 +232,7 @@ original work under the project's GPLv3 copyright.
 
 ## Implementation steps
 
-1. **Verify dependency.** Confirm Task 02 has shipped: the
+1. **Verify dependency.** Confirm Task 03 has shipped: the
    `extern/patches/fm/<seven categories>/` folders exist, the
    CMake glob walks them recursively, the browser shows the
    category tree.
@@ -266,7 +266,7 @@ original work under the project's GPLv3 copyright.
 - ~40 new `.tfi` and `.vgi` files under
   `extern/patches/fm/<seven categories>/`. Exact count is the sum
   of the per-category targets above (6 + 7 + 6 + 5 + 5 + 7 + 4 = 40).
-- No new code, no CMake changes, no test changes (Task 02 prepared
+- No new code, no CMake changes, no test changes (Task 03 prepared
   the build/scan path; new files are automatically picked up).
 - Commit history: one commit per patch (or per logical pair, e.g.,
   `kick-tight.tfi` + `kick-deep.tfi`).

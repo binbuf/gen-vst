@@ -1,10 +1,10 @@
-# Task 04 — Bundle additional GPL / CC community FM banks
+# Task 05 — Bundle additional GPL / CC community FM banks
 
 > **Milestone:** Bank breadth — one or more additional community FM
 > banks ship as named, attributed subfolders alongside the Furnace
-> `tfilib` set and the Task 03 originals, giving users hundreds of
+> `tfilib` set and the Task 04 originals, giving users hundreds of
 > additional patches with clean provenance.
-> **Depends on:** `02-patch-taxonomy.md` (the `fm/<category>/`
+> **Depends on:** `03-patch-taxonomy.md` (the `fm/<category>/`
 > structure exists; the CMake glob is recursive; the browser shows
 > nested folders).
 > **Design references:** `docs/design/04-patch-system.md`
@@ -49,7 +49,7 @@ Read in full before authoring. The two prohibitions:
    exposure, not a license question. It applies regardless of how
    permissive the upstream license is.
 2. **Recursive glob danger** — earlier builds risked enumerating the
-   gitignored `extra/` set; Task 02 already resolved this by scoping
+   gitignored `extra/` set; Task 03 already resolved this by scoping
    the recursive glob to `extern/patches/fm/` and `extern/patches/sq/`.
 
 What ADR-0004 *does not* prohibit:
@@ -128,7 +128,7 @@ Three placement options; pick per the audited bank's structure:
 
 **Option A — `fm/community/<bank-name>/<category>/`**: if the bank
 is large enough to warrant its own root (e.g., ~150+ patches).
-Mirrors how the Task 03 originals live alongside the Furnace
+Mirrors how the Task 04 originals live alongside the Furnace
 `tfilib` set, but in a `community/` namespace so the source is
 visible in the tree.
 
@@ -196,7 +196,7 @@ bank:
 The audited bank(s) committed under `extern/patches/fm/community/<name>/`
 (or whichever option from *Where the new bank lives* was chosen),
 preserving the bank's own internal structure if it has one.
-Re-categorise into the Task 02 taxonomy only if the bank lacks any
+Re-categorise into the Task 03 taxonomy only if the bank lacks any
 internal organisation; do not re-categorise an already-organised
 pack (the upstream structure is part of its identity).
 
@@ -223,11 +223,11 @@ shape, write it. If a note suffices, write it.
 
 ## Out of scope
 
-- Authoring new patches. Task 03 does the original-author work; this
+- Authoring new patches. Task 04 does the original-author work; this
   task only vendors externally-authored content.
 - Bundling Y12 / SMPS-extracted patches. ADR-0004 forbids these
   regardless of upstream license; the user's path to game-original
-  timbres remains VGM import (Task 05).
+  timbres remains VGM import (Task 06).
 - Bundling banks under ambiguous or unspecified licenses. If the
   audit can't pin down the license, the bank is rejected. Don't
   attempt to "infer" a public-domain status from the absence of a
@@ -257,7 +257,7 @@ shape, write it. If a note suffices, write it.
    alongside. If the bank's upstream has a clear version tag,
    capture the version in a `VERSION` file in the bank's folder.
 5. **Update CMake** — verify (don't change) that the existing
-   recursive `FACTORY_FM` glob from Task 02 picks up the new files.
+   recursive `FACTORY_FM` glob from Task 03 picks up the new files.
    If the implementer chose a placement that the glob doesn't cover
    (e.g., a top-level non-`fm/` location), update the glob. (Default
    placement under `fm/community/` is already covered.)

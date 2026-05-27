@@ -1,4 +1,4 @@
-# Task 05 — VGM Import discoverability
+# Task 06 — VGM Import discoverability
 
 > **Milestone:** Game-original path is discoverable — users learn that
 > they can extract patches from any Genesis game's audio via the
