@@ -16,6 +16,20 @@ namespace
     // deliberate starting point — final headroom tuning is a later task
     // (01-architecture.md "Render Pipeline").
     constexpr float kSampleScale = 0.5f / 32768.0f;
+
+    // Consecutive native-rate samples required below kAutoIdleAmplitude before a
+    // Released voice auto-idles (~4.8 ms at 53267 Hz).
+    constexpr int kAutoIdleThreshold = 256;
+
+    // Per-chip output magnitude below which a sample is treated as silent for
+    // auto-idle purposes. ym2612::generate() applies a per-channel
+    // dac_discontinuity bias (+4 for FM output == 0) then scales the 6-channel
+    // sum: (sum * 128) * 64 / (6 * 65). With all six channels producing zero FM
+    // output the steady-state value is (6*4 * 8192) / 390 = 504. A threshold
+    // of 512 sits just above this constant (504 < 512) while remaining well
+    // below the ~588 floor of the smallest detectable FM signal (single-unit
+    // output per carrier × 4 carriers + bias → data[0] ≈ 588).
+    constexpr int32_t kAutoIdleAmplitude = 512;
 }
 
 Voice::Voice()
@@ -39,6 +53,7 @@ void Voice::reset()
     glideTargetMidi         = 0.0;
     glideRateNotesPerSample = 0.0;
     freqCtrlMode            = FreqCtrlMode::IntMul;
+    silentNativeSamples     = 0;
 }
 
 std::uint32_t Voice::nativeSampleRate()
@@ -250,8 +265,9 @@ void Voice::noteOff()
             break;
         }
     }
-    voiceState = State::Released;
-    sustained  = false;
+    voiceState          = State::Released;
+    sustained           = false;
+    silentNativeSamples = 0;
 }
 
 void Voice::updateRegisters (const Patch& patch, bool velToTl)
@@ -314,6 +330,24 @@ void Voice::renderAdd (float* accumL, float* accumR, int numSamples)
     for (int i = 0; i < numSamples; ++i)
     {
         chip.generate (&sample, 1);
+
+        if (voiceState == State::Released)
+        {
+            if (std::abs (sample.data[0]) < kAutoIdleAmplitude
+                    && std::abs (sample.data[1]) < kAutoIdleAmplitude)
+            {
+                if (++silentNativeSamples >= kAutoIdleThreshold)
+                {
+                    voiceState = State::Idle;
+                    return;
+                }
+            }
+            else
+            {
+                silentNativeSamples = 0;
+            }
+        }
+
         accumL[i] += static_cast<float> (sample.data[0]) * kSampleScale;
         accumR[i] += static_cast<float> (sample.data[1]) * kSampleScale;
     }

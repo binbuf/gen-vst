@@ -183,4 +183,9 @@ private:
     // Task 29 — VGM logger pointer (owned by PluginProcessor). Set once at
     // prepare time; read by writeReg on every chip write. nullptr-safe.
     VgmLogger* vgmLogger = nullptr;
+
+    // Consecutive native-rate samples of exactly-zero ymfm output while in
+    // Released state. Reaches kAutoIdleThreshold → voice auto-idles, stopping
+    // the chip tick that would otherwise feed hiss into the LadderEffect.
+    int silentNativeSamples = 0;
 };

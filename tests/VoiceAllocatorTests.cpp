@@ -516,3 +516,26 @@ TEST (VoiceAllocator, UnisonPitchBendKeepsStackCoherent)
     }
     EXPECT_EQ (activeCount, 4);
 }
+
+// --- Auto-idle after release decay ------------------------------------------
+
+TEST (VoiceAllocator, ReleasedVoiceAutoIdlesAfterEnvelopeDecays)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+    alloc.noteOn (0, 64, 100, 0.0, false, makePatch());   // fast-release patch
+    alloc.noteOff (0, 64, false);
+
+    EXPECT_EQ (alloc.numReleasingVoices(), 1);
+    EXPECT_TRUE (alloc.hasAudibleVoice());
+
+    // Render enough host-rate samples for the release envelope to fully decay
+    // (fast RR=15 patch decays in < 3 ms; 10 000 samples at 44100 Hz ≈ 227 ms).
+    std::array<float, 512> outL {}, outR {};
+    for (int block = 0; block < 20; ++block)
+        alloc.render (outL.data(), outR.data(), 512);
+
+    EXPECT_EQ (alloc.numReleasingVoices(), 0);
+    EXPECT_EQ (alloc.numIdleVoices(), VoiceAllocator::kNumVoices);
+    EXPECT_FALSE (alloc.hasAudibleVoice());
+}
