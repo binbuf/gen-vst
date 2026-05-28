@@ -73,11 +73,14 @@ cd gen-vst
 ### Windows
 
 ```powershell
-.\build.ps1                 # debug build, deploy to per-user VST3 folder
-.\build.ps1 --release       # release build
-.\build.ps1 --run           # build + launch Standalone
-.\build.ps1 --system        # deploy to system VST3 folder (UAC prompt)
-.\build.ps1 --clean         # wipe build/ first
+.\build.ps1                      # debug build, deploy to per-user VST3 folder (local dev default)
+.\build.ps1 -Release             # release build
+.\build.ps1 -Run                 # build + launch Standalone for a quick smoke-test
+.\build.ps1 -Clean               # wipe build/ first — use after CMakeLists changes or weird build failures
+.\build.ps1 -System              # deploy to system-wide VST3 folder, same location the installer uses (UAC prompt)
+.\build.ps1 -Uninstall           # undo dev deploy: remove per-user plugin + patches (e.g. before running the real installer)
+.\build.ps1 -Uninstall -System   # undo system deploy (UAC prompt)
+.\build.ps1 -Uninstall -Clean    # remove deployed assets and wipe the build directory
 ```
 
 If PowerShell execution is blocked on your machine:
@@ -89,11 +92,14 @@ pwsh -ExecutionPolicy Bypass -File .\build.ps1
 ### macOS / Linux
 
 ```sh
-./build.sh                  # debug build, deploy to per-user plug-in folder
-./build.sh --release        # release build
-./build.sh --run            # build + launch Standalone
-./build.sh --system         # deploy to system folder (sudo)
-./build.sh --clean          # wipe build/ first
+./build.sh                         # debug build, deploy to per-user plug-in folder (local dev default)
+./build.sh --release               # release build
+./build.sh --run                   # build + launch Standalone for a quick smoke-test
+./build.sh --clean                 # wipe build/ first — use after CMakeLists changes or weird build failures
+./build.sh --system                # deploy to system-wide folder, same location the installer uses (sudo)
+./build.sh --uninstall             # undo dev deploy: remove per-user plugin + patches (e.g. before running the real installer)
+./build.sh --uninstall --system    # undo system deploy (sudo)
+./build.sh --uninstall --clean     # remove deployed assets and wipe the build directory
 ```
 
 The script configures CMake with the platform preset, builds the Vite UI bundle, copies factory patches to your per-user data directory, and deploys the plugin to a folder your DAW will scan on next rescan.
@@ -117,7 +123,7 @@ ctest --preset windows-debug --output-on-failure
 | Item | Windows | macOS | Linux |
 |------|---------|-------|-------|
 | VST3 (user) | `%LOCALAPPDATA%\Programs\Common\VST3` | `~/Library/Audio/Plug-Ins/VST3` | `~/.vst3` |
-| VST3 (system, `--system`) | `%CommonProgramFiles%\VST3` | `/Library/Audio/Plug-Ins/VST3` | `/usr/lib/vst3` |
+| VST3 (system, `-System`) | `%CommonProgramFiles%\VST3` | `/Library/Audio/Plug-Ins/VST3` | `/usr/lib/vst3` |
 | AU (user) | — | `~/Library/Audio/Plug-Ins/Components` | — |
 | Factory patches | `%LOCALAPPDATA%\GenVst\patches` | `~/Library/Application Support/GenVst/patches` | `~/.local/share/GenVst/patches` |
 
