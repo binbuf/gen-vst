@@ -16,7 +16,7 @@ import { openModal } from "./modal-host.js";
 // renders cleanly if the define is missing.
 const VERSION = (typeof __GENVST_VERSION__ !== "undefined")
   ? __GENVST_VERSION__
-  : "0.2.2";
+  : "0.3.0";
 
 const SOURCE_URL = (typeof __GENVST_SOURCE_URL__ !== "undefined")
   ? __GENVST_SOURCE_URL__

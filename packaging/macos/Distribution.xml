@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!--
   productbuild distribution for Gen VST. __VERSION__ is replaced by build-pkg.sh.
-  All three components are required (no opt-out) for the v0.1 release. Future
+  All four components are required (no opt-out) for the v0.1 release. Future
   versions can expose pkg-ref `auth="root"` toggles to let the user uncheck
   formats they don't want.
 -->
@@ -9,11 +9,12 @@
     <title>Gen VST __VERSION__</title>
     <organization>com.genvst</organization>
     <license language="en" mime-type="text/plain">Gen VST is licensed under the GNU General Public License v3.0. See https://github.com/binbuf/gen-vst/blob/main/LICENSE for the full text.</license>
-    <welcome language="en" mime-type="text/plain">Gen VST — Sega Genesis YM2612 + SN76489 emulation as a VST3 / AU / Standalone plug-in.
+    <welcome language="en" mime-type="text/plain">Gen VST — Sega Genesis YM2612 + SN76489 emulation as a VST3 / AU / CLAP / Standalone plug-in.
 
 This installer places:
   * the VST3 plug-in in /Library/Audio/Plug-Ins/VST3
   * the AU component in /Library/Audio/Plug-Ins/Components
+  * the CLAP plug-in in /Library/Audio/Plug-Ins/CLAP
   * the Standalone application in /Applications
 
 This release is unsigned. Gatekeeper may warn the first time you open the installer.</welcome>
@@ -27,6 +28,7 @@ Factory patches (39 FM .tfi + 12 SQ .psg) ship inside each plug-in bundle.</conc
     <pkg-ref id="com.genvst.vst3"/>
     <pkg-ref id="com.genvst.au"/>
     <pkg-ref id="com.genvst.standalone"/>
+    <pkg-ref id="com.genvst.clap"/>
 
     <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
 
@@ -35,6 +37,7 @@ Factory patches (39 FM .tfi + 12 SQ .psg) ship inside each plug-in bundle.</conc
             <line choice="com.genvst.vst3"/>
             <line choice="com.genvst.au"/>
             <line choice="com.genvst.standalone"/>
+            <line choice="com.genvst.clap"/>
         </line>
     </choices-outline>
 
@@ -52,7 +55,12 @@ Factory patches (39 FM .tfi + 12 SQ .psg) ship inside each plug-in bundle.</conc
         <pkg-ref id="com.genvst.standalone"/>
     </choice>
 
+    <choice id="com.genvst.clap" title="CLAP plug-in" description="Installs the CLAP to /Library/Audio/Plug-Ins/CLAP.">
+        <pkg-ref id="com.genvst.clap"/>
+    </choice>
+
     <pkg-ref id="com.genvst.vst3"        version="__VERSION__" onConclusion="none">Gen-VST-VST3.pkg</pkg-ref>
     <pkg-ref id="com.genvst.au"          version="__VERSION__" onConclusion="none">Gen-VST-AU.pkg</pkg-ref>
     <pkg-ref id="com.genvst.standalone"  version="__VERSION__" onConclusion="none">Gen-VST-Standalone.pkg</pkg-ref>
+    <pkg-ref id="com.genvst.clap"        version="__VERSION__" onConclusion="none">Gen-VST-CLAP.pkg</pkg-ref>
 </installer-gui-script>

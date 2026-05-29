@@ -17,7 +17,8 @@ namespace
 {
     // Resolve the factory-root path at runtime (ADR-0005). Standalone uses the
     // platform data directory the install rule writes to; plugin formats walk
-    // upward from the loaded binary looking for Resources/patches.
+    // upward from the loaded binary looking for Resources/patches, then fall
+    // back to the data directory for the single-file CLAP (ADR-0028).
     std::filesystem::path resolveFactoryRoot (juce::AudioProcessor::WrapperType wt)
     {
         if (wt == juce::AudioProcessor::wrapperType_Standalone)
@@ -59,6 +60,22 @@ namespace
             std::error_code ec;
             if (std::filesystem::is_directory (devDir, ec))
                 return devDir;
+        }
+       #endif
+
+        // Single-file CLAP fallback (ADR-0028). Every bundle format (VST3, AU,
+        // and all macOS formats including the .clap) satisfies the upward walk
+        // above and returns early, so this only ever fires for a single-file
+        // .clap on Windows/Linux, which has no Resources/ dir to walk into. The
+        // platform installers already drop the factory bank into
+        // GENVST_STANDALONE_PATCH_DIR (Windows installer → %LOCALAPPDATA%, Linux
+        // install.sh → ~/.local/share), so reuse it here.
+       #ifdef GENVST_STANDALONE_PATCH_DIR
+        {
+            const std::filesystem::path dataDir { GENVST_STANDALONE_PATCH_DIR };
+            std::error_code ec;
+            if (std::filesystem::is_directory (dataDir, ec))
+                return dataDir;
         }
        #endif
 

@@ -16,7 +16,7 @@ pending sign-off), `Superseded` (replaced by a later ADR).
 | [0005](0005-filesystem-patch-delivery.md) | Deliver factory patches via install-time filesystem copy | Accepted |
 | [0006](0006-folder-tree-patch-browser.md) | Folder-tree patch browser instead of flat banks | Accepted |
 | [0007](0007-fixed-window-size.md) | Fixed 960x640 plugin window for MVP | Superseded by 0023 |
-| [0008](0008-clap-post-mvp.md) | Support CLAP as a post-MVP build target | Accepted |
+| [0008](0008-clap-post-mvp.md) | Support CLAP as a post-MVP build target | Superseded by 0028 |
 | [0009](0009-sn76489-library.md) | SN76489 PSG emulation library | Accepted |
 | [0010](0010-ymfm-instance-model.md) | ymfm voice instance model | Accepted |
 | [0011](0011-resampling-strategy.md) | Chip-to-host resampling strategy | Accepted |
@@ -36,3 +36,4 @@ pending sign-off), `Superseded` (replaced by a later ADR).
 | [0025](0025-tagged-preset-browser.md) | Tagged unified preset browser with mode auto-switch | Accepted |
 | [0026](0026-dmp-psg-import.md) | DMP PSG instrument import for SQ mode | Accepted |
 | [0027](0027-ssg-eg-nudge-not-force.md) | SSG-EG loop shapes — visual nudge instead of forcing AR=31 | Accepted |
+| [0028](0028-clap-format-wired-up.md) | Wire up CLAP as a shipped build target | Accepted |

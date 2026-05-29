@@ -6,6 +6,47 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-05-28
+
+### Added
+
+- **CLAP plug-in format.** Gen VST now builds and ships a CLAP alongside VST3 /
+  AU / Standalone, via `clap-juce-extensions` ([ADR-0028]). It reuses the same
+  `AudioProcessor`, parameters, state, and WebView editor. Install locations:
+  `C:\Program Files\Common Files\CLAP` (Windows), `/Library/Audio/Plug-Ins/CLAP`
+  (macOS), and `~/.clap` (Linux, via the tarball `install.sh`). `CLAP_ID` is
+  `com.genvst.genvst`; `CLAP_FEATURES` is `instrument synthesizer stereo`.
+  CLAP-native per-note expression / polyphonic modulation are not wired up yet —
+  this build mirrors the VST3.
+- **CLAP in every installer.** The Windows `.exe`, the macOS `.pkg` (a fourth
+  `com.genvst.clap` component → `/Library/Audio/Plug-Ins/CLAP`), and the Linux
+  `.tar.gz` now carry the CLAP.
+- **`build.ps1` / `build.sh` deploy the CLAP.** The dev build/deploy scripts copy
+  `Gen VST.clap` into the per-user (or `-System` / `--system`) CLAP folder, with
+  matching `-Uninstall` / `--uninstall` cleanup.
+- **CI `clap-validator` soft gate.** Each platform job validates the built
+  `.clap` with `clap-validator` (pluginval cannot validate CLAP).
+
+### Changed
+
+- **`clap-juce-extensions` pinned to a JUCE-8-compatible commit.** No upstream
+  release tag supports JUCE 8's `getPosition()` `AudioPlayHead` API, so the build
+  pins `main` commit `e8de9e8`, which also carries the Windows embedded-WebView
+  keyboard-input fix the editor needs.
+- **Factory-patch resolution falls back to the user data dir.**
+  `resolveFactoryRoot` now falls back to `GENVST_STANDALONE_PATCH_DIR` for plug-in
+  formats when the bundle walk fails, so the single-file Windows/Linux `.clap`
+  (which has no `Resources/` dir) finds the factory bank the installers already
+  drop there. Bundle formats (VST3, AU, the macOS `.clap`) are unaffected — they
+  satisfy the walk first.
+
+### Fixed
+
+- **`PluginEditor.cpp` Win32 header.** The high-DPI helpers now include
+  `<windows.h>` explicitly instead of relying on it arriving transitively via the
+  WebView2 SDK headers — linking `clap-juce-extensions` perturbed that chain. The
+  explicit include hardens every format's build, not just CLAP.
+
 ## [0.2.2] — 2026-05-28
 
 ### Added
@@ -263,3 +304,4 @@ designed and implemented against ADRs 0001–0027.
 [ADR-0025]: docs/design/adr/0025-tagged-preset-browser.md
 [ADR-0026]: docs/design/adr/0026-dmp-psg-import.md
 [ADR-0027]: docs/design/adr/0027-ssg-eg-nudge-not-force.md
+[ADR-0028]: docs/design/adr/0028-clap-format-wired-up.md

@@ -285,7 +285,7 @@ causes the AU to fail validation in Logic Pro.
 
 ### Windows
 
-- Format: VST3 only (AU not supported on Windows).
+- Formats: VST3 + CLAP (AU is macOS-only).
 - Compiler: MSVC 2019+ (Clang-cl also works); `/W3`.
 - **WebView2:** `NEEDS_WEBVIEW2 TRUE` makes JUCE pull the WebView2 SDK. The
   Evergreen WebView2 runtime ships with Windows 11 and recent Windows 10;
@@ -293,23 +293,25 @@ causes the AU to fail validation in Logic Pro.
   [05-ui-ux.md](05-ui-ux.md).
 - Node.js (for the `ui/` build) must be on `PATH`.
 - Install path (system): `%CommonProgramFiles%\VST3\`; (user): `%LOCALAPPDATA%\Programs\Common\VST3\`.
+- CLAP install (system): `%CommonProgramFiles%\CLAP\`.
 - During development set `COPY_PLUGIN_AFTER_BUILD OFF` to avoid UAC prompts.
 
 ### macOS
 
-- Formats: VST3 + AU.
+- Formats: VST3 + AU + CLAP.
 - Compiler: AppleClang 14+ or Clang 15+.
 - Min deployment target: macOS 10.15 (Catalina) — pending the JUCE 8 WebView
   verification in [ADR-0015](adr/0015-webview-backend-support.md); raise it if a
   WebView native-integration feature proves unavailable at 10.15.
 - WebView backend: `WKWebView` — no extra dependency.
 - Universal binary set in the root CMakeLists.txt (`arm64;x86_64`).
-- VST3 install: `~/Library/Audio/Plug-Ins/VST3/`; AU: `~/Library/Audio/Plug-Ins/Components/`.
+- VST3 install: `~/Library/Audio/Plug-Ins/VST3/`; AU: `~/Library/Audio/Plug-Ins/Components/`; CLAP: `~/Library/Audio/Plug-Ins/CLAP/`.
 - AU validation: `auval -v aumu Genv GnVs` (subtype `Genv`, manufacturer `GnVs`).
+- CLAP validation: `clap-validator validate "Gen VST.clap"` (soft gate).
 
 ### Linux
 
-- Format: VST3 only.
+- Formats: VST3 + CLAP.
 - Compiler: GCC 11+ or Clang 14+; `-fPIC`.
 - System packages: `libasound2-dev`, `libx11-dev`, `libxcursor-dev`,
   `libxrandr-dev`, `libxinerama-dev`, `libfreetype6-dev`, `libgl-dev`, and
@@ -319,7 +321,7 @@ causes the AU to fail validation in Logic Pro.
   / Debian 12) — see [ADR-0015](adr/0015-webview-backend-support.md).
 - Display server: X11 is the baseline; Wayland runs via XWayland — best-effort,
   not separately QA'd ([ADR-0015](adr/0015-webview-backend-support.md)).
-- Install path (user): `~/.vst3/`; (system): `/usr/lib/vst3/`.
+- Install path (user): `~/.vst3/`; (system): `/usr/lib/vst3/`. CLAP (user): `~/.clap/`; (system): `/usr/lib/clap/`.
 
 ---
 
@@ -539,10 +541,32 @@ publishes the release automatically.
 
 ---
 
-## Post-MVP: CLAP
+## CLAP
 
-CLAP is a planned post-MVP build target via `clap-juce-extensions`
-([ADR-0008](adr/0008-clap-post-mvp.md)). It is a non-disruptive addition — a
-`clap_juce_extensions_plugin()` call plus a CLAP plugin ID — and the WebView
-editor works unchanged. The build is structured so this can be added later
-without restructuring; it is deliberately **not** wired up for the MVP.
+CLAP is a shipped build target via `clap-juce-extensions`
+([ADR-0028](adr/0028-clap-format-wired-up.md), superseding
+[ADR-0008](adr/0008-clap-post-mvp.md)). `clap-juce-extensions` is pulled in with
+`FetchContent`, pinned to a `main` commit (`e8de9e8`) rather than a release tag —
+the latest tag (`0.26.0`) predates JUCE 8's `getPosition()` `AudioPlayHead` API
+and won't compile, while the pinned commit adds JUCE 8 support plus the Windows
+embedded-WebView keyboard fix (#175). It is fetched **recursively** (it carries
+the CLAP SDK + `clap-helpers` as nested submodules) and **not** shallow — a
+shallow parent clone can't resolve the submodules' pinned commits. A single
+`clap_juce_extensions_plugin(TARGET GenVst CLAP_ID "com.genvst.genvst"
+CLAP_FEATURES instrument synthesizer stereo)` call produces the `GenVst_CLAP`
+target; the WebView editor works unchanged.
+
+Per-OS layout and install location:
+
+| OS | Artifact | Installs to |
+|----|----------|-------------|
+| Windows | single `Gen VST.clap` file | `C:\Program Files\Common Files\CLAP` |
+| macOS | `Gen VST.clap` bundle | `/Library/Audio/Plug-Ins/CLAP` |
+| Linux | single `Gen VST.clap` file | `~/.clap` (tarball `install.sh`) |
+
+The macOS `.clap` is a bundle and carries factory patches in
+`Contents/Resources/patches/` like the other formats. The Windows/Linux `.clap`
+is a single file, so `resolveFactoryRoot` falls back to
+`GENVST_STANDALONE_PATCH_DIR` (the user-data dir the installers populate) for it.
+CI validates the CLAP with `clap-validator` as a soft gate (pluginval cannot
+validate CLAP).

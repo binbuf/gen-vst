@@ -2,11 +2,11 @@
 
 **The Sega Genesis sound chip, native in your DAW.**
 
-A free, open-source VST3 / AU plugin that emulates the **YM2612** FM chip, the **SN76489** PSG, and the console's gritty 8-bit DAC — three modes per instance, in a modern hardware-VST interface.
+A free, open-source VST3 / AU / CLAP plugin that emulates the **YM2612** FM chip, the **SN76489** PSG, and the console's gritty 8-bit DAC — three modes per instance, in a modern hardware-VST interface.
 
 [**Download** ↓](https://github.com/binbuf/gen-vst/releases) · [Issues](https://github.com/binbuf/gen-vst/issues) · [Design docs](docs/design/)
 
-![License](https://img.shields.io/badge/license-GPL%20v3-blue) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![Formats](https://img.shields.io/badge/formats-VST3%20%7C%20AU%20%7C%20Standalone-brightgreen) ![Language](https://img.shields.io/badge/C%2B%2B-20-orange) ![Framework](https://img.shields.io/badge/JUCE-8-9cf)
+![License](https://img.shields.io/badge/license-GPL%20v3-blue) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![Formats](https://img.shields.io/badge/formats-VST3%20%7C%20AU%20%7C%20CLAP%20%7C%20Standalone-brightgreen) ![Language](https://img.shields.io/badge/C%2B%2B-20-orange) ![Framework](https://img.shields.io/badge/JUCE-8-9cf)
 
 ![Gen VST — FM mode](docs/app-example.png)
 
@@ -28,7 +28,7 @@ Two global toggles in the header colour the output: the **Output Filter** models
 - **Tagged unified preset browser.** Drop a `.tfi`, `.vgi`, `.dmp`, `.y12`, `.opm`, `.vgm` bank, or `.psg` file in — the plugin auto-switches to the right mode.
 - **Multi-format patch import.** Furnace and DefleMask instruments are first-class citizens; VGM banks too.
 - **Modern hardware-VST UI.** 1200×560 dark canvas, IBM Plex Mono, layered shadows. JUCE 8 WebView under the hood — HTML/CSS/JS bundled by Vite, embedded into the plugin binary.
-- **Cross-platform.** VST3 on Windows / macOS / Linux. AU on macOS. Standalone everywhere.
+- **Cross-platform.** VST3 and CLAP on Windows / macOS / Linux. AU on macOS. Standalone everywhere.
 - **Validated.** 201 unit tests; verified against `pluginval --strictness-level 8` on Windows VST3.
 
 ## Download
@@ -37,7 +37,7 @@ Pre-built binaries are on the **[Releases page →](https://github.com/binbuf/ge
 
 - **Windows** — `.exe` installer. Unsigned; SmartScreen may prompt — choose **More info → Run anyway**.
 - **macOS** — `.pkg` installer. Pick `Apple-Silicon` for M-series Macs or `Apple-Intel` for older Intel Macs. Unsigned — see the Gatekeeper steps below for macOS Tahoe (15+).
-- **Linux** — `.tar.gz` (VST3) or `.AppImage` (Standalone). `libwebkit2gtk-4.1-0` must be installed on the host.
+- **Linux** — `.tar.gz` (VST3 + CLAP) or `.AppImage` (Standalone). `libwebkit2gtk-4.1-0` must be installed on the host.
 
 ### macOS Tahoe (15+) — opening the unsigned `.pkg`
 

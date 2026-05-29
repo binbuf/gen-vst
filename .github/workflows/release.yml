@@ -41,7 +41,7 @@ jobs:
             $v = $env:GITHUB_REF -replace '^refs/tags/v', ''
           } else {
             $sha = $env:GITHUB_SHA.Substring(0, 7)
-            $v = "0.2.2-dev.$($env:GITHUB_RUN_NUMBER)+$sha"
+            $v = "0.3.0-dev.$($env:GITHUB_RUN_NUMBER)+$sha"
           }
           "value=$v"      | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "VERSION=$v"    | Out-File -FilePath $env:GITHUB_ENV    -Append
@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/windows-release/_deps
-          key: juce-8.0.4-${{ runner.os }}-v1
+          key: juce-8.0.4-${{ runner.os }}-v2
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
@@ -77,6 +77,17 @@ jobs:
             --strictness-level 8 `
             --validate-in-process false `
             "build/windows-release/src/GenVst_artefacts/Release/VST3/Gen VST.vst3"
+
+      - name: clap-validator (soft gate)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-windows.zip `
+            -OutFile clap-validator.zip
+          Expand-Archive clap-validator.zip -DestinationPath clap-validator
+          & .\clap-validator\clap-validator.exe validate `
+            "build/windows-release/src/GenVst_artefacts/Release/CLAP/Gen VST.clap"
 
       - name: Build installer
         shell: pwsh
@@ -118,7 +129,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
           else
-            v="0.2.2-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+            v="0.3.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
           fi
           echo "value=$v"   >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
@@ -128,7 +139,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/macos-release/_deps
-          key: juce-8.0.4-${{ runner.os }}-${{ runner.arch }}-v1
+          key: juce-8.0.4-${{ runner.os }}-${{ runner.arch }}-v2
 
       - name: Configure
         run: cmake --preset macos-release -DGENVST_DEV_SERVER=OFF -DCOPY_PLUGIN_AFTER_BUILD=OFF -DCMAKE_OSX_ARCHITECTURES=arm64
@@ -142,6 +153,14 @@ jobs:
       - name: auval smoke test
         continue-on-error: true
         run: auval -v aumu Genv GnVs
+
+      - name: clap-validator (soft gate)
+        continue-on-error: true
+        run: |
+          curl -sSL -o clap-validator.tar.gz \
+            https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-macos-universal.tar.gz
+          tar -xzf clap-validator.tar.gz
+          ./clap-validator validate "build/macos-release/src/GenVst_artefacts/Release/CLAP/Gen VST.clap"
 
       - name: Build pkg installer
         run: bash packaging/macos/build-pkg.sh "$VERSION" macos-Apple-Silicon
@@ -180,7 +199,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
           else
-            v="0.2.2-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+            v="0.3.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
           fi
           echo "value=$v"   >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
@@ -190,7 +209,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/macos-release/_deps
-          key: juce-8.0.4-${{ runner.os }}-${{ runner.arch }}-v1
+          key: juce-8.0.4-${{ runner.os }}-${{ runner.arch }}-v2
 
       - name: Configure
         run: cmake --preset macos-release -DGENVST_DEV_SERVER=OFF -DCOPY_PLUGIN_AFTER_BUILD=OFF -DCMAKE_OSX_ARCHITECTURES=x86_64
@@ -205,6 +224,14 @@ jobs:
         continue-on-error: true
         run: auval -v aumu Genv GnVs
 
+      - name: clap-validator (soft gate)
+        continue-on-error: true
+        run: |
+          curl -sSL -o clap-validator.tar.gz \
+            https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-macos-universal.tar.gz
+          tar -xzf clap-validator.tar.gz
+          ./clap-validator validate "build/macos-release/src/GenVst_artefacts/Release/CLAP/Gen VST.clap"
+
       - name: Build pkg installer
         run: bash packaging/macos/build-pkg.sh "$VERSION" macos-Apple-Intel
 
@@ -216,7 +243,7 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Linux: Ninja Release, AppImage (Standalone) + tar.gz (VST3).
+  # Linux: Ninja Release, AppImage (Standalone) + tar.gz (VST3 + CLAP).
   # ---------------------------------------------------------------------------
   build-linux:
     runs-on: ubuntu-24.04
@@ -256,7 +283,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
           else
-            v="0.2.2-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+            v="0.3.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
           fi
           echo "value=$v"   >> "$GITHUB_OUTPUT"
           echo "VERSION=$v" >> "$GITHUB_ENV"
@@ -266,7 +293,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/linux-release/_deps
-          key: juce-8.0.4-${{ runner.os }}-v1
+          key: juce-8.0.4-${{ runner.os }}-v2
 
       - name: Configure
         run: cmake --preset linux-release -DGENVST_DEV_SERVER=OFF -DCOPY_PLUGIN_AFTER_BUILD=OFF
@@ -288,6 +315,16 @@ jobs:
             --strictness-level 8 \
             --validate-in-process false \
             "build/linux-release/src/GenVst_artefacts/Release/VST3/Gen VST.vst3"
+
+      - name: clap-validator (soft gate)
+        continue-on-error: true
+        run: |
+          curl -sSL -o clap-validator.tar.gz \
+            https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-ubuntu-18.04.tar.gz
+          tar -xzf clap-validator.tar.gz
+          chmod +x clap-validator
+          xvfb-run -a ./clap-validator validate \
+            "build/linux-release/src/GenVst_artefacts/Release/CLAP/Gen VST.clap"
 
       - name: Build AppImage (Standalone)
         run: bash packaging/linux/build-appimage.sh "$VERSION"
@@ -338,9 +375,9 @@ jobs:
           body: |
             ## Installation
 
-            **Windows** — Run the `.exe` installer. Installs the VST3 to `C:\Program Files\Common Files\VST3` (admin), the Standalone to `Program Files\Gen VST`, and factory patches to `%LOCALAPPDATA%\GenVst\patches`. Unsigned for this release; Windows SmartScreen may prompt — choose "More info" → "Run anyway".
+            **Windows** — Run the `.exe` installer. Installs the VST3 to `C:\Program Files\Common Files\VST3` (admin), the CLAP to `C:\Program Files\Common Files\CLAP`, the Standalone to `Program Files\Gen VST`, and factory patches to `%LOCALAPPDATA%\GenVst\patches`. Unsigned for this release; Windows SmartScreen may prompt — choose "More info" → "Run anyway".
 
-            **macOS (Apple Silicon)** — Download `*-macos-Apple-Silicon.pkg`. Unsigned for this release; Gatekeeper will refuse to open it on first try. The installer places the VST3 in `/Library/Audio/Plug-Ins/VST3`, the AU in `/Library/Audio/Plug-Ins/Components`, and the Standalone in `/Applications`. To bypass Gatekeeper on macOS Tahoe (15+):
+            **macOS (Apple Silicon)** — Download `*-macos-Apple-Silicon.pkg`. Unsigned for this release; Gatekeeper will refuse to open it on first try. The installer places the VST3 in `/Library/Audio/Plug-Ins/VST3`, the AU in `/Library/Audio/Plug-Ins/Components`, the CLAP in `/Library/Audio/Plug-Ins/CLAP`, and the Standalone in `/Applications`. To bypass Gatekeeper on macOS Tahoe (15+):
 
             1. Double-click the `.pkg` — macOS shows a "cannot be opened" warning. Click **Done** to dismiss it.
             2. Open  → **System Settings** → **Privacy & Security**.
@@ -350,11 +387,12 @@ jobs:
 
             **macOS (Intel)** — Download `*-macos-Apple-Intel.pkg`. Same installation steps as above.
 
-            **Linux** (plugin) — Extract the `.tar.gz` and run `./install.sh`. Drops the VST3 into `~/.vst3` and factory patches into `~/.local/share/GenVst/patches`.
+            **Linux** (plugin) — Extract the `.tar.gz` and run `./install.sh`. Drops the VST3 into `~/.vst3`, the CLAP into `~/.clap`, and factory patches into `~/.local/share/GenVst/patches`.
 
             **Linux** (Standalone) — `chmod +x` the `.AppImage` and run. **Runtime prerequisite**: `libwebkit2gtk-4.1-0` must be installed on the host (`sudo apt install libwebkit2gtk-4.1-0`). The AppImage is built without bundling WebKitGTK so it stays small and avoids conflicts with the system runtime.
 
             ## Verifying
 
-            VST3 / AU / Standalone are formats — pick whichever your DAW supports.
+            VST3 / AU / CLAP / Standalone are formats — pick whichever your DAW supports.
             On macOS, the AU validates with `auval -v aumu Genv GnVs`.
+            The CLAP can be checked with `clap-validator validate "Gen VST.clap"`.

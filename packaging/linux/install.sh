@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# install.sh — drop Gen VST.vst3 + factory patches into the user's plug-in and
-# data dirs. Bundled into the Linux tar.gz release; run from the extracted
-# directory.
+# install.sh — drop Gen VST.vst3 + Gen VST.clap + factory patches into the
+# user's plug-in and data dirs. Bundled into the Linux tar.gz release; run from
+# the extracted directory.
 #
 # Usage:  ./install.sh
 
@@ -10,6 +10,7 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "${0}")")"
 
 vst3_dest="$HOME/.vst3"
+clap_dest="$HOME/.clap"
 patches_dest="${XDG_DATA_HOME:-$HOME/.local/share}/GenVst/patches"
 
 if [ ! -d "Gen VST.vst3" ]; then
@@ -18,11 +19,17 @@ if [ ! -d "Gen VST.vst3" ]; then
 fi
 
 echo "Installing Gen VST..."
-mkdir -p "$vst3_dest" "$patches_dest" "$patches_dest/sq"
+mkdir -p "$vst3_dest" "$clap_dest" "$patches_dest" "$patches_dest/sq"
 
 rm -rf "$vst3_dest/Gen VST.vst3"
 cp -r "Gen VST.vst3" "$vst3_dest/"
 echo "  VST3:    $vst3_dest/Gen VST.vst3"
+
+if [ -f "Gen VST.clap" ]; then
+    rm -f "$clap_dest/Gen VST.clap"
+    cp "Gen VST.clap" "$clap_dest/"
+    echo "  CLAP:    $clap_dest/Gen VST.clap"
+fi
 
 if [ -d factory-patches ]; then
     cp -f factory-patches/*.tfi    "$patches_dest/"    2>/dev/null || true

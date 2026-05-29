@@ -17,6 +17,15 @@
  #include "GenVstWebData.h"
 #endif
 
+// Win32 native header for the per-thread DPI virtualization workarounds below
+// (HWND / RECT / SetThreadDpiAwarenessContext). Included explicitly rather than
+// relying on transitive inclusion via the JUCE/WebView2 headers — that chain is
+// not guaranteed (linking clap-juce-extensions for the CLAP format drops it,
+// ADR-0028).
+#if JUCE_WINDOWS
+ #include <windows.h>
+#endif
+
 // GENVST_DIAG: instrumentation for the Ableton/Windows DPI whitespace bug.
 // Enabled via `cmake -DGENVST_DIAG=ON`. Writes a labelled snapshot of JUCE +
 // Win32 + WebView measurements to ~/Documents/GenVst-diag.log so the actual
@@ -24,9 +33,6 @@
 // completely when the option is off (default).
 #if defined(GENVST_DIAG) && GENVST_DIAG
  #include <mutex>
- #if JUCE_WINDOWS
-  #include <windows.h>
- #endif
 #endif
 
 #if ! GENVST_DEV_SERVER

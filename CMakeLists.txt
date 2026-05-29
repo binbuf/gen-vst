@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(GenVst VERSION 0.2.2 LANGUAGES C CXX)   # C: libvgm SN76489 core sources
+project(GenVst VERSION 0.3.0 LANGUAGES C CXX)   # C: libvgm SN76489 core sources
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,21 @@ FetchContent_Declare(juce
     GIT_TAG        8.0.4
     GIT_SHALLOW    TRUE)
 FetchContent_MakeAvailable(juce)
+
+# clap-juce-extensions — emits a CLAP artifact from the JUCE AudioProcessor
+# (ADR-0028, supersedes ADR-0008). Pinned to a main commit, NOT a release tag:
+# the latest tag (0.26.0) predates JUCE's getPosition() AudioPlayHead API and
+# leaves the wrapper abstract under JUCE 8 (won't compile). This commit
+# implements getPosition() (JUCE_VERSION-guarded) and also carries the Windows
+# embedded-WebView keyboard-input fix (#175) that our WebView editor needs.
+# Unlike JUCE, this repo nests the CLAP SDK + clap-helpers as git submodules
+# (clap-libs/), so fetch them recursively; GIT_SHALLOW must stay OFF — a shallow
+# parent clone can't resolve the submodules' pinned commits.
+FetchContent_Declare(clap-juce-extensions
+    GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+    GIT_TAG        e8de9e8571626633b8541a54c2406fccc4272767  # main @ 2026-04-24
+    GIT_SUBMODULES_RECURSE TRUE)
+FetchContent_MakeAvailable(clap-juce-extensions)
 
 # Code submodules must be initialized before configuring.
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ymfm/src/ymfm.h")

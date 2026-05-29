@@ -2,9 +2,9 @@
 # build.sh — build, deploy, and prepare Gen VST for end-to-end testing (macOS/Linux).
 #
 # Configures and builds the plugin via CMake, installs the factory patches into
-# the per-user data directory, copies the VST3 (and the AU on macOS) into a
-# plug-in folder a DAW will scan, and optionally launches the Standalone.
-# Interim developer convenience — the shippable installer is a later task.
+# the per-user data directory, copies the VST3 and the CLAP (and the AU on macOS)
+# into the plug-in folders a DAW will scan, and optionally launches the
+# Standalone. Interim developer convenience — the shippable installer is a later task.
 #
 #   ./build.sh [--release] [--system] [--run] [--clean] [--uninstall] [--help]
 
@@ -81,20 +81,26 @@ if [ "$os" = macos ]; then
     if [ "$opt_system" -eq 1 ]; then
         vst3_root="/Library/Audio/Plug-Ins/VST3"
         au_root="/Library/Audio/Plug-Ins/Components"
+        clap_root="/Library/Audio/Plug-Ins/CLAP"
     else
         vst3_root="$HOME/Library/Audio/Plug-Ins/VST3"
         au_root="$HOME/Library/Audio/Plug-Ins/Components"
+        clap_root="$HOME/Library/Audio/Plug-Ins/CLAP"
     fi
     vst3_dest="$vst3_root/Gen VST.vst3"
     au_dest="$au_root/Gen VST.component"
+    clap_dest="$clap_root/Gen VST.clap"
 else
     if [ "$opt_system" -eq 1 ]; then
         vst3_root="/usr/lib/vst3"
+        clap_root="/usr/lib/clap"
     else
         vst3_root="$HOME/.vst3"
+        clap_root="$HOME/.clap"
     fi
     vst3_dest="$vst3_root/Gen VST.vst3"
     au_dest=""
+    clap_dest="$clap_root/Gen VST.clap"
 fi
 
 # ---- uninstall --------------------------------------------------------------
@@ -102,6 +108,7 @@ if [ "$opt_uninstall" -eq 1 ]; then
     echo
     step "Gen VST — uninstall developer build"
     info "VST3   : $vst3_dest"
+    info "CLAP   : $clap_dest"
     [ "$os" = macos ] && info "AU     : $au_dest"
     info "Patches: $patch_dir"
     [ "$opt_clean" -eq 1 ] && info "Build  : $build_dir (will be removed)"
@@ -111,6 +118,11 @@ if [ "$opt_uninstall" -eq 1 ]; then
         $SUDO rm -rf "$vst3_dest"; info "Removed: $vst3_dest"
     else
         info "Not present: $vst3_dest"
+    fi
+    if [ -e "$clap_dest" ]; then
+        $SUDO rm -rf "$clap_dest"; info "Removed: $clap_dest"
+    else
+        info "Not present: $clap_dest"
     fi
     if [ "$os" = macos ]; then
         if [ -e "$au_dest" ]; then
@@ -199,7 +211,9 @@ info "$patch_count patch file(s) -> $patch_dir"
 # ---- deploy -----------------------------------------------------------------
 artefacts="$build_dir/src/GenVst_artefacts/$config"
 vst3_src="$artefacts/VST3/Gen VST.vst3"
+clap_src="$artefacts/CLAP/Gen VST.clap"   # bundle dir on macOS, single file on Linux
 [ -d "$vst3_src" ] || fail "Built VST3 not found at: $vst3_src"
+[ -e "$clap_src" ] || fail "Built CLAP not found at: $clap_src"
 
 if [ "$os" = macos ]; then
     standalone="$artefacts/Standalone/Gen VST.app"
@@ -219,6 +233,11 @@ deploy_bundle() {
 step "Deploying VST3 -> $vst3_dest"
 deploy_bundle "$vst3_src" "$vst3_root"
 
+# deploy_bundle uses `cp -R`, which handles both the macOS .clap bundle and the
+# single-file Linux .clap.
+step "Deploying CLAP -> $clap_dest"
+deploy_bundle "$clap_src" "$clap_root"
+
 au_deployed=""
 if [ "$os" = macos ]; then
     au_src="$artefacts/AU/Gen VST.component"
@@ -233,6 +252,7 @@ fi
 echo
 step "Done."
 info "VST3 deployed  : $vst3_dest"
+info "CLAP deployed  : $clap_dest"
 [ -n "$au_deployed" ] && info "AU deployed    : $au_deployed"
 info "Standalone     : $standalone"
 info "Factory patches: $patch_dir"

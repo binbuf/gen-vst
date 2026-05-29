@@ -83,7 +83,19 @@ juce_add_plugin(GenVst
     VST3_CATEGORIES             "Instrument|Synth"
     DESCRIPTION                 "Sega Genesis YM2612+SN76489 emulation"
     BUNDLE_ID                   "com.genvst.genvst"
-    VERSION                     "0.2.2")
+    VERSION                     "0.3.0")
+
+# --- CLAP format (ADR-0028) ---------------------------------------------------
+# JUCE has no CLAP exporter; clap-juce-extensions wraps the same GenVst
+# AudioProcessor (and WebView editor) to emit a `GenVst_CLAP` target alongside
+# the JUCE formats. CLAP_ID matches BUNDLE_ID and must stay stable forever —
+# hosts key state and preset discovery on it.
+clap_juce_extensions_plugin(TARGET GenVst
+    CLAP_ID          "com.genvst.genvst"
+    CLAP_FEATURES    instrument synthesizer stereo
+    CLAP_MANUAL_URL  "https://github.com/binbuf/gen-vst"
+    CLAP_SUPPORT_URL "https://github.com/binbuf/gen-vst/issues")
+# ------------------------------------------------------------------------------
 
 # --- Standalone patch directory (per-platform runtime data dir) ---------------
 # Normalise to forward slashes so embedding the value as a C string literal in
@@ -135,13 +147,18 @@ endif()
 # resulting .vst3/.component/.app shipped without Contents/Resources/patches/,
 # so PatchBrowser came up empty). A POST_BUILD `copy_directory` works for every
 # generator (Xcode, Ninja, MSBuild) and every plugin-format target that
-# produces a bundle directory (VST3 + AU + Standalone). The `..` step out of
-# TARGET_FILE_DIR lands at:
+# produces a bundle directory (VST3 + AU + Standalone, and the macOS .clap). The
+# `..` step out of TARGET_FILE_DIR lands at:
 #   * Windows/Linux: `<artefacts>/Resources/patches/`  (loose-binary layout,
 #     matched by resolveFactoryRoot's upward walk)
 #   * macOS bundles: `<bundle>/Contents/Resources/patches/`  (.vst3 / .component
-#     / .app — also matched by the same upward walk)
-foreach(plugin_format_target IN ITEMS GenVst_VST3 GenVst_AU GenVst_Standalone)
+#     / .app / .clap — also matched by the same upward walk)
+# The Windows/Linux CLAP is a SINGLE FILE (no bundle), so the staged sibling
+# Resources/patches isn't reliably found by the upward walk there; on those
+# platforms the CLAP relies on resolveFactoryRoot's GENVST_STANDALONE_PATCH_DIR
+# fallback (PluginProcessor.cpp), which the installers populate. Keeping CLAP in
+# the loop is still correct — it embeds patches into the macOS .clap bundle.
+foreach(plugin_format_target IN ITEMS GenVst_VST3 GenVst_AU GenVst_Standalone GenVst_CLAP)
     if(TARGET ${plugin_format_target})
         add_custom_command(TARGET ${plugin_format_target} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E rm -rf

@@ -3,6 +3,7 @@
 ;
 ; Builds an admin-elevated installer that drops:
 ;   * the VST3 bundle into C:\Program Files\Common Files\VST3
+;   * the CLAP (single file) into C:\Program Files\Common Files\CLAP
 ;   * the Standalone .exe into Program Files\Gen VST
 ;   * factory patches (.tfi / .vgi / .y12 / .psg) into
 ;     %LOCALAPPDATA%\GenVst\patches  --  matches GENVST_STANDALONE_PATCH_DIR
@@ -46,6 +47,10 @@ Source: "..\..\build\windows-release\src\GenVst_artefacts\Release\VST3\Gen VST.v
     DestDir: "{commoncf64}\VST3\Gen VST.vst3"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
+; --- CLAP (a single .clap file) -> system CLAP location ----------------------
+Source: "..\..\build\windows-release\src\GenVst_artefacts\Release\CLAP\Gen VST.clap"; \
+    DestDir: "{commoncf64}\CLAP"; Flags: ignoreversion
+
 ; --- Standalone --------------------------------------------------------------
 Source: "..\..\build\windows-release\src\GenVst_artefacts\Release\Standalone\Gen VST.exe"; \
     DestDir: "{app}"; Flags: ignoreversion
@@ -77,4 +82,7 @@ Filename: "{app}\Gen VST.exe"; Description: "Launch Gen VST"; \
 ; recursesubdirs files are removed by [Files] uninstall, but the now-empty
 ; directory needs an explicit cleanup.
 Type: dirifempty; Name: "{commoncf64}\VST3\Gen VST.vst3"
+; The CLAP is a single file; remove it and the shared CLAP dir if it ends up empty.
+Type: files; Name: "{commoncf64}\CLAP\Gen VST.clap"
+Type: dirifempty; Name: "{commoncf64}\CLAP"
 Type: filesandordirs; Name: "{localappdata}\GenVst\patches"

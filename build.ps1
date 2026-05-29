@@ -4,11 +4,12 @@
 
 .DESCRIPTION
     Configures and builds the plugin via CMake, installs factory patches into
-    the per-user data directory, and copies the VST3 bundle into a folder a DAW
-    will scan. Optionally launches the Standalone for a quick smoke-test.
+    the per-user data directory, and copies the VST3 bundle and the CLAP plug-in
+    into folders a DAW will scan. Optionally launches the Standalone for a quick
+    smoke-test.
 
-    Use -Uninstall to remove a previously deployed developer build (VST3 bundle
-    and factory patches) without triggering a build.
+    Use -Uninstall to remove a previously deployed developer build (VST3 bundle,
+    CLAP, and factory patches) without triggering a build.
 
     If running .ps1 scripts is blocked, invoke as:
         pwsh -ExecutionPolicy Bypass -File .\build.ps1
@@ -17,8 +18,8 @@
     Build and deploy the Release configuration. Default: Debug.
 
 .PARAMETER System
-    Deploy to %CommonProgramFiles%\VST3 (requires elevation via UAC).
-    Default: %LOCALAPPDATA%\Programs\Common\VST3 (no elevation required).
+    Deploy to %CommonProgramFiles%\VST3 and \CLAP (requires elevation via UAC).
+    Default: %LOCALAPPDATA%\Programs\Common\{VST3,CLAP} (no elevation required).
 
 .PARAMETER Run
     Launch the Standalone executable after a successful deploy.
@@ -85,6 +86,10 @@ $patchDir = Join-Path $env:LOCALAPPDATA 'GenVst\patches'
 $vst3Root = if ($System) { Join-Path $env:CommonProgramFiles 'VST3' } `
             else          { Join-Path $env:LOCALAPPDATA 'Programs\Common\VST3' }
 $vst3Dest = Join-Path $vst3Root 'Gen VST.vst3'
+# CLAP is a single file (not a bundle). Search paths mirror VST3's.
+$clapRoot = if ($System) { Join-Path $env:CommonProgramFiles 'CLAP' } `
+            else          { Join-Path $env:LOCALAPPDATA 'Programs\Common\CLAP' }
+$clapDest = Join-Path $clapRoot 'Gen VST.clap'
 
 # ---- helpers ----------------------------------------------------------------
 function Test-Admin {
@@ -118,6 +123,7 @@ if ($Uninstall) {
     Write-Host ""
     Write-Step "Gen VST — uninstall developer build"
     Write-Info "VST3   : $vst3Dest"
+    Write-Info "CLAP   : $clapDest"
     Write-Info "Patches: $patchDir"
     if ($Clean) { Write-Info "Build  : $buildDir (will be removed)" }
     Write-Host ""
@@ -127,15 +133,22 @@ if ($Uninstall) {
         $elevated =
             "`$ErrorActionPreference='Stop'; " +
             "if (Test-Path $(ConvertTo-SingleQuoted $vst3Dest)) " +
-            "{ Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $vst3Dest) }"
+            "{ Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $vst3Dest) }; " +
+            "if (Test-Path $(ConvertTo-SingleQuoted $clapDest)) " +
+            "{ Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $clapDest) }"
         try { Invoke-Elevated $elevated 'Elevated removal failed' }
         catch { Exit-Fatal "Elevation was cancelled. Nothing was removed." }
         Write-Info "Removed: $vst3Dest"
-    } elseif (Test-Path $vst3Dest) {
-        Remove-Item -Recurse -Force $vst3Dest
-        Write-Info "Removed: $vst3Dest"
+        Write-Info "Removed: $clapDest"
     } else {
-        Write-Info "Not present: $vst3Dest"
+        foreach ($dest in @($vst3Dest, $clapDest)) {
+            if (Test-Path $dest) {
+                Remove-Item -Recurse -Force $dest
+                Write-Info "Removed: $dest"
+            } else {
+                Write-Info "Not present: $dest"
+            }
+        }
     }
 
     if (Test-Path $patchDir) {
@@ -238,20 +251,28 @@ Write-Info "$($patchFiles.Count) patch file(s) -> $patchDir"
 # ---- deploy the VST3 --------------------------------------------------------
 $artefacts = Join-Path $buildDir "src\GenVst_artefacts\$config"
 $vst3Src   = Join-Path $artefacts 'VST3\Gen VST.vst3'
+$clapSrc   = Join-Path $artefacts 'CLAP\Gen VST.clap'
 if (-not (Test-Path $vst3Src)) { Exit-Fatal "Built VST3 not found at: $vst3Src" }
+if (-not (Test-Path $clapSrc)) { Exit-Fatal "Built CLAP not found at: $clapSrc" }
 
 Write-Step "Deploying VST3 -> $vst3Dest"
+Write-Step "Deploying CLAP -> $clapDest"
 if ($System -and -not (Test-Admin)) {
     Write-Info "System folder requires elevation — a UAC prompt will appear for the copy."
+    # CLAP is a single file; the VST3 is a bundle directory.
     $elevated =
         "`$ErrorActionPreference='Stop'; " +
         "New-Item -ItemType Directory -Force -Path $(ConvertTo-SingleQuoted $vst3Root) | Out-Null; " +
         "if (Test-Path $(ConvertTo-SingleQuoted $vst3Dest)) { Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $vst3Dest) }; " +
-        "Copy-Item -Recurse -Force -Path $(ConvertTo-SingleQuoted $vst3Src) -Destination $(ConvertTo-SingleQuoted $vst3Dest)"
+        "Copy-Item -Recurse -Force -Path $(ConvertTo-SingleQuoted $vst3Src) -Destination $(ConvertTo-SingleQuoted $vst3Dest); " +
+        "New-Item -ItemType Directory -Force -Path $(ConvertTo-SingleQuoted $clapRoot) | Out-Null; " +
+        "Copy-Item -Force -Path $(ConvertTo-SingleQuoted $clapSrc) -Destination $(ConvertTo-SingleQuoted $clapDest)"
     try { Invoke-Elevated $elevated 'Elevated copy failed' }
     catch { Exit-Fatal "Elevation was cancelled. The plugin built successfully but was not copied to the system folder.`nRe-run from an elevated terminal, or omit -System to deploy to the per-user folder." }
 } else {
     Copy-Bundle $vst3Src $vst3Dest
+    New-Item -ItemType Directory -Force -Path $clapRoot | Out-Null
+    Copy-Item -Force -Path $clapSrc -Destination $clapDest
 }
 
 # ---- summary ----------------------------------------------------------------
@@ -260,6 +281,7 @@ $standalone = Join-Path $artefacts 'Standalone\Gen VST.exe'
 Write-Host ""
 Write-Step "Done."
 Write-Info "VST3 deployed  : $vst3Dest"
+Write-Info "CLAP deployed  : $clapDest"
 Write-Info "Standalone     : $standalone"
 Write-Info "Factory patches: $patchDir"
 Write-Host ""
