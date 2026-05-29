@@ -75,7 +75,8 @@ struct Patch
     float channel_tl        = 1.0f;
 
     // 0..1 sweep of the YM2612 DAC clock prescaler (DspDecimator hold count).
-    // 0 = bypass; non-zero engages decimation between voice sum and ladder.
+    // 0 = bypass; non-zero engages decimation on the summed FM bus (the
+    // per-voice ladder runs upstream inside ymfm — see Voice::renderAdd).
     float fm_dac_prescaler  = 0.0f;
 
     std::string name;         // display name (filename stem)

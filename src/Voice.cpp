@@ -324,12 +324,15 @@ void Voice::setPitchBend (double bend, const Patch& patch, bool velToTl)
     updateRegisters (patch, velToTl);
 }
 
-void Voice::renderAdd (float* accumL, float* accumR, int numSamples)
+void Voice::renderAdd (float* accumL, float* accumR, int numSamples, bool ladderEnabled)
 {
     ymfm::ym2612::output_data sample;
     for (int i = 0; i < numSamples; ++i)
     {
-        chip.generate (&sample, 1);
+        if (ladderEnabled)
+            chip.ym2612::generate (&sample, 1);
+        else
+            chip.generate (&sample, 1);
 
         if (voiceState == State::Released)
         {

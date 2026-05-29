@@ -777,23 +777,18 @@ void GenVstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     for (int ch = 2; ch < numChannels; ++ch)
         buffer.clear (ch, 0, numSamples);
 
-    // Whole-block DSP. Ladder applies to FM (over the summed voices) and was
-    // already applied inside renderDBlock for D mode (before dry/wet blend),
-    // so it must NOT be re-applied to the buffer post-blend. SQ skips ladder
+    // Whole-block DSP. The ladder is applied per-voice inside renderFmBlock
+    // (via ymfm chip-variant dispatch — see Voice::renderAdd) and inside
+    // renderDBlock for D mode (before dry/wet blend). SQ skips ladder
     // entirely (the PSG bypasses the YM2612 DAC on real hardware — ADR-0024).
-    // HARDWARE STRICT forces both toggles on regardless of their apvts value
-    // (Settings view 6 — the UI greys + locks the header toggles, the audio
-    // path enforces it here so a stale apvts read can't bypass strict
-    // semantics).
+    // Only the output filter runs post-mix here. HARDWARE STRICT forces the
+    // filter toggle on regardless of its apvts value (Settings view 6 — the
+    // UI greys + locks the header toggle, the audio path enforces it here so
+    // a stale apvts read can't bypass strict semantics).
     const bool hwStrict = hardwareStrictParam != nullptr
                             && hardwareStrictParam->load() > 0.5f;
-    const bool ladderOn = hwStrict
-                            || (ladderEffectParam != nullptr && ladderEffectParam->load() > 0.5f);
     const bool filterOn = hwStrict
                             || (outputFilterParam != nullptr && outputFilterParam->load() > 0.5f);
-
-    if (mode == Mode::FM)
-        ladder.process (buffer, ladderOn);
 
     outputFilter.process (buffer, filterOn);
 
@@ -922,15 +917,21 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
     // we skip the voice-render path entirely and leave the output cleared
     // above. The reason isn't pure efficiency — it's an audible background
     // hiss: ymfm's idle output isn't a perfect zero (the chip's internal
-    // phase accumulators tick regardless of envelope state), and that
-    // LSB-level residue gets amplified by the LadderEffect's 8-bit
-    // quantizer below into audible noise. SQ mode doesn't hit this because
-    // Ladder is FM-only.
+    // phase accumulators tick regardless of envelope state), and even at
+    // LSB level it would be audibly amplified through the DAC discontinuity
+    // (when Ladder is on) and the output filter. SQ mode doesn't hit this
+    // because Ladder is FM-only.
+    const bool hwStrict = hardwareStrictParam != nullptr
+                            && hardwareStrictParam->load() > 0.5f;
+    const bool ladderOn = hwStrict
+                            || (ladderEffectParam != nullptr && ladderEffectParam->load() > 0.5f);
     if (voiceAllocator.hasAudibleVoice())
-        voiceAllocator.render (left, right, numSamples);
+        voiceAllocator.render (left, right, numSamples, ladderOn);
 
     // FM DAC prescaler — sweeps the YM2612 DAC clock divider on the voice
-    // summation bus, before the ladder / output-filter stages
+    // summation bus, before the output-filter stage. The ladder is now
+    // applied per-voice inside ymfm (chip-variant dispatch); the prescaler
+    // operates on the already-laddered, summed signal at host rate
     // (02-fm-synthesis.md § *DAC Prescaler (FM mode)*). Bypassed at 0.
     const float fmPrescaler01 = currentPatch.fm_dac_prescaler;
     if (fmPrescaler01 > 0.0f)

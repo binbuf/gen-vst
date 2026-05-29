@@ -244,7 +244,7 @@ void VoiceAllocator::updateActiveVoicesForPart (int part, const Patch& patch, bo
             v.updateRegisters (patch, velToTl);
 }
 
-void VoiceAllocator::render (float* outL, float* outR, int numSamples)
+void VoiceAllocator::render (float* outL, float* outR, int numSamples, bool ladderEnabled)
 {
     if (numSamples <= 0)
         return;
@@ -267,7 +267,7 @@ void VoiceAllocator::render (float* outL, float* outR, int numSamples)
         if (! v.isIdle())
         {
             v.advanceGlide (toGen);
-            v.renderAdd (mixL + carry, mixR + carry, toGen);
+            v.renderAdd (mixL + carry, mixR + carry, toGen, ladderEnabled);
         }
 
     const int available = carry + toGen;

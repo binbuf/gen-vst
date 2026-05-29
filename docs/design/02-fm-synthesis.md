@@ -609,19 +609,17 @@ modes never blows the user's tuning. The DSP code path is shared with
 D mode's `DspDecimator` (one implementation, two callers).
 
 **Where it applies.** Inside the FM render pipeline, between the FM
-voice sum and the ladder / output-filter stages:
+voice sum and the output-filter stage. The ladder is applied per-voice
+inside ymfm (chip-variant dispatch — see *Ladder Effect DSP* below), so
+it's upstream of the prescaler in the host-rate signal:
 
 ```
-voices --sum--> [ fm_dac_prescaler ] --> [ LadderEffect ] --> [ OutputFilter ] --> mix bus
+voices [ladder per-voice via ymfm] --sum--> [ fm_dac_prescaler ] --> [ OutputFilter ] --> mix bus
 ```
 
-Apply the prescaler **before** the ladder effect — both because the
-hardware ordering matches (the ladder DAC is downstream of the prescaled
-sample stream) and because the ladder's piecewise nonlinearity reads
-better against the decimated signal. SQ mode is **not** affected; the
-SN76489 PSG has its own output pin and never passes through the YM2612
-DAC stage on real hardware (see the *Ladder Effect DSP* section below
-for the same scoping rationale).
+SQ mode is **not** affected; the SN76489 PSG has its own output pin and
+never passes through the YM2612 DAC stage on real hardware (see the
+*Ladder Effect DSP* section below for the same scoping rationale).
 
 **Bypass when `fm_dac_prescaler == 0`** — the DSP stage early-returns;
 no sample-rate reduction, no extra branches.
@@ -633,45 +631,56 @@ no sample-rate reduction, no extra branches.
 The YM2612's analog output stage has a documented stepwise nonlinearity
 at low signal levels — historically called the "ladder effect" or "TDM
 distortion" — caused by an error in the chip's amplitude voltage curve.
-The DAC's output is linear from −256 to −1 and from 0 to +255, but the
-gap between −1 and 0 is **eight times** what a linear DAC would produce.
-Low-volume waveforms get exaggeratedly amplified and grow gritty.
+Per ymfm's reference implementation (`dac_discontinuity` in
+`third_party/ymfm/src/ymfm_opn.h:766`), each FM channel's 9-bit DAC
+output gets +4 added when non-negative and −3 when negative, applied
+**per-channel before analog summing**. The resulting gap between code
+−1's analog output (−4) and code 0's analog output (+4) is 8 units —
+eight times the normal linear step. Low-volume waveforms get
+exaggeratedly amplified and grow gritty.
 
 This is the famous "Genesis bass grit" and is one of the two output-
 character toggles in ADR-0024 (the other being Output Filtering).
 
-**Where it applies:** FM mode (per-voice sum, before the FM mix-bus
-resample) and D mode (after the `DspDecimator` 8-bit quantizer, before
-DRY/WET blend). SQ mode is **not** affected — the SN76489 PSG has its
-own output pin and doesn't pass through the YM2612 ladder DAC on the real
-hardware.
-
-**Coefficients / curve.** Implemented in `src/LadderEffect.{h,cpp}` as a
-piecewise linear lookup, calibrated against measurements published in
-[jsgroth's "Emulating the YM2612: Part 5" series](https://jsgroth.dev/blog/posts/emulating-ym2612-part-5/)
-and the SpritesMind hardware-test threads. The curve is fixed; not
-user-tunable beyond the on/off toggle.
+**Where it applies:**
+- **FM mode** — per voice, inside ymfm. Each `Voice` holds an
+  `ymfm::ym3438` instance (the YM2612's clean ASIC sibling, no built-in
+  discontinuity); `Voice::renderAdd` dispatches between
+  `chip.ym2612::generate(...)` (toggle on — uses the base class's
+  `dac_discontinuity`) and `chip.generate(...)` (toggle off — uses the
+  ym3438 override). Same chip state, same registers; only the
+  `generate()` body differs. This matches the real hardware's
+  per-channel DAC + analog summing.
+- **D mode** — `src/LadderEffect.{h,cpp}`, a 512-entry lookup applied
+  to the wet path after the `DspDecimator` 8-bit quantiser, before the
+  DRY/WET blend. The curve mirrors ymfm's `dac_discontinuity` exactly:
+  `(code − 3) / 256` for negative codes, `(code + 4) / 256` for
+  non-negative codes.
+- **SQ mode** — bypassed. The SN76489 PSG has its own output pin and
+  doesn't pass through the YM2612 ladder DAC on real hardware.
 
 ```
-linear input (signed, normalized -1..1):
-    -1.0 ──────────  -1/256  …  0  …  +1/256  ──────────  +1.0
-                          ^         ^
-                          │         │
-                          └── 8× gap ──┘
-                          (the "ladder")
+9-bit DAC code (per channel):
+    −256 ──── −1/256  …  0  …  +1/256 ──── +255
+              ↓                     ↓
+        (−1 − 3) / 256       (0 + 4) / 256
+        = −4/256             = +4/256
+              └────── 8× gap ──────┘
+                    (the "ladder")
 ```
 
-**Implementation.** A single pass over the buffer, branchless:
+**D-mode implementation.** A single pass over the buffer, branchless:
 
 ```cpp
-// Pseudocode — actual code uses a 512-entry lookup
+// Pseudocode — actual code uses a 512-entry lookup mirroring ymfm.
 float sample = ...;
-int quantized = std::clamp(int(sample * 256.0f), -256, 255);
-float ladderized = ladderLookup[quantized + 256];  // -512..+511 indexed
+int code = std::clamp(int(round(sample * 256.0f)), -256, 255);
+float ladderized = ladderLookup[code + 256];   // code-3 or code+4, /256
 ```
 
-Bypass when `ladder_effect` is false: the DSP stage early-returns; no
-multiplication, no lookup.
+Bypass when `ladder_effect` is false: D mode's `LadderEffect::process`
+early-returns; in FM mode, ym3438's `generate()` runs instead of the
+ym2612 base method, so the +4/−3 bias is never applied.
 
 ---
 

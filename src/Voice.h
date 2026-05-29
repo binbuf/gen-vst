@@ -112,8 +112,10 @@ public:
     bool isSustained() const noexcept         { return sustained; }
 
     // Generate `numSamples` native-rate samples, accumulating (+=) into the
-    // caller's mix buffers.
-    void renderAdd (float* accumL, float* accumR, int numSamples);
+    // caller's mix buffers. When `ladderEnabled` is true the YM2612's per-
+    // channel +4/-3 DAC discontinuity is applied via ymfm's ym2612::generate;
+    // when false, ym3438::generate is used for a clean ASIC-style output.
+    void renderAdd (float* accumL, float* accumR, int numSamples, bool ladderEnabled);
 
     // The chip's native output sample rate (~53267 Hz for the NTSC clock).
     std::uint32_t nativeSampleRate();
@@ -143,7 +145,11 @@ private:
     void writeFreqRegistersForMidi (double effectiveMidi);
 
     GenVstYmfmInterface interface;
-    ymfm::ym2612        chip { interface };
+    // Stored as ym3438 (no built-in DAC discontinuity); when the Ladder Effect
+    // toggle is on, renderAdd calls chip.ym2612::generate() to invoke the base
+    // class's +4/-3 dac_discontinuity. ym3438 inherits from ym2612 with no
+    // extra state — only generate() differs. See ymfm_opn.h:766 + .cpp:2398.
+    ymfm::ym3438        chip { interface };
 
     State         voiceState     = State::Idle;
     int           partIndex      = -1;

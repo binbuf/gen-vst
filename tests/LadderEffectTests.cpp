@@ -6,24 +6,29 @@
 
 #include "LadderEffect.h"
 
-// Task 03 — YM2612 ladder DAC stepwise nonlinearity. The curve in
-// LadderEffect.cpp is piecewise linear over both halves of the DAC code
-// space, with the negative branch shifted to realise the ~8× gap at the
-// zero crossing per jsgroth's hardware measurements. These tests pin the
-// four endpoint pinch points the design doc names + monotonicity +
-// bypass identity so the calibrated shape can't silently regress.
+// YM2612 ladder DAC stepwise nonlinearity, used in D mode only (FM mode
+// dispatches between ym2612/ym3438 inside Voice::renderAdd). The curve
+// mirrors ymfm's `dac_discontinuity`: non-negative codes get +4, negative
+// codes get -3, normalised by 256. These tests pin the endpoint pinch
+// points + monotonicity + bypass identity so the curve can't silently
+// regress.
 
 // --- Endpoint pinch points -------------------------------------------------
 
-TEST (LadderEffect, PinchPointsMatchPublishedCurveEndpoints)
+TEST (LadderEffect, PinchPointsMatchYmfmDiscontinuity)
 {
-    constexpr float oneOver256 = 1.0f / 256.0f;
+    constexpr float kInv256 = 1.0f / 256.0f;
 
-    EXPECT_FLOAT_EQ (LadderEffect::lookup (-1.0f),         -1.0f);
-    EXPECT_NEAR     (LadderEffect::lookup (-oneOver256),   -8.0f * oneOver256, 1.0e-5f);
-    EXPECT_FLOAT_EQ (LadderEffect::lookup ( 0.0f),          0.0f);
-    EXPECT_NEAR     (LadderEffect::lookup ( oneOver256),    oneOver256, 1.0e-5f);
-    EXPECT_FLOAT_EQ (LadderEffect::lookup ( 1.0f),          1.0f);
+    // code -256 → (-256 - 3) / 256 = -259/256
+    EXPECT_NEAR (LadderEffect::lookup (-1.0f),         -259.0f * kInv256, 1.0e-5f);
+    // code -1   → (-1 - 3) / 256 = -4/256
+    EXPECT_NEAR (LadderEffect::lookup (-kInv256),       -4.0f * kInv256, 1.0e-5f);
+    // code  0   → ( 0 + 4) / 256 = +4/256
+    EXPECT_NEAR (LadderEffect::lookup ( 0.0f),          +4.0f * kInv256, 1.0e-5f);
+    // code +1   → (+1 + 4) / 256 = +5/256
+    EXPECT_NEAR (LadderEffect::lookup ( kInv256),       +5.0f * kInv256, 1.0e-5f);
+    // code +255 → (+255 + 4) / 256 = +259/256
+    EXPECT_NEAR (LadderEffect::lookup ( 1.0f),         +259.0f * kInv256, 1.0e-5f);
 }
 
 // --- Curve is monotonic non-decreasing across the table --------------------
@@ -42,14 +47,11 @@ TEST (LadderEffect, TableIsMonotonicNonDecreasing)
 
 // --- Boundary gap relationship (calibrated) --------------------------------
 //
-// The design doc cites an "8x gap exactly at the -1 -> 0 boundary" measured
-// in jsgroth's article. With the negative branch shifted so DAC code -1
-// sits at -8/256, the realised ratio lands around 8.2× (integer rounding
-// inside the lookup nudges it slightly off a pure 8.0). Bound the ratio
-// to [6, 10] so a regression in either direction (drifting back toward 1
-// or over-amplifying past hardware) trips the test.
+// ymfm's +4/-3 bias gives a gap of 8 codes between code -1 (-4/256) and code
+// 0 (+4/256), while the normal step between consecutive codes is 1. Expected
+// ratio is exactly 8.0; bound to [7.5, 8.5] to accommodate float rounding.
 
-TEST (LadderEffect, ZeroCrossingGapIsMonotonicAndPositive)
+TEST (LadderEffect, ZeroCrossingGapMatchesYmfmEightTimes)
 {
     const float fA = LadderEffect::lookup (-2.0f / 256.0f);
     const float fB = LadderEffect::lookup (-1.0f / 256.0f);
@@ -60,9 +62,8 @@ TEST (LadderEffect, ZeroCrossingGapIsMonotonicAndPositive)
 
     EXPECT_GT (gap_in,   0.0f);
     EXPECT_GT (gap_edge, 0.0f);
-    // Calibrated ~8.2× gap at the zero crossing.
-    EXPECT_GE (gap_edge / gap_in,  6.0f);
-    EXPECT_LE (gap_edge / gap_in, 10.0f);
+    EXPECT_GE (gap_edge / gap_in, 7.5f);
+    EXPECT_LE (gap_edge / gap_in, 8.5f);
 }
 
 // --- Bypass produces identity ----------------------------------------------
@@ -89,8 +90,9 @@ TEST (LadderEffect, BypassProducesIdentityOutput)
 
 TEST (LadderEffect, OutOfRangeInputsAreClampedToTableEdges)
 {
-    EXPECT_FLOAT_EQ (LadderEffect::lookup (-10.0f), -1.0f);
-    EXPECT_FLOAT_EQ (LadderEffect::lookup ( 10.0f),  1.0f);
+    constexpr float kInv256 = 1.0f / 256.0f;
+    EXPECT_NEAR (LadderEffect::lookup (-10.0f), -259.0f * kInv256, 1.0e-5f);
+    EXPECT_NEAR (LadderEffect::lookup ( 10.0f), +259.0f * kInv256, 1.0e-5f);
 }
 
 // --- Process honours channel count -----------------------------------------
@@ -99,6 +101,8 @@ TEST (LadderEffect, ProcessAppliesToAllChannels)
 {
     LadderEffect le;
     le.prepare (44100.0);
+
+    constexpr float kInv256 = 1.0f / 256.0f;
 
     juce::AudioBuffer<float> buf (2, 8);
     for (int ch = 0; ch < 2; ++ch)
@@ -109,7 +113,7 @@ TEST (LadderEffect, ProcessAppliesToAllChannels)
 
     for (int i = 0; i < 8; ++i)
     {
-        EXPECT_FLOAT_EQ (buf.getSample (0, i), -1.0f);
-        EXPECT_FLOAT_EQ (buf.getSample (1, i),  1.0f);
+        EXPECT_NEAR (buf.getSample (0, i), -259.0f * kInv256, 1.0e-5f);
+        EXPECT_NEAR (buf.getSample (1, i), +259.0f * kInv256, 1.0e-5f);
     }
 }

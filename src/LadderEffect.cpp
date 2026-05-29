@@ -7,39 +7,38 @@ namespace
 {
     // Build the ladder lookup at process start. Computed once, then frozen.
     //
-    //   indices  0..255 → DAC codes -256..-1 → linear from -1.0 to -8/256
-    //   index    256    → DAC code   0       → 0
-    //   indices 257..511→ DAC codes +1..+255 → linear from +1/256 to +1.0
+    // Mirrors ymfm's `dac_discontinuity` (third_party/ymfm/src/ymfm_opn.h:766)
+    // in normalized -1..+1 space:
     //
-    // The negative branch is shifted so the value at DAC code -1 is -8/256
-    // (≈ -0.03125) rather than -1/256, producing the YM2612's characteristic
-    // ~8× gap at the zero crossing (per jsgroth's "Emulating the YM2612 —
-    // Part 5"; see 02-fm-synthesis.md *Ladder Effect DSP*). The realised
-    // ratio at the boundary lands around 8.2× because of integer-rounding
-    // in the lookup, which is consistent with the measured hardware.
+    //   code  c < 0  : out = (c - 3) / 256
+    //   code  c ≥ 0  : out = (c + 4) / 256
+    //
+    // Table layout:
+    //   indices  0..255  → DAC codes -256..-1 → (code - 3) / 256
+    //   indices  256..511→ DAC codes   0..255 → (code + 4) / 256
+    //
+    // The gap between code -1's output (-4/256) and code 0's output (+4/256)
+    // is 8/256 ≈ 0.0313, vs the normal linear step of 1/256 — the YM2612's
+    // documented 8× zero-crossing gap. Peaks are ±259/256 ≈ ±1.012 (the
+    // downstream master-volume softClip handles the small overshoot).
     std::array<float, LadderEffect::kTableSize> buildTable() noexcept
     {
         std::array<float, LadderEffect::kTableSize> t {};
 
-        // Negative branch — linear from -1.0 (idx 0) to -8/256 (idx 255).
-        // Inside step ≈ (1 − 8/256) / 255 ≈ 1/263 per code.
-        constexpr float negStart = -1.0f;
-        constexpr float negEnd   = -8.0f / 256.0f;
+        constexpr float kInv256 = 1.0f / 256.0f;
+
+        // Negative codes [-256, -1] — shifted down by 3 in 9-bit space.
         for (int i = 0; i < 256; ++i)
         {
-            const float u = static_cast<float> (i) / 255.0f;
-            t[(std::size_t) i] = negStart + u * (negEnd - negStart);
+            const int code = i - 256;             // -256..-1
+            t[(std::size_t) i] = static_cast<float> (code - 3) * kInv256;
         }
 
-        t[256] = 0.0f;
-
-        // Positive branch — linear from +1/256 (idx 257) to +1.0 (idx 511).
-        constexpr float posStart = 1.0f / 256.0f;
-        constexpr float posEnd   = 1.0f;
-        for (int i = 257; i < LadderEffect::kTableSize; ++i)
+        // Non-negative codes [0, +255] — shifted up by 4 in 9-bit space.
+        for (int i = 256; i < LadderEffect::kTableSize; ++i)
         {
-            const float u = static_cast<float> (i - 257) / 254.0f;
-            t[(std::size_t) i] = posStart + u * (posEnd - posStart);
+            const int code = i - 256;             // 0..+255
+            t[(std::size_t) i] = static_cast<float> (code + 4) * kInv256;
         }
 
         return t;

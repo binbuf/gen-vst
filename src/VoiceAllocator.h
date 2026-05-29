@@ -109,8 +109,10 @@ public:
 
     // Render `numSamples` of host-rate stereo audio: sum all sounding voices
     // at the native rate, then resample the mix to the host rate in one
-    // pass.
-    void render (float* outL, float* outR, int numSamples);
+    // pass. `ladderEnabled` selects the ymfm chip variant per voice — ym2612
+    // (with +4/-3 DAC discontinuity) when true, ym3438 (clean ASIC) when
+    // false. ADR-0024 toggle.
+    void render (float* outL, float* outR, int numSamples, bool ladderEnabled);
 
     // --- Introspection (tests / telemetry) -----------------------------------
 

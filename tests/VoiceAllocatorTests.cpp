@@ -254,7 +254,7 @@ TEST (VoiceAllocator, RenderProducesFiniteAudibleOutput)
     // ~93 ms — well past the instant attack, so output is sounding.
     for (int block = 0; block < 8; ++block)
     {
-        alloc.render (outL.data(), outR.data(), 512);
+        alloc.render (outL.data(), outR.data(), 512, /*ladderEnabled*/ true);
         for (int i = 0; i < 512; ++i)
         {
             if (! std::isfinite (outL[i]) || ! std::isfinite (outR[i]))
@@ -281,7 +281,7 @@ TEST (VoiceAllocator, RenderHandlesVaryingBlockSizes)
     bool allFinite = true;
     for (const int n : sizes)
     {
-        alloc.render (outL.data(), outR.data(), n);
+        alloc.render (outL.data(), outR.data(), n, /*ladderEnabled*/ true);
         for (int i = 0; i < n; ++i)
             if (! std::isfinite (outL[i]) || ! std::isfinite (outR[i]))
                 allFinite = false;
@@ -526,7 +526,7 @@ TEST (VoiceAllocator, GlideTimeReachesTargetWithinExpectedBlocks)
     bool reachedTarget = false;
     for (int b = 0; b < maxBlocks; ++b)
     {
-        alloc.render (outL.data(), outR.data(), blockSize);
+        alloc.render (outL.data(), outR.data(), blockSize, /*ladderEnabled*/ true);
         if (! v->isGliding()) { reachedTarget = true; break; }
     }
     EXPECT_TRUE (reachedTarget) << "glide did not converge within "
@@ -599,7 +599,7 @@ TEST (VoiceAllocator, ReleasedVoiceAutoIdlesAfterEnvelopeDecays)
     // (fast RR=15 patch decays in < 3 ms; 10 000 samples at 44100 Hz ≈ 227 ms).
     std::array<float, 512> outL {}, outR {};
     for (int block = 0; block < 20; ++block)
-        alloc.render (outL.data(), outR.data(), 512);
+        alloc.render (outL.data(), outR.data(), 512, /*ladderEnabled*/ true);
 
     EXPECT_EQ (alloc.numReleasingVoices(), 0);
     EXPECT_EQ (alloc.numIdleVoices(), VoiceAllocator::kNumVoices);
