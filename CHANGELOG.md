@@ -6,6 +6,70 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.2] — 2026-05-28
+
+### Added
+
+- **Sustain pedal (CC 64) for FM mode** — a new `sustainPedalDown` atomic
+  tracks pedal state; `handleNoteOff` holds released voices while the pedal is
+  down and releases them on pedal-up. SQ mode has no sustain hook (documented).
+- **PSG noise note-range split** — a new `noise_split_note` apvts param
+  (default MIDI 47 = B2). Notes at or below the split route to the SN76489
+  noise channel; notes above route to a tone channel. The SQ panel gains a
+  `SPLIT` stepper.
+- **Program Change support** — `dispatchMidi` now handles Program Change by
+  posting to the message thread; `loadProgramChangePatch` walks all patch roots
+  and loads the Nth tagged patch of the current mode. D mode ignores PC.
+- **CC 121 (Reset All Controllers)** — zeroes the mod-wheel / pitch-bend
+  mirrors, channel pressure, and sustain pedal, releases sustained voices, and
+  zeroes bend on active voices. apvts patch params are left untouched.
+- **`build.ps1` / `build.sh` uninstall** — `-Uninstall` (`--uninstall`) removes
+  a dev deploy (per-user plugin + patches); composes with `-System` /
+  `--system` and `-Clean` / `--clean`. Useful before running the real installer.
+- **`-DGENVST_DIAG` build option** — opt-in instrumentation that writes Win32 /
+  JUCE / WebView measurements to `~/Documents/GenVst-diag.log` for host-DPI
+  debugging. Compiled out completely by default.
+
+### Fixed
+
+- **Ableton / Windows high-DPI whitespace** (`PluginEditor.cpp`,
+  `design-system.css`). When Ableton's DPI-unaware VST3 message thread queried
+  the editor HWND on a >100% display, Windows returned virtualized (down-scaled)
+  client coordinates, so the WebView was laid out smaller than the host canvas
+  and a band of empty chassis showed to the right and bottom. The editor now
+  temporarily switches the thread to PerMonitorV2
+  (`SetThreadDpiAwarenessContext`) to read true physical pixels and resizes the
+  WebView to match (`syncToHostSize`, called from `resized`,
+  `parentSizeChanged`, and the telemetry timer as a fallback). The CSS side
+  drops the hard-coded `width: 1200px` / `viewport width=1200` in favour of
+  `100vw` / `100vh` with the chassis clamped to its native 1200×660 via
+  `max-width` / `max-height`, anchored top-left so `chassis-bg-mid` fills any
+  surplus. Tooltip edge-clamping now reads `window.innerWidth/innerHeight`
+  instead of the hard-coded 1200×560.
+- **Ladder Effect recalibrated to ymfm's `dac_discontinuity`** — the FM-mode
+  ladder is now applied per-voice inside ymfm: each `Voice` holds a `ym3438`
+  (clean ASIC, no discontinuity) and `renderAdd` dispatches to
+  `ym2612::generate` (toggle on, +4/−3 per-channel DAC bias) vs
+  `ym3438::generate` (toggle off), matching the real hardware's per-channel DAC
+  + analog summing. D mode's `LadderEffect` lookup table was rebuilt to mirror
+  the same curve exactly — `(code − 3)/256` for negative codes, `(code + 4)/256`
+  for non-negative — giving the documented 8× zero-crossing gap. The previous
+  approximation applied the ladder to the post-sum signal with a hand-fitted
+  ~8.2× gap.
+- **CC 7 / CC 10 documentation drift** — the MIDI map now correctly marks CC 10
+  (pan) as a no-op in v2.
+
+### Changed
+
+- **Output Filter framing** — documentation no longer describes the hand-tuned
+  coefficients as a "calibration follow-up"; they are the intentional v2
+  Model-1 approximation. No DSP change.
+- **Build scripts overhauled** (`build.ps1`, `build.sh`, README) — PowerShell
+  switches moved from `--flag` to idiomatic `-Flag` form, expanded help text,
+  and the new uninstall paths documented.
+
+---
+
 ## [0.2.1] — 2026-05-27
 
 ### Added

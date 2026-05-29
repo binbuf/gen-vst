@@ -83,7 +83,7 @@ juce_add_plugin(GenVst
     VST3_CATEGORIES             "Instrument|Synth"
     DESCRIPTION                 "Sega Genesis YM2612+SN76489 emulation"
     BUNDLE_ID                   "com.genvst.genvst"
-    VERSION                     "0.2.1")
+    VERSION                     "0.2.2")
 
 # --- Standalone patch directory (per-platform runtime data dir) ---------------
 # Normalise to forward slashes so embedding the value as a C string literal in
