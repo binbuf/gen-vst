@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(GenVst VERSION 0.3.0 LANGUAGES C CXX)   # C: libvgm SN76489 core sources
+project(GenVst VERSION 0.3.1 LANGUAGES C CXX)   # C: libvgm SN76489 core sources
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,7 +42,13 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvgm/emu/cores/sn76489.
 endif()
 
 if(APPLE)
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    # Default to universal for local dev; CI passes -DCMAKE_OSX_ARCHITECTURES
+    # per-arch (arm64 / x86_64) and ships separate .pkg installers, so a plain
+    # set() here would shadow the cache value and force a universal build that
+    # fails to link the cross arch on hosted runners.
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    endif()
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")   # ADR-0015 — verify vs JUCE 8 WebView
 endif()
 
