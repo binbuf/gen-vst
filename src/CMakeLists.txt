@@ -83,7 +83,7 @@ juce_add_plugin(GenVst
     VST3_CATEGORIES             "Instrument|Synth"
     DESCRIPTION                 "Sega Genesis YM2612+SN76489 emulation"
     BUNDLE_ID                   "com.genvst.genvst"
-    VERSION                     "0.3.1")
+    VERSION                     "0.3.2")
 
 # --- CLAP format (ADR-0028) ---------------------------------------------------
 # JUCE has no CLAP exporter; clap-juce-extensions wraps the same GenVst

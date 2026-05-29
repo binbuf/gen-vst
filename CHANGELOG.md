@@ -6,6 +6,32 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-05-28
+
+### Fixed
+
+- **Modal centering under Ableton Auto-Scale** (`modal-host.js`,
+  `preset-browser.js`). Follow-up to the 0.2.2 chassis-pinning work. The modal
+  host still used `inset: 0`, so on hosts that enlarge the WebView beyond the
+  1200×660 chassis (Ableton Auto-Scale, etc.) modals centered on the full
+  WebView viewport instead of the chassis region — they drifted right/down off
+  the visible UI. The host is now pinned to the top-left 1200×660 region
+  (collapsing to viewport via `max-width`/`max-height` in no-keyboard mode),
+  and the preset browser switches its height from `95vh` (WebView viewport) to
+  `95%` (chassis-sized parent) so the panel scales with the chassis rather
+  than the host-stretched canvas.
+
+## [0.3.1] — 2026-05-28
+
+### Fixed
+
+- **macOS CI cross-arch link failure.** The root `CMakeLists.txt` forced
+  `CMAKE_OSX_ARCHITECTURES` to `"arm64;x86_64"` with a plain `set()`, which
+  shadowed the per-job `-D` flag the release workflow passes. Both macOS jobs
+  ended up trying a universal build and failed linking the cross arch (first
+  surfaced at the `GenVst_CLAP` Ld step). The override is now guarded so CI's
+  `-D` wins and local dev still defaults to universal.
+
 ## [0.3.0] — 2026-05-28
 
 ### Added
