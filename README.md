@@ -78,9 +78,8 @@ cd gen-vst
 .\build.ps1 -Run                 # build + launch Standalone for a quick smoke-test
 .\build.ps1 -Clean               # wipe build/ first — use after CMakeLists changes or weird build failures
 .\build.ps1 -System              # deploy to system-wide VST3 folder, same location the installer uses (UAC prompt)
-.\build.ps1 -Uninstall           # undo dev deploy: remove per-user plugin + patches (e.g. before running the real installer)
-.\build.ps1 -Uninstall -System   # undo system deploy (UAC prompt)
-.\build.ps1 -Uninstall -Clean    # remove deployed assets and wipe the build directory
+.\build.ps1 -Uninstall           # remove ALL Gen VST installs: per-user dev, system dev, and the installer's copy (via its registered uninstaller). UAC prompt if a system/installer copy is present
+.\build.ps1 -Uninstall -Clean    # as above, and also wipe the build directory
 ```
 
 If PowerShell execution is blocked on your machine:

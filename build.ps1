@@ -8,8 +8,10 @@
     into folders a DAW will scan. Optionally launches the Standalone for a quick
     smoke-test.
 
-    Use -Uninstall to remove a previously deployed developer build (VST3 bundle,
-    CLAP, and factory patches) without triggering a build.
+    Use -Uninstall to remove every Gen VST install on this machine without
+    triggering a build: the per-user developer copies, any system-folder developer
+    copies, and the copy placed by the GitHub Actions installer (removed via its
+    registered uninstaller), plus factory patches.
 
     If running .ps1 scripts is blocked, invoke as:
         pwsh -ExecutionPolicy Bypass -File .\build.ps1
@@ -20,6 +22,7 @@
 .PARAMETER System
     Deploy to %CommonProgramFiles%\VST3 and \CLAP (requires elevation via UAC).
     Default: %LOCALAPPDATA%\Programs\Common\{VST3,CLAP} (no elevation required).
+    Ignored during -Uninstall, which always sweeps both per-user and system folders.
 
 .PARAMETER Run
     Launch the Standalone executable after a successful deploy.
@@ -29,9 +32,11 @@
     When combined with -Uninstall, also removes the build directory.
 
 .PARAMETER Uninstall
-    Remove the developer-deployed VST3 bundle and factory patches from the
-    installed locations without building. Combine with -System to target the
-    system VST3 folder. Combine with -Clean to also wipe the build directory.
+    Remove every Gen VST install without building: per-user developer copies,
+    system-folder developer copies, the installer-placed copy (via its registered
+    uninstaller, which also clears the Add/Remove Programs entry and Start-Menu
+    shortcuts), and factory patches. Removing the system/installer copy triggers a
+    single UAC prompt. Combine with -Clean to also wipe the build directory.
 
 .EXAMPLE
     .\build.ps1
@@ -51,15 +56,12 @@
 
 .EXAMPLE
     .\build.ps1 -Uninstall
-    Remove the per-user developer VST3 install and factory patches.
-
-.EXAMPLE
-    .\build.ps1 -Uninstall -System
-    Remove the system-folder developer VST3 install and factory patches (UAC prompt).
+    Remove every Gen VST install — per-user dev, system dev, and the installer's
+    copy (UAC prompt if a system/installer copy is present) — plus factory patches.
 
 .EXAMPLE
     .\build.ps1 -Uninstall -Clean
-    Remove installed assets and wipe the build directory.
+    Remove every install as above and also wipe the build directory.
 #>
 [CmdletBinding()]
 param(
@@ -91,6 +93,10 @@ $clapRoot = if ($System) { Join-Path $env:CommonProgramFiles 'CLAP' } `
             else          { Join-Path $env:LOCALAPPDATA 'Programs\Common\CLAP' }
 $clapDest = Join-Path $clapRoot 'Gen VST.clap'
 
+# Uninstall registry subkey written by the GitHub Actions Inno Setup installer.
+# Inno appends "_is1" to its AppId. MUST match AppId in packaging/windows/installer.iss.
+$installerKey = '{A4F3C7E2-9B5D-4E8A-B6C1-D2F5A8E1C9B7}_is1'
+
 # ---- helpers ----------------------------------------------------------------
 function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -118,39 +124,95 @@ function Invoke-Elevated([string] $Script, [string] $FailMessage = 'Elevated ope
     if ($proc.ExitCode -ne 0) { Exit-Fatal "$FailMessage (exit $($proc.ExitCode))." }
 }
 
+# Returns the path to the installer's unins000.exe if the GitHub Actions installer
+# is registered in Add/Remove Programs, otherwise $null. Reads HKLM (both the 64-bit
+# and WOW6432Node views); a registry read needs no elevation.
+function Find-InstallerUninstaller {
+    $roots = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$installerKey",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\$installerKey"
+    )
+    foreach ($root in $roots) {
+        $props = Get-ItemProperty -Path $root -ErrorAction SilentlyContinue
+        if (-not $props) { continue }
+        $raw = if ($props.QuietUninstallString) { $props.QuietUninstallString } else { $props.UninstallString }
+        if (-not $raw) { continue }
+        # Strip the leading quoted exe path from any trailing flags.
+        $exe = $raw -replace '^"([^"]+)".*', '$1'
+        if (Test-Path $exe) { return $exe }
+    }
+    return $null
+}
+
 # ---- uninstall --------------------------------------------------------------
 if ($Uninstall) {
+    # Sweep every place a Gen VST install can live, regardless of -System: the
+    # per-user developer copies, the system-folder developer copies, and the copy
+    # placed by the GitHub Actions installer. The installer copy is removed via its
+    # registered uninstaller (clears the Add/Remove Programs entry + Start-Menu
+    # shortcuts); direct file deletion is the fallback for system dev installs.
+    $userVst3 = Join-Path $env:LOCALAPPDATA 'Programs\Common\VST3\Gen VST.vst3'
+    $userClap = Join-Path $env:LOCALAPPDATA 'Programs\Common\CLAP\Gen VST.clap'
+    $sysVst3  = Join-Path $env:CommonProgramFiles 'VST3\Gen VST.vst3'
+    $sysClap  = Join-Path $env:CommonProgramFiles 'CLAP\Gen VST.clap'
+    $sysApp   = Join-Path $env:ProgramFiles 'Gen VST'   # installer's Standalone {app} dir
+
+    $uninstExe  = Find-InstallerUninstaller
+    $sysPaths   = @($sysVst3, $sysClap, $sysApp)
+    $sysPresent = @($sysPaths | Where-Object { Test-Path $_ })
+
     Write-Host ""
-    Write-Step "Gen VST — uninstall developer build"
-    Write-Info "VST3   : $vst3Dest"
-    Write-Info "CLAP   : $clapDest"
-    Write-Info "Patches: $patchDir"
-    if ($Clean) { Write-Info "Build  : $buildDir (will be removed)" }
+    Write-Step "Gen VST — uninstall (all installs)"
+    Write-Info "Per-user VST3 : $userVst3"
+    Write-Info "Per-user CLAP : $userClap"
+    Write-Info "System VST3   : $sysVst3"
+    Write-Info "System CLAP   : $sysClap"
+    Write-Info "Standalone    : $sysApp"
+    Write-Info "Installer     : $(if ($uninstExe) { $uninstExe } else { 'not registered' })"
+    Write-Info "Patches       : $patchDir"
+    if ($Clean) { Write-Info "Build         : $buildDir (will be removed)" }
     Write-Host ""
 
-    if ($System -and -not (Test-Admin)) {
-        Write-Info "System folder requires elevation — a UAC prompt will appear."
-        $elevated =
-            "`$ErrorActionPreference='Stop'; " +
-            "if (Test-Path $(ConvertTo-SingleQuoted $vst3Dest)) " +
-            "{ Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $vst3Dest) }; " +
-            "if (Test-Path $(ConvertTo-SingleQuoted $clapDest)) " +
-            "{ Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $clapDest) }"
-        try { Invoke-Elevated $elevated 'Elevated removal failed' }
-        catch { Exit-Fatal "Elevation was cancelled. Nothing was removed." }
-        Write-Info "Removed: $vst3Dest"
-        Write-Info "Removed: $clapDest"
-    } else {
-        foreach ($dest in @($vst3Dest, $clapDest)) {
-            if (Test-Path $dest) {
-                Remove-Item -Recurse -Force $dest
-                Write-Info "Removed: $dest"
-            } else {
-                Write-Info "Not present: $dest"
-            }
+    # 1. Per-user developer copies (no elevation).
+    foreach ($dest in @($userVst3, $userClap)) {
+        if (Test-Path $dest) {
+            Remove-Item -Recurse -Force $dest
+            Write-Info "Removed: $dest"
+        } else {
+            Write-Info "Not present: $dest"
         }
     }
 
+    # 2. Installer + system developer copies (needs elevation).
+    if ($uninstExe -or $sysPresent.Count -gt 0) {
+        # One elevated block: run the installer's uninstaller (if registered), then
+        # force-remove any leftover system files. The trailing deletes also cover the
+        # Inno self-relaunch race where -Wait can return before files are gone.
+        $lines = @("`$ErrorActionPreference='Stop'")
+        if ($uninstExe) {
+            $lines += "Start-Process -FilePath $(ConvertTo-SingleQuoted $uninstExe) " +
+                      "-ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait"
+        }
+        foreach ($p in $sysPaths) {
+            $lines += "if (Test-Path $(ConvertTo-SingleQuoted $p)) " +
+                      "{ Remove-Item -Recurse -Force $(ConvertTo-SingleQuoted $p) }"
+        }
+        $elevated = $lines -join '; '
+
+        if (Test-Admin) {
+            Invoke-Expression $elevated
+        } else {
+            Write-Info "System/installer copy requires elevation — a UAC prompt will appear."
+            try { Invoke-Elevated $elevated 'Elevated removal failed' }
+            catch { Exit-Fatal "Elevation was cancelled. Per-user copies were removed; the system/installer copy was not." }
+        }
+        if ($uninstExe) { Write-Info "Ran installer uninstaller: $uninstExe" }
+        foreach ($p in $sysPresent) { Write-Info "Removed: $p" }
+    } else {
+        Write-Info "No system or installer copy present."
+    }
+
+    # 3. Factory patches (no elevation).
     if (Test-Path $patchDir) {
         Remove-Item -Recurse -Force $patchDir
         Write-Info "Removed: $patchDir"
@@ -158,6 +220,7 @@ if ($Uninstall) {
         Write-Info "Not present: $patchDir"
     }
 
+    # 4. Optionally wipe the build directory.
     if ($Clean -and (Test-Path $buildDir)) {
         Write-Step "Cleaning $buildDir"
         Remove-Item -Recurse -Force $buildDir
