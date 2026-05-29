@@ -28,6 +28,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void parentSizeChanged() override;
 
     // juce::FileDragAndDropTarget — Task 09 drag-and-drop entry point. The
     // editor accepts any file with a supported patch extension, a `.vgm` /
@@ -42,6 +43,9 @@ private:
     void showFallbackPanel();
 
     juce::WebBrowserComponent::Options makeOptions();
+
+    // Ableton Auto-Scale workaround — see syncToHostSize implementation.
+    void syncToHostSize (const char* origin);
 
     // Fire the `patchLoaded` event into the WebView so the header LCD
     // updates. Called from the processor's patch-loaded callback.

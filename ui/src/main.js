@@ -28,6 +28,34 @@ const MODE_SQ = 1;
 const MODE_D  = 2;
 
 function init() {
+  // GENVST_DIAG: C++ emits requestDiag after uiReady; reply with the JS-side
+  // measurements that the C++ snapshot can't see directly (window viewport,
+  // devicePixelRatio, .frame computed width). Logged into GenVst-diag.log
+  // alongside the C++ snapshots. No-op when the option is off — the event
+  // just never arrives.
+  if (window.__JUCE__?.backend) {
+    window.__JUCE__.backend.addEventListener("requestDiag", () => {
+      const frame = document.querySelector(".frame");
+      const frameComputedWidth = frame
+        ? getComputedStyle(frame).width
+        : "(no .frame)";
+      const frameComputedHeight = frame
+        ? getComputedStyle(frame).height
+        : "(no .frame)";
+      window.__JUCE__.backend.emitEvent("diagResponse", {
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        outerWidth: window.outerWidth,
+        outerHeight: window.outerHeight,
+        clientWidth: document.documentElement.clientWidth,
+        clientHeight: document.documentElement.clientHeight,
+        devicePixelRatio: window.devicePixelRatio,
+        frameComputedWidth,
+        frameComputedHeight,
+      });
+    });
+  }
+
   try {
     // Strip browser-style affordances (right-click, F11/F12 inspector,
     // Ctrl/Cmd+wheel zoom, Ctrl/Cmd+R reload, …) in production bundles.

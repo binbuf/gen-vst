@@ -17,6 +17,18 @@
  #include "GenVstWebData.h"
 #endif
 
+// GENVST_DIAG: instrumentation for the Ableton/Windows DPI whitespace bug.
+// Enabled via `cmake -DGENVST_DIAG=ON`. Writes a labelled snapshot of JUCE +
+// Win32 + WebView measurements to ~/Documents/GenVst-diag.log so the actual
+// values seen in the host can be inspected without devtools. Compiled out
+// completely when the option is off (default).
+#if defined(GENVST_DIAG) && GENVST_DIAG
+ #include <mutex>
+ #if JUCE_WINDOWS
+  #include <windows.h>
+ #endif
+#endif
+
 #if ! GENVST_DEV_SERVER
 namespace
 {
@@ -99,10 +111,121 @@ namespace
 }
 #endif
 
+#if JUCE_WINDOWS
+namespace
+{
+    // Windows per-thread DPI virtualization workaround. When a DPI-unaware
+    // thread (which is what JUCE's VST3 message thread inherits from Ableton's
+    // process context) calls GetClientRect on an HWND that lives in a higher-
+    // DPI display, Windows returns VIRTUALIZED (down-scaled) coordinates.
+    // E.g. a real 1800x990 HWND at 150% display scale comes back as 1200x660.
+    //
+    // The fix is to temporarily switch this thread to PerMonitorV2 so the
+    // Win32 query returns true physical pixels, then restore the previous
+    // context so the rest of the thread's behaviour is unchanged.
+    bool getPhysicalClientRect (HWND hwnd, RECT& out)
+    {
+        const auto prev = ::SetThreadDpiAwarenessContext (DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        const bool ok = ::GetClientRect (hwnd, &out) != FALSE;
+        if (prev != nullptr)
+            ::SetThreadDpiAwarenessContext (prev);
+        return ok;
+    }
+
+    bool getPhysicalWindowRect (HWND hwnd, RECT& out)
+    {
+        const auto prev = ::SetThreadDpiAwarenessContext (DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        const bool ok = ::GetWindowRect (hwnd, &out) != FALSE;
+        if (prev != nullptr)
+            ::SetThreadDpiAwarenessContext (prev);
+        return ok;
+    }
+}
+#endif
+
+// --- GENVST_DIAG helpers (no-op when option is off) ------------------------
+#if defined(GENVST_DIAG) && GENVST_DIAG
+namespace
+{
+    void initDiagLogger()
+    {
+        static std::once_flag flag;
+        std::call_once (flag, []
+        {
+            const auto logFile = juce::File::getSpecialLocation (
+                                     juce::File::userDocumentsDirectory)
+                                 .getChildFile ("GenVst-diag.log");
+            juce::Logger::setCurrentLogger (new juce::FileLogger (
+                logFile,
+                "Gen VST diagnostic log (built " __DATE__ " " __TIME__ ")",
+                1024 * 1024));
+        });
+    }
+
+    void logDiagSnapshot (const juce::String& tag, juce::Component& c)
+    {
+        juce::String msg = "DIAG[" + tag + "]";
+        msg << " compW=" << c.getWidth() << " compH=" << c.getHeight();
+        msg << " desktopGlobalScale="
+            << juce::Desktop::getInstance().getGlobalScaleFactor();
+
+        if (auto* peer = c.getPeer())
+        {
+            msg << " peerScale=" << peer->getPlatformScaleFactor();
+           #if JUCE_WINDOWS
+            auto* editorHwnd = (HWND) peer->getNativeHandle();
+            if (editorHwnd != nullptr)
+            {
+                msg << " editorHwnd=0x" << juce::String::toHexString (
+                                              (juce::pointer_sized_int) editorHwnd);
+
+                RECT r;
+                if (getPhysicalClientRect (editorHwnd, r))
+                    msg << " editorClient=" << (int) (r.right - r.left)
+                        << "x" << (int) (r.bottom - r.top);
+                if (getPhysicalWindowRect (editorHwnd, r))
+                    msg << " editorWindow=" << (int) (r.right - r.left)
+                        << "x" << (int) (r.bottom - r.top);
+                msg << " editorDpi=" << (int) ::GetDpiForWindow (editorHwnd);
+
+                if (auto* parentHwnd = ::GetParent (editorHwnd))
+                {
+                    msg << " parentHwnd=0x" << juce::String::toHexString (
+                                                  (juce::pointer_sized_int) parentHwnd);
+                    if (getPhysicalClientRect (parentHwnd, r))
+                        msg << " parentClient=" << (int) (r.right - r.left)
+                            << "x" << (int) (r.bottom - r.top);
+                    if (getPhysicalWindowRect (parentHwnd, r))
+                        msg << " parentWindow=" << (int) (r.right - r.left)
+                            << "x" << (int) (r.bottom - r.top);
+                    msg << " parentDpi=" << (int) ::GetDpiForWindow (parentHwnd);
+                }
+            }
+           #endif // JUCE_WINDOWS
+        }
+        else
+        {
+            msg << " (no-peer)";
+        }
+
+        juce::Logger::writeToLog (msg);
+    }
+}
+#else
+namespace
+{
+    inline void initDiagLogger() {}
+    inline void logDiagSnapshot (const juce::String&, juce::Component&) {}
+}
+#endif // GENVST_DIAG
+
 GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& p)
     : juce::AudioProcessorEditor (&p),
       processor (p)
 {
+    initDiagLogger();
+    logDiagSnapshot ("ctor-entry", *this);
+
     // ADR-0023 -- fixed 1200x660 editor (100px added for on-screen keyboard strip).
     setSize (1200, 660);
     setOpaque (true);
@@ -152,6 +275,7 @@ GenVstAudioProcessorEditor::GenVstAudioProcessorEditor (GenVstAudioProcessor& p)
     }
 
     tryInitWebView();
+    logDiagSnapshot ("ctor-after-init-webview", *this);
 
     // ~30 Hz telemetry tick (05-ui-ux.md "C++ -> JS telemetry push"). Pushes
     // peakL/peakR/noteOn to the meterData event listeners. The webView pointer
@@ -182,6 +306,8 @@ GenVstAudioProcessorEditor::~GenVstAudioProcessorEditor()
 
 juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
 {
+    logDiagSnapshot ("makeOptions-entry", *this);
+
     auto options = juce::WebBrowserComponent::Options{}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
         .withWinWebView2Options (juce::WebBrowserComponent::Options::WinWebView2{}
@@ -212,6 +338,12 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             juce::Logger::writeToLog ("Gen VST: uiReady received from WebView: "
                                       + juce::JSON::toString (payload));
 
+           #if defined(GENVST_DIAG) && GENVST_DIAG
+            logDiagSnapshot ("uiReady", *this);
+            if (webView != nullptr)
+                webView->emitEventIfBrowserIsVisible ("requestDiag", juce::var{});
+           #endif
+
             // Synthesize a patchLoaded event for whatever's currently active
             // in the processor. Without this, a cold-start default-preset
             // load (which fires in prepareToPlay before the editor exists)
@@ -234,6 +366,13 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 }
             }
         })
+       #if defined(GENVST_DIAG) && GENVST_DIAG
+        .withEventListener ("diagResponse", [this] (juce::var payload)
+        {
+            juce::Logger::writeToLog ("DIAG[js] " + juce::JSON::toString (payload));
+            logDiagSnapshot ("after-diagResponse", *this);
+        })
+       #endif
         // Task 08 — Settings → RESET ALL TO DEFAULTS confirmation handler.
         // Returns juce::var{} so the JS-side getNativeFunction promise resolves.
         .withNativeFunction ("resetAllToDefaults",
@@ -466,12 +605,122 @@ void GenVstAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (0xff111315));
 }
 
+void GenVstAudioProcessorEditor::parentSizeChanged()
+{
+   #if defined(GENVST_DIAG) && GENVST_DIAG
+    {
+        juce::String msg = "DIAG[parentSizeChanged]";
+        msg << " selfW=" << getWidth() << " selfH=" << getHeight();
+        if (auto* p = getParentComponent())
+            msg << " parentW=" << p->getWidth() << " parentH=" << p->getHeight();
+        else
+            msg << " (no-parent)";
+       #if JUCE_WINDOWS
+        if (auto* peer = getPeer())
+        {
+            if (auto* hwnd = (HWND) peer->getNativeHandle())
+            {
+                RECT r;
+                if (GetClientRect (hwnd, &r))
+                    msg << " editorClient=" << (int) (r.right - r.left)
+                        << "x" << (int) (r.bottom - r.top);
+            }
+        }
+       #endif
+        juce::Logger::writeToLog (msg);
+    }
+   #endif
+
+    syncToHostSize ("parentSizeChanged");
+}
+
+void GenVstAudioProcessorEditor::syncToHostSize (const char* origin)
+{
+   #if JUCE_WINDOWS
+   #if defined(GENVST_DIAG) && GENVST_DIAG
+    // First-call-of-this-origin log so we can confirm the entry point is
+    // wired. Rate-limited (one entry per second) to avoid drowning the log
+    // at 30Hz.
+    static juce::int64 lastTraceMs = 0;
+    const auto nowMs = juce::Time::getMillisecondCounter();
+    const bool shouldTrace = (juce::int64) nowMs - lastTraceMs > 1000;
+    if (shouldTrace)
+    {
+        lastTraceMs = (juce::int64) nowMs;
+        juce::String trace = juce::String ("DIAG[syncToHostSize/") + origin + "/trace]";
+        trace << " webView=" << (webView != nullptr ? "ok" : "NULL");
+        if (auto* peer = getPeer())
+        {
+            trace << " peerScale=" << peer->getPlatformScaleFactor();
+            if (auto* hwnd = (HWND) peer->getNativeHandle())
+            {
+                trace << " hwnd=0x" << juce::String::toHexString ((juce::pointer_sized_int) hwnd);
+                RECT r;
+                if (getPhysicalClientRect (hwnd, r))
+                    trace << " physW=" << (int) (r.right - r.left)
+                          << " physH=" << (int) (r.bottom - r.top);
+                else
+                    trace << " GetClientRect=FAILED";
+            }
+            else
+                trace << " hwnd=NULL";
+        }
+        else
+            trace << " peer=NULL";
+        if (webView != nullptr)
+            trace << " webViewW=" << webView->getWidth()
+                  << " webViewH=" << webView->getHeight();
+        juce::Logger::writeToLog (trace);
+    }
+   #endif
+
+    if (webView == nullptr)
+        return;
+
+    if (auto* peer = getPeer())
+    {
+        const auto peerScale = peer->getPlatformScaleFactor();
+        if (peerScale < 1.05 && peerScale > 0.95)
+        {
+            if (auto* hwnd = (HWND) peer->getNativeHandle())
+            {
+                RECT r;
+                if (getPhysicalClientRect (hwnd, r))
+                {
+                    const int physW = (int) (r.right - r.left);
+                    const int physH = (int) (r.bottom - r.top);
+                    if (physW > 0 && physH > 0
+                        && (physW != webView->getWidth() || physH != webView->getHeight()))
+                    {
+                       #if defined(GENVST_DIAG) && GENVST_DIAG
+                        juce::Logger::writeToLog (juce::String ("DIAG[syncToHostSize/")
+                            + origin + "] resizing webView "
+                            + juce::String (webView->getWidth()) + "x"
+                            + juce::String (webView->getHeight()) + " -> "
+                            + juce::String (physW) + "x" + juce::String (physH));
+                       #endif
+                        webView->setBounds (0, 0, physW, physH);
+                    }
+                }
+            }
+        }
+    }
+   #else
+    juce::ignoreUnused (origin);
+   #endif
+}
+
 void GenVstAudioProcessorEditor::resized()
 {
+    logDiagSnapshot ("resized", *this);
+
     const auto b = getLocalBounds();
 
     if (webView != nullptr)
+    {
         webView->setBounds (b);
+        syncToHostSize ("resized");   // Ableton Auto-Scale override (see fn).
+    }
 
     // Fallback layout: centred title + message + Retry button.
     const int centreY = b.getCentreY();
@@ -489,6 +738,12 @@ void GenVstAudioProcessorEditor::timerCallback()
 {
     if (webView == nullptr)
         return;
+
+    // Fallback for JUCE not surfacing the host-side HWND resize via
+    // parentSizeChanged/resized after editor attachment — poll the actual
+    // HWND size on every telemetry tick and resize the WebView if needed.
+    // No-op when sizes already match (see syncToHostSize for the guard).
+    syncToHostSize ("timer");
 
     auto& t = processor.getTelemetry();
     auto* obj = new juce::DynamicObject();

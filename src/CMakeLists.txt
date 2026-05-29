@@ -227,7 +227,8 @@ target_compile_definitions(GenVst PUBLIC
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_REPORT_APP_USAGE=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
-    $<$<BOOL:${GENVST_DEV_SERVER}>:GENVST_DEV_SERVER=1>)
+    $<$<BOOL:${GENVST_DEV_SERVER}>:GENVST_DEV_SERVER=1>
+    $<$<BOOL:${GENVST_DIAG}>:GENVST_DIAG=1>)
 
 # --- Factory-root runtime paths (Task 09 / ADR-0005) --------------------------
 # PatchBrowser::resolveFactoryRoot uses these:

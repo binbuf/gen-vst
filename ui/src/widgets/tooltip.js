@@ -18,8 +18,6 @@ import { bindToggle } from "../binding.js";
 const ENTER_DELAY_MS = 400;
 const CURSOR_OFFSET_X = 12;
 const CURSOR_OFFSET_Y = 16;
-const VIEWPORT_W = 1200;
-const VIEWPORT_H = 560;
 const EDGE_PAD = 6;
 
 export function installTooltips(root) {
@@ -80,10 +78,13 @@ export function installTooltips(root) {
 
     // Measure after content set, before position clamp.
     const box = tipEl.getBoundingClientRect();
+    const vw  = window.innerWidth;
+    const vh  = window.innerHeight;
+
     let x = clientX + CURSOR_OFFSET_X;
     let y = clientY + CURSOR_OFFSET_Y;
-    if (x + box.width  > VIEWPORT_W - EDGE_PAD) x = VIEWPORT_W - EDGE_PAD - box.width;
-    if (y + box.height > VIEWPORT_H - EDGE_PAD) y = clientY - CURSOR_OFFSET_Y - box.height;
+    if (x + box.width  > vw - EDGE_PAD) x = vw - EDGE_PAD - box.width;
+    if (y + box.height > vh - EDGE_PAD) y = clientY - CURSOR_OFFSET_Y - box.height;
     if (x < EDGE_PAD) x = EDGE_PAD;
     if (y < EDGE_PAD) y = EDGE_PAD;
     tipEl.style.left = `${x}px`;

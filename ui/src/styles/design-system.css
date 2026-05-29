@@ -152,9 +152,11 @@
 
 html,
 body {
-  width: 1200px;
-  height: 100%;
-  overflow: hidden;                /* fills the WebView viewport (660px or 560px depending on keyboard visibility) */
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   background: var(--chassis-bg-mid);
   color: var(--label-text);
   font-family: "IBM Plex Mono", ui-monospace, "Cascadia Mono", "SF Mono",
@@ -164,6 +166,13 @@ body {
   user-select: none;
   cursor: default;
 }
+
+/* Anchor the fixed-size chassis at the top-left of the viewport. When the host
+ * canvas is larger than 1200x660 (Ableton Auto-Scale enlarges the plugin window
+ * but the chassis design stays at its native pixel-art size), .frame's
+ * max-width/max-height caps below leave the chassis at 1200x660 in the top-
+ * left and chassis-bg-mid (on html/body) fills the surrounding area to the
+ * right and bottom. */
 
 canvas {
   display: block;
@@ -243,7 +252,9 @@ canvas {
 
 .frame {
   width: 100%;
+  max-width: 1200px;          /* clamp to the native chassis width  */
   height: 100%;
+  max-height: 660px;          /* clamp to native height w/ keyboard */
   display: flex;
   flex-direction: column;
   padding: 8px;

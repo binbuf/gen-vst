@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_TESTS "Build unit tests" ON)
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugin to system install directory" OFF)
 option(GENVST_DEV_SERVER "Load the UI from the Vite dev server, not the embedded bundle" OFF)
+option(GENVST_DIAG "Write Win32/JUCE/WebView measurements to ~/Documents/GenVst-diag.log for host-DPI debugging" OFF)
 
 # JUCE — fetched and pinned to a known-good tag.
 include(FetchContent)
