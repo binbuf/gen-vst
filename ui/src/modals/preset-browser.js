@@ -47,11 +47,14 @@ function ensureStyles() {
       box-sizing: border-box;
       width: 720px;
       max-width: 720px;
-      /* Repeat max-height to override the .modal-panel base rule        */
-      /* (max-height: 480px). Inner panes pb-tree / pb-list manage their */
-      /* own overflow, so the panel itself never scrolls.                */
-      height: 95vh;
-      max-height: 95vh;
+      /* 95% of the modal-host (chassis-sized: 1200x660 capped to viewport), */
+      /* not 95vh — vh tracks the WebView height, which the DAW host may    */
+      /* enlarge beyond the chassis. Repeat max-height to override the base */
+      /* .modal-panel rule (max-height: 480px). Inner panes pb-tree /       */
+      /* pb-list manage their own overflow, so the panel itself never       */
+      /* scrolls.                                                           */
+      height: 95%;
+      max-height: 95%;
       min-width: 0;
       overflow: hidden;
     }

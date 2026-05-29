@@ -23,8 +23,19 @@ function ensureStyles() {
   style.id = "genvst-modal-style";
   style.textContent = `
     .modal-host {
+      /* Pinned to the chassis area (top-left 1200x660) rather than the full
+       * WebView viewport. When the DAW host enlarges the WebView (Ableton
+       * Auto-Scale, etc.), .frame stays clamped at 1200x660 in the top-left,
+       * so the modal must center within that region — not the surrounding
+       * chassis-bg fill. max-width/max-height collapse to the viewport when
+       * the WebView is smaller than the chassis (no-keyboard mode). */
       position: fixed;
-      inset: 0;
+      top: 0;
+      left: 0;
+      width: 1200px;
+      height: 660px;
+      max-width: 100vw;
+      max-height: 100vh;
       z-index: 80;
       display: flex;
       align-items: center;
