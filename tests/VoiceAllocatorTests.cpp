@@ -268,6 +268,45 @@ TEST (VoiceAllocator, RenderProducesFiniteAudibleOutput)
     EXPECT_TRUE (anyNonZero);
 }
 
+// Pins the FM-mode ladder dispatch in Voice::renderAdd: with the toggle on,
+// the chip is driven via the ym2612 base (which applies dac_discontinuity);
+// with it off, via ym3438 (clean DAC). If a refactor drops the explicit
+// ym2612:: qualifier, both branches collapse to ym3438 and the toggle becomes
+// a silent no-op. We assert the two render paths produce measurably different
+// audio for the same patch and the same note.
+TEST (VoiceAllocator, FmPathHonoursLadderToggle)
+{
+    constexpr int kBlockSize = 512;
+    constexpr int kBlocks    = 8;
+
+    auto renderSum = [&] (bool ladderEnabled)
+    {
+        VoiceAllocator alloc;
+        alloc.prepare (44100.0, kBlockSize);
+        alloc.noteOn (0, 69, 100, 0.0, false, makePatch());
+
+        std::array<float, kBlockSize> outL {};
+        std::array<float, kBlockSize> outR {};
+        double absSum = 0.0;
+        for (int b = 0; b < kBlocks; ++b)
+        {
+            alloc.render (outL.data(), outR.data(), kBlockSize, ladderEnabled);
+            for (int i = 0; i < kBlockSize; ++i)
+                absSum += std::abs (outL[i]) + std::abs (outR[i]);
+        }
+        return absSum;
+    };
+
+    const double withLadder    = renderSum (true);
+    const double withoutLadder = renderSum (false);
+
+    EXPECT_GT (withLadder,    0.0);
+    EXPECT_GT (withoutLadder, 0.0);
+    EXPECT_GT (std::abs (withLadder - withoutLadder), 1.0e-3)
+        << "FM ladder toggle had no audible effect — ym2612 vs ym3438 dispatch "
+           "in Voice::renderAdd may have regressed to a single code path.";
+}
+
 TEST (VoiceAllocator, RenderHandlesVaryingBlockSizes)
 {
     VoiceAllocator alloc;

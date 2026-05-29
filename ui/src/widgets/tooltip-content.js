@@ -28,7 +28,7 @@ export const TOOLTIPS = {
   },
   "ladder_effect": {
     name: "LADDER EFFECT",
-    desc: "Pre-DAC ladder-filter colour; mimics the Genesis 1's analog stage.",
+    desc: "YM2612 DAC stepwise nonlinearity — adds gritty quantisation distortion at low signal levels (the classic Genesis bass grit). Distinct from Output Filter.",
   },
   "mode_select": {
     name: "MODE",
