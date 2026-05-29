@@ -15,7 +15,7 @@ import { mount as mountToast } from "./widgets/notification-toast.js";
 import { installTooltips }     from "./widgets/tooltip.js";
 import { bindCombo }            from "./binding.js";
 import { mount as mountHeader } from "./header.js";
-import { mount as mountFmView } from "./views/fm-view.js";
+import { mount as mountFmView } from "./views/fm-container.js";
 import { mount as mountSqView } from "./views/sq-view.js";
 import { mount as mountDView }  from "./views/d-view.js";
 import { open as openSettings }      from "./modals/settings.js";

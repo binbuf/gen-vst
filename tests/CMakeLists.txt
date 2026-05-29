@@ -32,11 +32,13 @@ add_executable(GenVstTests
     FmFreqCtrlModeTests.cpp
     FmLegatoTests.cpp
     FmTlInversionTests.cpp
+    KitTests.cpp
     # Units under test, compiled straight into the test binary.
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
     "${CMAKE_SOURCE_DIR}/src/PluginState.cpp"
     "${CMAKE_SOURCE_DIR}/src/PsgPreset.cpp"
+    "${CMAKE_SOURCE_DIR}/src/Kit.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmExtract.cpp"
     "${CMAKE_SOURCE_DIR}/src/VgmLogger.cpp"
     "${CMAKE_SOURCE_DIR}/src/FmRegisterMap.cpp"

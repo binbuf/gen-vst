@@ -448,7 +448,36 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
                 if (pitch >= 0 && pitch <= 127)
                     processor.injectNoteOff (pitch);
                 completion (juce::var{});
-            });
+            })
+        // FM drum-kit editing (ADR-0021 amendment).
+        .withNativeFunction ("getKit",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doGetKit (args, std::move (completion)); })
+        .withNativeFunction ("enterKit",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doEnterKit (args, std::move (completion)); })
+        .withNativeFunction ("exitKit",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doExitKit (args, std::move (completion)); })
+        .withNativeFunction ("setKitSlot",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doSetKitSlot (args, std::move (completion)); })
+        .withNativeFunction ("clearKitSlot",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doClearKitSlot (args, std::move (completion)); })
+        .withNativeFunction ("saveKit",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doSaveKit (args, std::move (completion)); })
+        .withNativeFunction ("playPad",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doPlayPad (args, std::move (completion)); });
 
    #if ! GENVST_DEV_SERVER
     options = options.withResourceProvider (
@@ -1009,6 +1038,87 @@ void GenVstAudioProcessorEditor::doGetPatchRoots (const juce::Array<juce::var>& 
                                                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
 {
     completion (processor.getPatchBrowser().rootsAsJson());
+}
+
+// -----------------------------------------------------------------------------
+// FM drum-kit native functions (ADR-0021 amendment)
+// -----------------------------------------------------------------------------
+
+juce::var GenVstAudioProcessorEditor::kitResultVar() const
+{
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty ("active", processor.isKitActive());
+    juce::var kitVar;
+    juce::JSON::parse (processor.kitJsonForUi(), kitVar);
+    obj->setProperty ("kit", kitVar);
+    return juce::var (obj);
+}
+
+void GenVstAudioProcessorEditor::doGetKit (const juce::Array<juce::var>& /*args*/,
+                                           juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    completion (kitResultVar());
+}
+
+void GenVstAudioProcessorEditor::doEnterKit (const juce::Array<juce::var>& /*args*/,
+                                             juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    processor.enterKitMode();
+    completion (kitResultVar());
+}
+
+void GenVstAudioProcessorEditor::doExitKit (const juce::Array<juce::var>& /*args*/,
+                                            juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    processor.exitKitMode();
+    completion (kitResultVar());
+}
+
+void GenVstAudioProcessorEditor::doSetKitSlot (const juce::Array<juce::var>& args,
+                                               juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const int    pad       = intArg (args, 0, -1);
+    const auto   path      = stringArg (args, 1);
+    const int    note      = intArg (args, 2, -1);
+    const int    fixedNote = intArg (args, 3, note);
+    const double volume    = args.size() > 4 && (args[4].isDouble() || args[4].isInt())
+                                ? static_cast<double> (args[4]) : 1.0;
+    const int    decayRr   = intArg (args, 5, -1);
+
+    processor.setKitSlot (pad, path, note, fixedNote, volume, decayRr);
+    completion (kitResultVar());
+}
+
+void GenVstAudioProcessorEditor::doClearKitSlot (const juce::Array<juce::var>& args,
+                                                 juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    processor.clearKitSlot (intArg (args, 0, -1));
+    completion (kitResultVar());
+}
+
+void GenVstAudioProcessorEditor::doSaveKit (const juce::Array<juce::var>& args,
+                                            juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    auto name = stringArg (args, 0);
+    if (name.isEmpty()) name = "kit";
+
+    juce::String err;
+    const auto savedPath = processor.saveActiveKit (name, err);
+    if (savedPath.isEmpty())
+    {
+        emitToast ("error", err);
+        completion (resultObject (false, err));
+        return;
+    }
+    emitToast ("info", "Saved " + name);
+    completion (resultObject (true, {}, savedPath));
+}
+
+void GenVstAudioProcessorEditor::doPlayPad (const juce::Array<juce::var>& args,
+                                            juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    processor.auditionKitPad (intArg (args, 0, -1));
+    completion (juce::var{});
 }
 
 // -----------------------------------------------------------------------------

@@ -54,6 +54,7 @@ void Voice::reset()
     glideRateNotesPerSample = 0.0;
     freqCtrlMode            = FreqCtrlMode::IntMul;
     silentNativeSamples     = 0;
+    keyedPatch              = {};
 }
 
 std::uint32_t Voice::nativeSampleRate()
@@ -101,6 +102,7 @@ void Voice::noteOn (int part, int note, int velocity, double bend,
     // AUTO_RETRIG (TimerA LOAD must re-fire on every retrigger).
     const FreqCtrlMode mode = resolveMode (patch.freq_ctrl_mode);
     freqCtrlMode            = mode;
+    keyedPatch              = patch;   // retain for the kit refresh path
 
     const FmRegisterMap::NoteParams np { velocity, velToTl, bend + voiceDetuneSemitones };
 
@@ -168,6 +170,7 @@ void Voice::legatoTo (int note, int velocity, double bend, bool velToTl,
     noteVelocity   = velocity;
     bendSemitones  = bend;
     lastNoteOnTime = timestamp;
+    keyedPatch     = patch;   // keep the retained patch in sync after a legato
 
     if (glideTimeSamples > 0.0
         && std::abs (static_cast<double> (note) - glideCurrentMidi) > 1e-9)

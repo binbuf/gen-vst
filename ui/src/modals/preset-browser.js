@@ -270,8 +270,15 @@ function defaultChipFilter(modeIdx) {
   return "All";
 }
 
-export function open() {
+// `opts.pick(path, name, tag)` — optional. When provided the browser acts as
+// a one-shot picker: clicking a row invokes `pick` and closes the modal
+// instead of loading the patch into the engine. `opts.initialChip` ("FM" /
+// "SQ" / "All") overrides the default chip filter (used by the kit pad
+// assignment, which only wants FM patches).
+export function open(opts = {}) {
   ensureStyles();
+
+  const pick = typeof opts.pick === "function" ? opts.pick : null;
 
   let teardown = () => {};
 
@@ -304,7 +311,7 @@ export function open() {
       const chipWrap = el("div", { className: "btn-pill" });
       const chipLabels = ["All", "FM", "SQ"];
       const chipBtns = {};
-      let activeChip = defaultChipFilter(initialMode);
+      let activeChip = opts.initialChip || defaultChipFilter(initialMode);
       chipLabels.forEach((label) => {
         const btn = el("button", { className: "btn", text: label });
         btn.type = "button";
@@ -557,6 +564,13 @@ export function open() {
           if (r.path === selectedPatchPath) row.classList.add("is-selected");
 
           row.addEventListener("click", async () => {
+            // Picker mode (kit pad assignment): hand the path back and close,
+            // never loading the patch into the engine.
+            if (pick) {
+              pick(r.path, r.name, r.tag);
+              close();
+              return;
+            }
             selectedPatchPath = r.path;
             renderList();
             if (nat.loadPatch) await nat.loadPatch(r.path);

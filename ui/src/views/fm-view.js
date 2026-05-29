@@ -23,6 +23,8 @@ import {
   bindCombo,
 } from "../binding.js";
 
+import { getNativeFunction }        from "../juce/index.js";
+
 import { mount as mountKnob }       from "../widgets/knob.js";
 import { mount as mountToggle }     from "../widgets/toggle-switch.js";
 import { mount as mountStepper }    from "../widgets/stepper.js";
@@ -354,6 +356,14 @@ function ensureStyles() {
         0 0 8px 1px rgba(255, 176, 64, 0.45);
       border-radius: 50%;
     }
+
+    /* KIT entry button — top-right of the FM panel; opens the drum-kit view
+     * (ADR-0021 amendment). Absolutely positioned so it doesn't disturb the
+     * fixed two-row grid. */
+    .fm-panel .fm-kit-enter {
+      position: absolute; top: 18px; right: 14px; z-index: 3;
+      padding: 4px 10px;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -392,10 +402,22 @@ function makeStepperCell(label, paramId) {
 // Build & mount the FM panel into `root`. Returns a disposer that unmounts
 // every widget and removes listeners — main.js calls this when the user
 // switches mode away from FM.
-export function mount(root) {
+export function mount(root, opts = {}) {
   ensureStyles();
   root.classList.add("fm-panel");
   root.innerHTML = "";
+
+  // KIT entry — switches FM mode into the drum-kit pad grid (ADR-0021
+  // amendment). Only shown when the host container provides the callback.
+  if (typeof opts.onEnterKit === "function") {
+    const kitBtn = el("button", { className: "btn fm-kit-enter", text: "KIT" });
+    kitBtn.type = "button";
+    kitBtn.addEventListener("click", async () => {
+      try { const f = getNativeFunction("enterKit"); if (f) await f(); } catch (_e) { /* ignore */ }
+      opts.onEnterKit();
+    });
+    root.appendChild(kitBtn);
+  }
 
   // Top row: LFO/global + envelope + freq ctrl + misc + algo + topology.
   // 6-column grid (234 | 1fr | 130 | 96 | 86 | 132) — matches mvp2/01 mockup.

@@ -33,6 +33,12 @@ namespace genvst::state
         juce::String              activeFmPath;
         juce::String              activeSqPath;
         std::vector<juce::String> customRoots;
+
+        // Embedded FM drum-kit JSON (ADR-0021 amendment). Non-empty when the
+        // project was saved with a `.gnkit` active; the full kit (every pad's
+        // patch) is embedded so the project is self-contained even if the
+        // source `.gnkit` / `.tfi` files move. Empty = no kit active.
+        juce::String              kitJson;
     };
 
     // Build the v2 state XML envelope from its constituent inputs. Keeps the
@@ -42,7 +48,8 @@ namespace genvst::state
         const juce::ValueTree&             apvtsState,
         const juce::String&                activeFmPath,
         const juce::String&                activeSqPath,
-        const std::vector<juce::String>&   customRootPaths);
+        const std::vector<juce::String>&   customRootPaths,
+        const juce::String&                kitJson = {});
 
     // Parse `xml` into a pending restore + replace apvts state. Returns the
     // pending restore payload on success; std::nullopt when `xml` is not a

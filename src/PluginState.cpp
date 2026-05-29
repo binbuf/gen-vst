@@ -9,6 +9,7 @@ namespace genvst::state
         constexpr const char* kPatchPathAttr   = "path";
         constexpr const char* kCustomRootsTag  = "customRoots";
         constexpr const char* kRootElementTag  = "root";
+        constexpr const char* kKitTag          = "kit";
 
         void appendPatchPathIfPresent (juce::XmlElement&   parent,
                                        const char*         modeLabel,
@@ -25,12 +26,19 @@ namespace genvst::state
         const juce::ValueTree&             apvtsState,
         const juce::String&                activeFmPath,
         const juce::String&                activeSqPath,
-        const std::vector<juce::String>&   customRootPaths)
+        const std::vector<juce::String>&   customRootPaths,
+        const juce::String&                kitJson)
     {
         auto root = std::make_unique<juce::XmlElement> (kRootTag);
 
         appendPatchPathIfPresent (*root, "FM", activeFmPath);
         appendPatchPathIfPresent (*root, "SQ", activeSqPath);
+
+        // Embedded drum kit (ADR-0021 amendment). Stored as the `.gnkit` JSON
+        // text so the project carries the full kit independently of the
+        // on-disk source files.
+        if (kitJson.isNotEmpty())
+            root->createNewChildElement (kKitTag)->addTextElement (kitJson);
 
         auto* customRoots = root->createNewChildElement (kCustomRootsTag);
         for (const auto& path : customRootPaths)
@@ -74,6 +82,10 @@ namespace genvst::state
                     const auto path = rootEl->getStringAttribute (kPatchPathAttr);
                     if (path.isNotEmpty()) pending.customRoots.push_back (path);
                 }
+            }
+            else if (child->hasTagName (kKitTag))
+            {
+                pending.kitJson = child->getAllSubText();
             }
             else if (child->hasTagName (apvtsRootTag))
             {

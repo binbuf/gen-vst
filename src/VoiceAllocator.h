@@ -107,6 +107,12 @@ public:
     // when a single CC/AT/PC event mutated just one part's patch.
     void updateActiveVoicesForPart (int part, const Patch& patch, bool velToTl);
 
+    // Kit mode (ADR-0021 amendment): re-diff every sounding voice against the
+    // patch it was individually keyed with, rather than one shared patch. This
+    // is the per-block refresh used when a drum kit is active, where each voice
+    // may be playing a different pad's FM patch.
+    void updateActiveVoicesFromKeyedPatch (bool velToTl);
+
     // Render `numSamples` of host-rate stereo audio: sum all sounding voices
     // at the native rate, then resample the mix to the host rate in one
     // pass. `ladderEnabled` selects the ymfm chip variant per voice — ym2612

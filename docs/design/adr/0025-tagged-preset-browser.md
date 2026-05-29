@@ -106,6 +106,13 @@ patches can be auditioned in turn; `Close` dismisses.
   factory PSG preset folder `extern/patches/sq/` is created and seeded
   with a small starter set (a handful of bass / lead / arp tones). No
   equivalent class exists for D mode.
+- **`.gnkit` drum kits** (ADR-0021 amendment, 2026-05-29) join the supported
+  extensions and tag **FM**. Loading one auto-switches the instance to FM and
+  activates kit mode (the pad-grid view) rather than applying a single patch;
+  `src/Kit.{h,cpp}` defines the `.gnkit` JSON load/save. Factory kits live in
+  `extern/patches/fm/kits/` (seeded with `gm-standard.gnkit`). Kits appear in
+  the browser like any FM preset, but are **excluded from Program Change and
+  prev/next navigation**, which step through single patches only.
 - The v1 dedicated DAC `LOAD WAV...` button and WAV drag-drop onto the
   D-section are **removed** — D mode does not load WAV files at all
   ([ADR-0021](0021-three-mode-single-engine-ui.md)). Patch drag-drop onto

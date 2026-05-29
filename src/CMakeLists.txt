@@ -187,6 +187,7 @@ target_sources(GenVst PRIVATE
     PatchSystem.cpp       PatchSystem.h
     PatchBrowser.cpp      PatchBrowser.h
     PsgPreset.cpp         PsgPreset.h
+    Kit.cpp               Kit.h
     VgmExtract.cpp        VgmExtract.h
     VgmLogger.cpp         VgmLogger.h
     SN76489Wrapper.cpp    SN76489Wrapper.h

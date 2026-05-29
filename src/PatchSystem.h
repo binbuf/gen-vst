@@ -107,8 +107,8 @@ inline constexpr std::size_t kY12FileSize = 128;
 //
 // Extensions are stored lower-case with the leading dot. Callers comparing
 // against them must lower-case their own input first.
-inline constexpr std::array<std::string_view, 6> kSupportedPatchExtensions {
-    ".tfi", ".vgi", ".dmp", ".y12", ".opm", ".psg"
+inline constexpr std::array<std::string_view, 7> kSupportedPatchExtensions {
+    ".tfi", ".vgi", ".dmp", ".y12", ".opm", ".psg", ".gnkit"
 };
 
 // True if `ext` (a file extension like ".tfi", case-insensitive, must include

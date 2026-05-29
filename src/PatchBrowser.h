@@ -12,6 +12,10 @@
 
 #include "PatchSystem.h"
 
+// Defined in Kit.h (global namespace). Forward-declared so the saveKitFile
+// signature below references the global ::Kit, not a genvst::Kit.
+struct Kit;
+
 namespace genvst
 {
 
@@ -260,6 +264,12 @@ public:
     // '_'). 04-patch-system.md: savePatch() is the only path that populates
     // the PRESETS tab.
     SaveResult savePatchAsTfi (const Patch& patch, const juce::String& name);
+
+    // Write `kit` to the user-saved root as `<name>.gnkit` (ADR-0021
+    // amendment). Mirrors savePatchAsTfi: creates the saved root, sanitises
+    // the name, embeds every pad's patch, and rescans so the kit appears in
+    // the browser. Returns the written path + error string.
+    SaveResult saveKitFile (const ::Kit& kit, const juce::String& name);
 
     // Copy a file from `sourcePath` into the user-imported root (preserving
     // the file name). Used by the importPatch native function and by the

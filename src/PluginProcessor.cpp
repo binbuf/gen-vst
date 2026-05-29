@@ -855,6 +855,21 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
     // future MIDI events would already have used a stale mode.
     pushPolyphonyParameters();
 
+    const bool kitOn = kitActive.load (std::memory_order_acquire);
+
+    // Kit mode (ADR-0021 amendment): each sounding voice carries its own pad
+    // patch, so re-diff from each voice's keyed patch rather than the single
+    // currentPatch. The single-patch MW→PMS / aftertouch / pitch-bend
+    // mutations below don't apply to a drum kit and are skipped.
+    if (kitOn)
+    {
+        const bool velToTlKit = velocityToTlParam != nullptr
+                                  && velocityToTlParam->load() > 0.5f;
+        voiceAllocator.updateActiveVoicesFromKeyedPatch (velToTlKit);
+    }
+    else
+    {
+
     // Snapshot the current single-engine patch and propagate to active voices.
     paramCache.readPatch (currentPatch);
 
@@ -921,6 +936,8 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
         voiceAllocator.setPitchBend (0, semitones, currentPatch, velToTl);
     }
 
+    }   // end single-patch (non-kit) path
+
     const int numChannels = buffer.getNumChannels();
     float* left  = buffer.getWritePointer (0) + startSample;
     float* right = numChannels > 1 ? buffer.getWritePointer (1) + startSample
@@ -950,7 +967,7 @@ void GenVstAudioProcessor::renderFmBlock (juce::AudioBuffer<float>& buffer,
     // applied per-voice inside ymfm (chip-variant dispatch); the prescaler
     // operates on the already-laddered, summed signal at host rate
     // (02-fm-synthesis.md § *DAC Prescaler (FM mode)*). Bypassed at 0.
-    const float fmPrescaler01 = currentPatch.fm_dac_prescaler;
+    const float fmPrescaler01 = kitOn ? 0.0f : currentPatch.fm_dac_prescaler;
     if (fmPrescaler01 > 0.0f)
     {
         juce::AudioBuffer<float> subView (buffer.getArrayOfWritePointers(),
@@ -1207,6 +1224,11 @@ void GenVstAudioProcessor::loadProgramChangePatch (Mode mode, int programNumber)
         {
             for (const auto& p : f.patches)
             {
+                // A `.gnkit` drum kit is not a single patch — exclude it from
+                // the Program Change pool and prev/next navigation (both step
+                // through single patches of the current mode).
+                if (p.path.endsWithIgnoreCase (".gnkit")) continue;
+
                 Tag effective = p.tag;
                 if (effective == Tag::Pending)
                 {
@@ -1268,6 +1290,26 @@ void GenVstAudioProcessor::handleNoteOn (int note, int velocity)
             const bool velToTl = velocityToTlParam != nullptr
                                    && velocityToTlParam->load() > 0.5f;
 
+            // Kit mode (ADR-0021 amendment): map the trigger note to its pad's
+            // own FM patch and key it at the pad's FIXED pitch. Unmapped notes
+            // are silently ignored. Each voice keeps its own patch (Task T2),
+            // so overlapping drums don't clobber each other's registers.
+            if (kitActive.load (std::memory_order_acquire))
+            {
+                const Kit& kit = kitBuffers[(std::size_t)
+                                    liveKitIndex.load (std::memory_order_acquire)];
+                const int slotIdx = kit.slotForNote (note);
+                if (slotIdx >= 0)
+                {
+                    const KitSlot& s = kit.slots[(std::size_t) slotIdx];
+                    Patch padPatch = resolvedPadPatch (s);
+                    voiceAllocator.noteOn (0, s.fixedNote, velocity, 0.0, velToTl, padPatch);
+                    telemetry.setNoteOn (true);
+                    telemetry.setNoteActive (note, true);
+                }
+                break;
+            }
+
             // HARDWARE STRICT — FLOAT_MUL / AUTO_RETRIG drive the YM2612's
             // channel-3 special features and the chip only has ONE such
             // channel. With strict on, the second voice asking for those
@@ -1317,8 +1359,21 @@ void GenVstAudioProcessor::handleNoteOff (int note)
     switch (mode)
     {
         case Mode::FM:
-            voiceAllocator.noteOff (0, note,
-                                    sustainPedalDown.load (std::memory_order_relaxed));
+            if (kitActive.load (std::memory_order_acquire))
+            {
+                // Release the voice keyed at this pad's fixed pitch (gate mode).
+                const Kit& kit = kitBuffers[(std::size_t)
+                                    liveKitIndex.load (std::memory_order_acquire)];
+                const int slotIdx = kit.slotForNote (note);
+                if (slotIdx >= 0)
+                    voiceAllocator.noteOff (0, kit.slots[(std::size_t) slotIdx].fixedNote,
+                                            sustainPedalDown.load (std::memory_order_relaxed));
+            }
+            else
+            {
+                voiceAllocator.noteOff (0, note,
+                                        sustainPedalDown.load (std::memory_order_relaxed));
+            }
             telemetry.setNoteOn (voiceAllocator.numActiveVoices() > 0);
             telemetry.setNoteActive (note, false);
             break;
@@ -1599,10 +1654,17 @@ void GenVstAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         customRoots.push_back (r->folder->path);
     }
 
+    // Embed the active drum kit (ADR-0021 amendment) so the project carries
+    // the full kit independently of the source .gnkit / .tfi files.
+    const juce::String kitJson = kitActive.load (std::memory_order_acquire)
+                                   ? juce::String (kitToJson (activeKit))
+                                   : juce::String();
+
     auto xml = genvst::state::save (apvts.copyState(),
                                     activePathForMode (Mode::FM),
                                     activePathForMode (Mode::SQ),
-                                    customRoots);
+                                    customRoots,
+                                    kitJson);
     if (xml != nullptr)
         copyXmlToBinary (*xml, destData);
 }
@@ -1836,7 +1898,34 @@ void GenVstAudioProcessor::drainPendingStateRestore()
         }
         setActivePathForMode (mode, path);
     };
-    applyPerModePath (Mode::FM, pending.activeFmPath);
+
+    // Drum kit (ADR-0021 amendment): the kit is embedded in the project, so
+    // restore it from the JSON directly — do NOT re-check the source .gnkit
+    // path on disk (it may be a user kit that was never saved as a file). The
+    // FM path is kept only as the header label.
+    const bool kitRestored = pending.kitJson.isNotEmpty();
+    if (kitRestored)
+    {
+        auto loaded = kitFromJson (pending.kitJson.toStdString());
+        if (loaded.kit.has_value())
+        {
+            publishKit (*loaded.kit);
+            kitActive.store (true, std::memory_order_release);
+            if (pending.activeFmPath.isNotEmpty())
+                setActivePathForMode (Mode::FM, pending.activeFmPath);
+        }
+        else
+        {
+            kitActive.store (false, std::memory_order_release);
+            emitStateRestoreToast ("warn",
+                "Drum kit could not be restored: " + juce::String (loaded.error));
+        }
+    }
+    else
+    {
+        kitActive.store (false, std::memory_order_release);
+        applyPerModePath (Mode::FM, pending.activeFmPath);
+    }
     applyPerModePath (Mode::SQ, pending.activeSqPath);
 
     // Fire patchLoaded for the active mode's patch (if any) so the header LCD
@@ -1935,6 +2024,19 @@ juce::String GenVstAudioProcessor::loadPresetFromPath (const juce::String& absol
 
     const Tag tag = *tagOpt;
 
+    // `.gnkit` — an FM drum kit (ADR-0021 amendment). Parse + resolve every
+    // pad's source patch on the message thread, then activate the kit (which
+    // flips the instance to FM mode). A load failure leaves the current state
+    // untouched.
+    if (juce::String (fsPath.extension().string()).equalsIgnoreCase (".gnkit"))
+    {
+        const auto loaded = loadKit (fsPath);
+        if (! loaded.kit.has_value())
+            return loaded.error.empty() ? juce::String ("unknown kit load error")
+                                        : juce::String (loaded.error);
+        return applyKit (*loaded.kit, absolutePath);
+    }
+
     // Step 1: parse on the message thread. If parsing fails we never touch
     // mode_select or any apvts param — the user's current state is
     // preserved.
@@ -1998,6 +2100,9 @@ juce::String GenVstAudioProcessor::loadPresetFromPath (const juce::String& absol
 
 juce::String GenVstAudioProcessor::applyFmPatch (const Patch& patch, const juce::String& absolutePath)
 {
+    // Loading an ordinary single patch exits kit mode (ADR-0021 amendment).
+    kitActive.store (false, std::memory_order_release);
+
     // Step 1: record the active path BEFORE flipping mode_select. The
     // mode-switch listener (handleAsyncUpdate) checks the active path to
     // decide whether to fall back to the default — having the path in place
@@ -2050,6 +2155,9 @@ juce::String GenVstAudioProcessor::applyFmPatch (const Patch& patch, const juce:
 juce::String GenVstAudioProcessor::applyPsgPreset (const PsgPreset& preset,
                                                     const juce::String& absolutePath)
 {
+    // A kit is FM-only; switching to an SQ preset exits kit mode.
+    kitActive.store (false, std::memory_order_release);
+
     setActivePathForMode (Mode::SQ, absolutePath);
 
     if (auto* modeParam = apvts.getParameter ("mode_select"))
@@ -2083,6 +2191,184 @@ juce::String GenVstAudioProcessor::applyPsgPreset (const PsgPreset& preset,
     }
 
     return {};
+}
+
+void GenVstAudioProcessor::publishKit (const Kit& kit)
+{
+    // Message thread fills the inactive buffer, then flips the index so the
+    // audio thread (note-on) sees a fully-written kit. activeKit keeps a
+    // message-thread copy for state save + the UI.
+    activeKit = kit;
+    const int next = 1 - liveKitIndex.load (std::memory_order_relaxed);
+    kitBuffers[(std::size_t) next] = kit;
+    liveKitIndex.store (next, std::memory_order_release);
+}
+
+juce::String GenVstAudioProcessor::applyKit (const Kit& kit, const juce::String& absolutePath)
+{
+    // Publish the kit to the audio thread BEFORE marking it active, so a
+    // note-on that observes kitActive==true always reads a complete kit.
+    publishKit (kit);
+
+    // A kit always runs in FM mode. Record the path before flipping mode so the
+    // mode-switch listener doesn't race a default-load (mirrors applyFmPatch).
+    setActivePathForMode (Mode::FM, absolutePath);
+
+    if (auto* modeParam = apvts.getParameter ("mode_select"))
+    {
+        const int idx = modeToChoiceIndex (Mode::FM);
+        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (modeParam))
+        {
+            if (choice->getIndex() != idx)
+            {
+                const int last = juce::jmax (0, choice->choices.size() - 1);
+                const float n  = last == 0 ? 0.0f : static_cast<float> (idx) / static_cast<float> (last);
+                modeParam->beginChangeGesture();
+                modeParam->setValueNotifyingHost (n);
+                modeParam->endChangeGesture();
+            }
+        }
+    }
+
+    kitActive.store (true, std::memory_order_release);
+
+    if (patchLoadedCallback)
+    {
+        PatchLoadedNotifier note;
+        note.name = juce::String (kit.name.empty()
+                                    ? std::filesystem::path { absolutePath.toRawUTF8() }
+                                          .stem().string()
+                                    : kit.name);
+        note.tag  = Tag::FM;
+        note.path = absolutePath;
+        patchLoadedCallback (note);
+    }
+
+    return {};
+}
+
+bool GenVstAudioProcessor::isKitActive() const noexcept
+{
+    return kitActive.load (std::memory_order_acquire);
+}
+
+juce::String GenVstAudioProcessor::kitJsonForUi() const
+{
+    return juce::String (kitToJson (activeKit));
+}
+
+juce::String GenVstAudioProcessor::enterKitMode()
+{
+    if (! kitActive.load (std::memory_order_acquire))
+    {
+        // Prefer the factory GM kit so the user starts from a playable kit.
+        juce::String defKit;
+        if (! factoryRootPath.empty())
+        {
+            const auto p = factoryRootPath / "fm" / "kits" / "gm-standard.gnkit";
+            std::error_code ec;
+            if (std::filesystem::is_regular_file (p, ec))
+                defKit = juce::String (p.string());
+        }
+
+        if (defKit.isNotEmpty())
+            loadPresetFromPath (defKit);
+        else
+        {
+            Kit empty;
+            empty.name = "New Kit";
+            applyKit (empty, {});
+        }
+    }
+    return kitJsonForUi();
+}
+
+void GenVstAudioProcessor::exitKitMode()
+{
+    const auto p = defaultPresetPathForMode (Mode::FM);
+    if (p.isNotEmpty())
+        loadPresetFromPath (p);          // applyFmPatch clears kitActive
+    else
+        kitActive.store (false, std::memory_order_release);
+}
+
+juce::String GenVstAudioProcessor::setKitSlot (int pad, const juce::String& patchPath,
+                                               int note, int fixedNote,
+                                               double volume, int decayRr)
+{
+    if (pad < 0 || pad >= Kit::kNumPads)
+        return kitJsonForUi();
+
+    KitSlot& s = activeKit.slots[(std::size_t) pad];
+
+    if (patchPath.isNotEmpty())
+    {
+        // Assign / change the pad's patch: load + embed it.
+        const std::filesystem::path fsPath { patchPath.toRawUTF8() };
+        const auto loaded = loadKitSourcePatch (fsPath);
+        if (! loaded.patch.has_value())
+            return kitJsonForUi();       // bad/unsupported file — leave kit as-is
+        s.patch      = *loaded.patch;
+        s.sourcePath = patchPath.toStdString();
+        s.label      = s.patch.name.empty() ? fsPath.stem().string() : s.patch.name;
+    }
+    else if (! s.enabled)
+    {
+        return kitJsonForUi();           // param-only edit on an empty pad — no-op
+    }
+
+    // Param edits apply to both the assign path and the param-only path (empty
+    // patchPath keeps the embedded patch + label intact).
+    s.enabled    = true;
+    s.midiNote   = juce::jlimit (0, 127, note);
+    s.fixedNote  = juce::jlimit (0, 127, fixedNote);
+    s.volume     = juce::jlimit (0.0f, 1.0f, (float) volume);
+    s.decayRr    = juce::jlimit (-1, 15, decayRr);
+
+    publishKit (activeKit);
+    // Assigning a pad implies kit mode (the UI normally enters it first, but
+    // be defensive so a stray assign can't leave the engine in single-patch).
+    kitActive.store (true, std::memory_order_release);
+    return kitJsonForUi();
+}
+
+juce::String GenVstAudioProcessor::clearKitSlot (int pad)
+{
+    if (pad >= 0 && pad < Kit::kNumPads)
+    {
+        activeKit.slots[(std::size_t) pad] = KitSlot{};
+        publishKit (activeKit);
+    }
+    return kitJsonForUi();
+}
+
+juce::String GenVstAudioProcessor::saveActiveKit (const juce::String& name,
+                                                  juce::String& outError)
+{
+    outError.clear();
+    const auto result = patchBrowser.saveKitFile (activeKit, name);
+    if (! result.error.empty())
+    {
+        outError = result.error;
+        return {};
+    }
+    setActivePathForMode (Mode::FM, result.path);
+    return result.path;
+}
+
+void GenVstAudioProcessor::auditionKitPad (int pad)
+{
+    if (pad < 0 || pad >= Kit::kNumPads)
+        return;
+    const KitSlot& s = activeKit.slots[(std::size_t) pad];
+    if (! s.enabled || s.midiNote < 0)
+        return;
+
+    const int note = s.midiNote;
+    injectNoteOn (note, 110);
+    // Release after a short tail so a sustaining patch doesn't drone. The
+    // audition is best-effort UI feedback; the processor outlives the delay.
+    juce::Timer::callAfterDelay (260, [this, note] { injectNoteOff (note); });
 }
 
 juce::String GenVstAudioProcessor::savePresetForCurrentMode (const juce::String& name,
@@ -2200,6 +2486,11 @@ juce::String GenVstAudioProcessor::patchNavigate (int direction)
         {
             for (const auto& p : f.patches)
             {
+                // A `.gnkit` drum kit is not a single patch — exclude it from
+                // the Program Change pool and prev/next navigation (both step
+                // through single patches of the current mode).
+                if (p.path.endsWithIgnoreCase (".gnkit")) continue;
+
                 Tag effective = p.tag;
                 if (effective == Tag::Pending)
                 {

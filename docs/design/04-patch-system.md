@@ -805,9 +805,46 @@ WebView as a `patchLoaded` event so the header patch-name LCD updates.
   no format to write.
 
 The supported-extension set in `kSupportedPatchExtensions` /
-`tagFromExtension()` is `{ .tfi, .vgi, .dmp, .y12, .opm, .psg }`; the
-`Tag` enum is `{ FM, SQ }`. D mode is a `mode_select` value but never
-a tag value, and there is no extension that resolves to a D tag.
+`tagFromExtension()` is `{ .tfi, .vgi, .dmp, .y12, .opm, .psg, .gnkit }`; the
+`Tag` enum is `{ FM, SQ }` (`.gnkit` tags FM). D mode is a `mode_select` value
+but never a tag value, and there is no extension that resolves to a D tag.
+
+### `.gnkit` Format (FM drum kit — ADR-0021 amendment)
+
+A `.gnkit` is a JSON drum kit layered on FM mode: a 32-pad (4 banks × 8) map of
+MIDI notes to FM patches, played at fixed pitch — the RX1200-style pad
+workflow, host-sequenced. Defined in `src/Kit.{h,cpp}` (`loadKit` / `saveKit` /
+`kitToJson` / `kitFromJson`).
+
+```json
+{
+  "version": 1,
+  "name": "GM Standard Kit",
+  "banks": 4, "padsPerBank": 8,
+  "slots": [
+    { "pad": 1, "note": 36, "fixedNote": 36, "label": "Bass Drum 1",
+      "volume": 1.0, "decayRr": -1,
+      "source": "../drums/kick.tfi",          // informational (factory kits)
+      "patch": { /* full embedded Patch — see patchToVar in Kit.cpp */ } }
+  ]
+}
+```
+
+- **`pad`** (0–31) places the slot; only enabled pads are written. **`note`**
+  is the trigger note; **`fixedNote`** the constant pitch the pad always plays
+  (so a drum doesn't pitch-track the keyboard). **`volume`** (0–1) folds into
+  `Patch.channel_tl`; **`decayRr`** (−1 = keep patch RR, else 0–15) overrides
+  every operator's release rate (`resolvedPadPatch`).
+- **Patches are embedded, not referenced.** `saveKit` / project state always
+  write the full resolved `Patch` per pad so a kit is self-contained even if
+  source files move. The factory `gm-standard.gnkit` instead lists a `source`
+  path (relative to the `.gnkit`); `loadKit` resolves + embeds it at load time
+  (a slot whose `patch` is present skips resolution). Source resolution accepts
+  the FM formats only (`loadKitSourcePatch`); `.psg` is rejected — kits are
+  FM-only.
+- The active kit persists inside the project as a `<kit>` child of
+  `<GenVstState>` (the `.gnkit` JSON), drained on the first `prepareToPlay`
+  after restore.
 - **Delete:** removes a patch from a writable root. Disabled for the
   read-only factory root.
 

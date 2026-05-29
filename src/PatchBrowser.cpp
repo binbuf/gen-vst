@@ -1,5 +1,7 @@
 #include "PatchBrowser.h"
 
+#include "Kit.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -634,6 +636,46 @@ PatchBrowser::savePatchAsTfi (const Patch& patch, const juce::String& name)
     }
 
     // Refresh the user-saved root so the new patch shows up.
+    if (auto* savedRoot = findFolderByPath (pathString (savedFs)))
+    {
+        savedRoot->scanned = false;
+        scanImmediateChildren (*savedRoot);
+    }
+
+    indexBuilt.store (false, std::memory_order_release);
+    if (isThreadRunning())
+        notify();
+    else
+        startThread (juce::Thread::Priority::low);
+
+    result.path = pathString (dest);
+    return result;
+}
+
+PatchBrowser::SaveResult
+PatchBrowser::saveKitFile (const Kit& kit, const juce::String& name)
+{
+    SaveResult result;
+
+    const auto savedFs = resolveUserSavedRoot();
+    std::error_code ec;
+    fs::create_directories (savedFs, ec);
+    if (! fs::is_directory (savedFs, ec))
+    {
+        result.error = "cannot create user-saved patch directory";
+        return result;
+    }
+
+    const auto safe = sanitiseFileName (name.isEmpty() ? juce::String ("kit") : name);
+    const fs::path dest = savedFs / (safe.toStdString() + ".gnkit");
+
+    auto err = saveKit (kit, dest);
+    if (! err.empty())
+    {
+        result.error = std::move (err);
+        return result;
+    }
+
     if (auto* savedRoot = findFolderByPath (pathString (savedFs)))
     {
         savedRoot->scanned = false;

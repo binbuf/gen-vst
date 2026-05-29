@@ -361,3 +361,40 @@ TEST (PluginState, RealDirectoryResolvesViaJuceFile)
     EXPECT_TRUE (juce::File (juce::String (tmp.string())).isDirectory());
     fs::remove (tmp);
 }
+
+// =============================================================================
+// Embedded drum kit (ADR-0021 amendment)
+// =============================================================================
+
+// When no kit JSON is supplied, the envelope carries no `<kit>` child and
+// restore() leaves PendingRestore.kitJson empty (the no-kit default).
+TEST (PluginState, SaveOmitsKitWhenEmptyAndRestoreLeavesKitJsonEmpty)
+{
+    StubProcessor proc;
+    auto xml = genvst::state::save (proc.apvts.copyState(), {}, {}, {}, {});
+    ASSERT_NE (xml, nullptr);
+    EXPECT_EQ (xml->getChildByName ("kit"), nullptr);
+
+    auto pending = genvst::state::restore (proc.apvts, *xml);
+    ASSERT_TRUE (pending.has_value());
+    EXPECT_TRUE (pending->kitJson.isEmpty());
+}
+
+// A non-empty kit JSON rides in a `<kit>` child and survives a save→restore
+// round-trip verbatim, so the processor can rebuild the embedded kit.
+TEST (PluginState, SaveEmbedsKitJsonAndRestoreRecoversIt)
+{
+    StubProcessor proc;
+    const juce::String kitJson =
+        R"({ "version": 1, "name": "Embedded Kit", "slots": [] })";
+
+    auto xml = genvst::state::save (proc.apvts.copyState(), "C:/x.gnkit", {}, {}, kitJson);
+    ASSERT_NE (xml, nullptr);
+    auto* kitChild = xml->getChildByName ("kit");
+    ASSERT_NE (kitChild, nullptr);
+
+    auto pending = genvst::state::restore (proc.apvts, *xml);
+    ASSERT_TRUE (pending.has_value());
+    EXPECT_EQ (pending->kitJson, kitJson);
+    EXPECT_EQ (pending->activeFmPath, juce::String ("C:/x.gnkit"));
+}

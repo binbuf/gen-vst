@@ -244,6 +244,13 @@ void VoiceAllocator::updateActiveVoicesForPart (int part, const Patch& patch, bo
             v.updateRegisters (patch, velToTl);
 }
 
+void VoiceAllocator::updateActiveVoicesFromKeyedPatch (bool velToTl)
+{
+    for (auto& v : voices)
+        if (! v.isIdle())
+            v.refreshFromKeyedPatch (velToTl);
+}
+
 void VoiceAllocator::render (float* outL, float* outR, int numSamples, bool ladderEnabled)
 {
     if (numSamples <= 0)

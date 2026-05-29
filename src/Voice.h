@@ -105,6 +105,16 @@ public:
     // registers via the dirty-diff path (no retrigger).
     void setPitchBend (double bendSemitones, const Patch& patch, bool velToTl);
 
+    // Kit mode (ADR-0021 amendment): re-diff this voice against the patch it
+    // was keyed with — not a single shared part patch. A drum kit keys each
+    // pad with its own FM patch, so the per-block refresh must use each voice's
+    // own patch or one pad's update would clobber another's registers.
+    void refreshFromKeyedPatch (bool velToTl) { updateRegisters (keyedPatch, velToTl); }
+
+    // The patch this voice was last keyed (or legato'd) with. Read-only — used
+    // by the kit refresh path above and by tests.
+    const Patch& keyedPatchSnapshot() const noexcept { return keyedPatch; }
+
     // CC 64 hold state. While `sustained`, a note-off arriving on this voice
     // defers the release; the VoiceAllocator releases on pedal-up.
     void markSustained() noexcept             { sustained = true; }
@@ -179,6 +189,12 @@ private:
     // -1 means "never written". Diffed each block by updateRegisters so only
     // changed registers are re-sent (01-architecture.md "Parameter System").
     std::array<int, 256> shadow {};
+
+    // The patch this voice was last keyed / legato'd with — retained so kit
+    // mode can re-diff each sounding voice against its OWN patch
+    // (refreshFromKeyedPatch). In single-patch mode the processor still drives
+    // updates via updateRegisters(currentPatch, ...) and this copy is unused.
+    Patch keyedPatch {};
 
     // The FREQ CTRL MODE this voice is running under right now — set at
     // every note-on from the patch snapshot. Determines which YM2612 channel

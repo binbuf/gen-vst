@@ -109,8 +109,9 @@ std::optional<Tag> tagFromExtension (std::string_view ext)
     if (ext.empty())
         return std::nullopt;
     const auto lower = toLowerExt (ext);
-    if (lower == ".tfi" || lower == ".vgi" || lower == ".y12" || lower == ".opm")
-        return Tag::FM;
+    if (lower == ".tfi" || lower == ".vgi" || lower == ".y12" || lower == ".opm"
+        || lower == ".gnkit")
+        return Tag::FM;   // a `.gnkit` is an FM-mode drum kit (ADR-0021 amendment)
     if (lower == ".psg")
         return Tag::SQ;
     if (lower == ".dmp")

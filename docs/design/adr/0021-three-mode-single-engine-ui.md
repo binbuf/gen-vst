@@ -129,3 +129,33 @@ removed since D mode no longer uses ymfm at all.
   in-place mode switching for sound design. Rejected.
 - **Keep the multitimbral rack as an optional "advanced" mode** — adds
   exactly the UI complexity v2 was meant to remove. Rejected.
+
+## Amendment (2026-05-29): FM drum kits — the single-*patch* exception
+
+The single-engine decision above is unchanged. What this amendment relaxes is
+the implicit *single-patch-per-instance* rule, and only for **percussion** —
+the one case where the modern DAW convention is itself one track hosting many
+sounds (GM channel 10, Ableton/Bitwig drum racks, NI Battery; cf. Inphonik's
+own RX1200, a pad-to-MIDI-note instrument with **no internal sequencer**).
+
+A new **`.gnkit`** preset type layers a 32-pad (4 banks × 8) note→FM-patch map
+onto **FM mode**. Each pad binds a trigger MIDI note to an embedded `Patch`,
+played at a **fixed pitch** with per-pad volume and decay (RR) overrides. The
+engine is still the one YM2612 voice pool — a kit is **not** a fourth mode, not
+a sampler, and not a sequencer (the host sequences via MIDI).
+
+- **Invariant preserved:** an instance still runs exactly one *engine*. Kits
+  exist only under FM. SQ keeps its noise/tone split; D is unchanged.
+- **Voice model:** each pad keys an ordinary FM voice, so a kit reuses the
+  16-voice pool. Each voice retains the patch it was keyed with
+  (`Voice::keyedPatch`) so overlapping drums don't clobber one another's
+  registers; the per-block refresh uses `updateActiveVoicesFromKeyedPatch`.
+- **State:** the active kit is embedded in the project state (a `<kit>` child
+  of `<GenVstState>` holding the `.gnkit` JSON) so a saved project is
+  self-contained even if the source `.gnkit` / `.tfi` files move.
+- **Browser/PC:** `.gnkit` is tagged FM and auto-switches to FM + activates the
+  kit on load (ADR-0025). It is excluded from Program Change and prev/next
+  navigation, which step through single patches.
+- **Not reintroduced:** `PartManager`, per-part channel strips, the routing
+  matrix, and the ~300-param multitimbral apvts stay deleted. A kit adds one
+  note→patch table, not a multitimbral rack.

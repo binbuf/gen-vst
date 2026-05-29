@@ -644,3 +644,96 @@ TEST (VoiceAllocator, ReleasedVoiceAutoIdlesAfterEnvelopeDecays)
     EXPECT_EQ (alloc.numIdleVoices(), VoiceAllocator::kNumVoices);
     EXPECT_FALSE (alloc.hasAudibleVoice());
 }
+
+// --- Kit mode: per-voice keyed-patch retention (ADR-0021 amendment) ---------
+
+namespace
+{
+    // A copy of makePatch() with a caller-chosen algorithm + carrier level, so
+    // two voices can be keyed with audibly distinct patches.
+    Patch makePatchAlgTl (std::uint8_t alg, std::uint8_t tl)
+    {
+        Patch p = makePatch();
+        p.alg = alg;
+        for (int op = 0; op < 4; ++op)
+            p.tl[op] = tl;
+        return p;
+    }
+
+    // Locate the (only) voice serving `note`, or nullptr.
+    const Voice* voiceForNote (const VoiceAllocator& alloc, int note)
+    {
+        for (int i = 0; i < VoiceAllocator::kNumVoices; ++i)
+        {
+            const Voice& v = alloc.voiceAt (i);
+            if (! v.isIdle() && v.note() == note)
+                return &v;
+        }
+        return nullptr;
+    }
+}
+
+// Each voice retains the patch it was keyed with, and a from-keyed-patch
+// refresh leaves every voice bound to its OWN patch (no cross-voice clobber).
+TEST (VoiceAllocator, KeyedPatchRetainedPerVoiceAcrossRefresh)
+{
+    VoiceAllocator alloc;
+    alloc.prepare (44100.0, 512);
+
+    const Patch a = makePatchAlgTl (7, 20);   // distinct algorithm + level
+    const Patch b = makePatchAlgTl (4, 60);
+
+    alloc.noteOn (0, 60, 100, 0.0, false, a);
+    alloc.noteOn (0, 67, 100, 0.0, false, b);
+
+    const Voice* va = voiceForNote (alloc, 60);
+    const Voice* vb = voiceForNote (alloc, 67);
+    ASSERT_NE (va, nullptr);
+    ASSERT_NE (vb, nullptr);
+    EXPECT_EQ (va->keyedPatchSnapshot().alg, 7);
+    EXPECT_EQ (vb->keyedPatchSnapshot().alg, 4);
+    EXPECT_EQ (va->keyedPatchSnapshot().tl[0], 20);
+    EXPECT_EQ (vb->keyedPatchSnapshot().tl[0], 60);
+
+    // The kit per-block refresh re-diffs every sounding voice against its own
+    // keyed patch — it must not retrigger, drop, or cross-assign patches.
+    alloc.updateActiveVoicesFromKeyedPatch (false);
+
+    EXPECT_EQ (alloc.numActiveVoices(), 2);
+    EXPECT_TRUE (alloc.isNoteActive (0, 60));
+    EXPECT_TRUE (alloc.isNoteActive (0, 67));
+    EXPECT_EQ (voiceForNote (alloc, 60)->keyedPatchSnapshot().alg, 7);
+    EXPECT_EQ (voiceForNote (alloc, 67)->keyedPatchSnapshot().alg, 4);
+}
+
+// Refreshing against an unchanged keyed patch writes no new registers: the
+// chip state (and therefore the rendered output) evolves identically to a
+// parallel allocator that never called the refresh.
+TEST (VoiceAllocator, RefreshFromKeyedPatchIsANoOpForUnchangedPatch)
+{
+    VoiceAllocator ref, refreshed;
+    ref.prepare (44100.0, 512);
+    refreshed.prepare (44100.0, 512);
+
+    const Patch p = makePatchAlgTl (7, 20);
+    ref.noteOn (0, 64, 100, 0.0, false, p);
+    refreshed.noteOn (0, 64, 100, 0.0, false, p);
+
+    std::array<float, 512> refL {}, refR {}, rfL {}, rfR {};
+
+    // First block advances both pools identically.
+    ref.render (refL.data(), refR.data(), 512, true);
+    refreshed.render (rfL.data(), rfR.data(), 512, true);
+
+    // One pool refreshes from its keyed patch before the second block.
+    refreshed.updateActiveVoicesFromKeyedPatch (false);
+
+    ref.render (refL.data(), refR.data(), 512, true);
+    refreshed.render (rfL.data(), rfR.data(), 512, true);
+
+    for (int i = 0; i < 512; ++i)
+    {
+        ASSERT_FLOAT_EQ (rfL[(std::size_t) i], refL[(std::size_t) i]) << "sample " << i;
+        ASSERT_FLOAT_EQ (rfR[(std::size_t) i], refR[(std::size_t) i]) << "sample " << i;
+    }
+}

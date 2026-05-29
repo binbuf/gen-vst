@@ -78,6 +78,28 @@ private:
     void doGetPatchRoots (const juce::Array<juce::var>& args,
                           juce::WebBrowserComponent::NativeFunctionCompletion completion);
 
+    // FM drum-kit native functions (ADR-0021 amendment). getKit/enterKit/
+    // exitKit/setKitSlot/clearKitSlot return the { active, kit } object built
+    // by kitResultVar(); saveKit returns a resultObject; playPad auditions.
+    void doGetKit        (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doEnterKit      (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doExitKit       (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doSetKitSlot    (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doClearKitSlot  (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doSaveKit       (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doPlayPad       (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+
+    // Build the { active: bool, kit: {...} } object returned by the kit
+    // native functions from the processor's current kit state.
+    juce::var kitResultVar() const;
+
     // Internal helper — DnD per the rules in Task 09 *Context* §
     // Drag-and-drop. Each file is dispatched by its extension; folders run
     // the recursive importer.

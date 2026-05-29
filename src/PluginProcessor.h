@@ -13,6 +13,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "DspDecimator.h"
+#include "Kit.h"
 #include "LadderEffect.h"
 #include "OutputFilter.h"
 #include "PatchBrowser.h"
@@ -179,6 +180,30 @@ public:
     void injectNoteOn  (int pitch, int velocity);
     void injectNoteOff (int pitch);
 
+    // ---- FM kit editing (ADR-0021 amendment) — message thread, editor API ---
+    // Whether a drum kit is currently active (the UI shows the pad grid).
+    bool isKitActive() const noexcept;
+    // The active kit serialised as `.gnkit` JSON (an empty scaffold when no
+    // kit is active). Consumed by the getKit native function.
+    juce::String kitJsonForUi() const;
+    // Activate a kit: load the factory GM kit if present, else an empty kit.
+    // No-op if a kit is already active. Returns the resulting kit JSON.
+    juce::String enterKitMode();
+    // Leave kit mode by loading the default single FM patch.
+    void exitKitMode();
+    // Assign pad `pad` to the FM patch at `patchPath` with the given trigger
+    // note / fixed pitch / volume / decay-RR override, then republish. Returns
+    // the updated kit JSON (unchanged on a bad pad index or load failure).
+    juce::String setKitSlot (int pad, const juce::String& patchPath, int note,
+                             int fixedNote, double volume, int decayRr);
+    // Clear (disable) pad `pad` and republish. Returns updated kit JSON.
+    juce::String clearKitSlot (int pad);
+    // Save the active kit to the user-saved root as `<name>.gnkit`. Returns the
+    // written path or empty + `outError`.
+    juce::String saveActiveKit (const juce::String& name, juce::String& outError);
+    // Audition pad `pad` (note-on now, note-off after a short tail).
+    void auditionKitPad (int pad);
+
     // The active engine for the current block, as read from the mode_select
     // apvts parameter. Public so the editor can synchronise its UI to the
     // current mode without round-tripping through the apvts itself
@@ -202,6 +227,17 @@ private:
     // also calls setValueNotifyingHost so the host + UI see the change.
     juce::String applyFmPatch (const Patch& patch, const juce::String& absolutePath);
     juce::String applyPsgPreset (const PsgPreset& preset, const juce::String& absolutePath);
+
+    // FM drum-kit apply (ADR-0021 amendment). Switches the instance to FM
+    // mode, publishes `kit` to the audio thread, marks the kit active, records
+    // the active FM path, and fires the patch-loaded callback. Message thread.
+    juce::String applyKit (const Kit& kit, const juce::String& absolutePath);
+
+    // Publish a kit to the audio thread via a lock-free double buffer: the
+    // message thread fills the inactive buffer, then flips `liveKitIndex`. The
+    // audio thread reads `kitBuffers[liveKitIndex]` at note-on. No audio-thread
+    // allocation. Also stores the message-thread copy in `activeKit`.
+    void publishKit (const Kit& kit);
 
     // Per-mode active path setter (internal — apvts state-save persists the
     // pair via genvst::state::save). State-restore drives the parallel
@@ -314,6 +350,18 @@ private:
     LadderEffect ladder;
 
     bool patchBrowserInitialised = false;
+
+    // --- FM drum-kit state (ADR-0021 amendment) ------------------------------
+    // Double-buffered active kit. The message thread writes the inactive
+    // buffer and flips `liveKitIndex` (release); the audio thread reads
+    // `kitBuffers[liveKitIndex]` (acquire) at note-on. `kitActive` gates the
+    // kit routing in handleNoteOn / renderFmBlock; when false the instance
+    // behaves as an ordinary single-patch FM synth. `activeKit` is the
+    // message-thread copy used for state save and the UI.
+    std::array<Kit, 2> kitBuffers;
+    std::atomic<int>   liveKitIndex { 0 };
+    std::atomic<bool>  kitActive { false };
+    Kit                activeKit;
 
     // Pre-allocated processBlock scratch — never allocated on the audio thread.
     Patch                    currentPatch;
