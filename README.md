@@ -96,9 +96,8 @@ pwsh -ExecutionPolicy Bypass -File .\build.ps1
 ./build.sh --run                   # build + launch Standalone for a quick smoke-test
 ./build.sh --clean                 # wipe build/ first — use after CMakeLists changes or weird build failures
 ./build.sh --system                # deploy to system-wide folder, same location the installer uses (sudo)
-./build.sh --uninstall             # undo dev deploy: remove per-user plugin + patches (e.g. before running the real installer)
-./build.sh --uninstall --system    # undo system deploy (sudo)
-./build.sh --uninstall --clean     # remove deployed assets and wipe the build directory
+./build.sh --uninstall             # remove ALL Gen VST installs: per-user dev, system dev, and the installer's copy (system folders + /Applications + .pkg receipts on macOS, /usr/lib on Linux). sudo prompts if a system/installer copy is present
+./build.sh --uninstall --clean     # as above, and also wipe the build directory
 ```
 
 The script configures CMake with the platform preset, builds the Vite UI bundle, copies factory patches to your per-user data directory, and deploys the plugin to a folder your DAW will scan on next rescan.
