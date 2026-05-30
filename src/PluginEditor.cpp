@@ -429,6 +429,10 @@ juce::WebBrowserComponent::Options GenVstAudioProcessorEditor::makeOptions()
             [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
             { doGetPatchRoots (args, std::move (completion)); })
+        .withNativeFunction ("getActivePatchPath",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { doGetActivePatchPath (args, std::move (completion)); })
         // On-screen keyboard: inject synthetic note events into the audio thread.
         .withNativeFunction ("noteOn",
             [this] (const juce::Array<juce::var>& args,
@@ -1009,6 +1013,19 @@ void GenVstAudioProcessorEditor::doGetPatchRoots (const juce::Array<juce::var>& 
                                                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
 {
     completion (processor.getPatchBrowser().rootsAsJson());
+}
+
+// Absolute path of the patch currently loaded for the active mode, so the
+// preset browser can expand its tree down to that patch on open. Empty in D
+// mode (no preset format) or when nothing has been loaded yet — same source
+// as the header LCD synth above (currentMode() + activePathForMode()).
+void GenVstAudioProcessorEditor::doGetActivePatchPath (const juce::Array<juce::var>& /*args*/,
+                                                       juce::WebBrowserComponent::NativeFunctionCompletion completion)
+{
+    const auto mode = processor.currentMode();
+    const auto path = (mode == GenVstAudioProcessor::Mode::D)
+                          ? juce::String() : processor.activePathForMode (mode);
+    completion (juce::var (path));
 }
 
 // -----------------------------------------------------------------------------

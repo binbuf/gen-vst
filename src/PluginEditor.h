@@ -77,6 +77,8 @@ private:
                           juce::WebBrowserComponent::NativeFunctionCompletion completion);
     void doGetPatchRoots (const juce::Array<juce::var>& args,
                           juce::WebBrowserComponent::NativeFunctionCompletion completion);
+    void doGetActivePatchPath (const juce::Array<juce::var>& args,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
 
     // Internal helper — DnD per the rules in Task 09 *Context* §
     // Drag-and-drop. Each file is dispatched by its extension; folders run

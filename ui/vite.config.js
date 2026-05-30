@@ -20,7 +20,7 @@ export default defineConfig({
   // `define` so build / CI can override without touching JS. The defaults
   // here track the current MVP; CI overrides via `--define ...` if needed.
   define: {
-    __GENVST_VERSION__:    JSON.stringify("0.3.3"),
+    __GENVST_VERSION__:    JSON.stringify("0.3.4"),
     __GENVST_SOURCE_URL__: JSON.stringify("https://github.com/binbuf/gen-vst"),
   },
 

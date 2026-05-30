@@ -6,6 +6,37 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-05-30
+
+### Added
+
+- **Preset browser reveals the currently-loaded patch on open.** Reopening the
+  preset popup used to reset the folder tree to its bare default (each root
+  expanded one level, nothing selected), losing the relative path of wherever
+  the loaded patch lived. The browser now asks the processor for the active
+  patch path (new `getActivePatchPath` native function, per current mode),
+  expands the folder chain down to it, selects the containing folder, highlights
+  the patch row, and scrolls both into view — without re-loading the patch.
+  Works for Factory, Saved, Imported, and custom roots alike. The reveal runs
+  only on open, so Add Folder / Import / Delete no longer snap the selection
+  back.
+
+### Fixed
+
+- **`build.sh --release` failing on macOS.** Two independent breakages on the
+  current toolchain (Apple Silicon, Xcode 26.x):
+  - The `GenVstTests` binary shipped unsigned, and macOS SIGKILLs an unsigned
+    binary at `exec`, so CMake's post-build `gtest_discover_tests` step (which
+    runs the binary to enumerate tests) was killed and failed the build. The
+    test target now gets an ad-hoc `codesign` post-build step, ordered before
+    discovery.
+  - The universal CLAP failed to link its x86_64 slice because
+    `libclap_juce_extensions.a` built arm64-only: `CMAKE_OSX_ARCHITECTURES` was
+    set *after* `FetchContent_MakeAvailable(clap-juce-extensions)`, and a target
+    captures the architecture list at creation time. The arch/deployment
+    defaults are now set before that fetch. (CI was unaffected — it builds
+    single-arch per architecture.)
+
 ## [0.3.3] — 2026-05-29
 
 ### Fixed

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(GenVst VERSION 0.3.3 LANGUAGES C CXX)   # C: libvgm SN76489 core sources
+project(GenVst VERSION 0.3.4 LANGUAGES C CXX)   # C: libvgm SN76489 core sources
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,22 @@ FetchContent_Declare(juce
     GIT_TAG        8.0.4
     GIT_SHALLOW    TRUE)
 FetchContent_MakeAvailable(juce)
+
+# Apple arch/deployment defaults MUST be set before any further
+# FetchContent_MakeAvailable: a target captures CMAKE_OSX_ARCHITECTURES at
+# creation time, and clap-juce-extensions creates its static library right at
+# MakeAvailable (below). Setting these afterwards (as they used to be) left
+# libclap_juce_extensions.a arm64-only, so the universal CLAP failed to link its
+# x86_64 slice. CI is unaffected — it passes -DCMAKE_OSX_ARCHITECTURES per-arch.
+if(APPLE)
+    # Default to universal for local dev; CI passes -DCMAKE_OSX_ARCHITECTURES
+    # per-arch (arm64 / x86_64) and ships separate .pkg installers, so the
+    # NOT-set guard preserves that cache value rather than shadowing it.
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    endif()
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")   # ADR-0015 — verify vs JUCE 8 WebView
+endif()
 
 # clap-juce-extensions — emits a CLAP artifact from the JUCE AudioProcessor
 # (ADR-0028, supersedes ADR-0008). Pinned to a main commit, NOT a release tag:
@@ -39,17 +55,6 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ymfm/src/ymfm.h")
 endif()
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvgm/emu/cores/sn76489.c")
     message(FATAL_ERROR "libvgm submodule not found. Run:\n  git submodule update --init --recursive")
-endif()
-
-if(APPLE)
-    # Default to universal for local dev; CI passes -DCMAKE_OSX_ARCHITECTURES
-    # per-arch (arm64 / x86_64) and ships separate .pkg installers, so a plain
-    # set() here would shadow the cache value and force a universal build that
-    # fails to link the cross arch on hosted runners.
-    if(NOT CMAKE_OSX_ARCHITECTURES)
-        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
-    endif()
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")   # ADR-0015 — verify vs JUCE 8 WebView
 endif()
 
 # WebView2 SDK — NEEDS_WEBVIEW2 makes JUCE's FindWebView2 require the

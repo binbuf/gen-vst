@@ -379,6 +379,7 @@ export function open() {
         expandFolder:  safeNative("expandFolder"),
         getPatchList:  safeNative("getPatchList"),
         getPatchRoots: safeNative("getPatchRoots"),
+        getActivePatchPath: safeNative("getActivePatchPath"),
       };
 
       // Folder tree state — map of absolute path → expanded/scanned.
@@ -427,8 +428,11 @@ export function open() {
         return activeChip === tag;
       }
 
+      let selectedTreeNode = null;
+
       function renderTree() {
         treePane.innerHTML = "";
+        selectedTreeNode = null;
         if (!folderCache || folderCache.length === 0) {
           treePane.appendChild(el("div", { className: "pb-empty", text: "No patch roots" }));
           return;
@@ -436,6 +440,8 @@ export function open() {
         for (const root of folderCache) {
           treePane.appendChild(renderRootNode(root));
         }
+        // Keep the selected folder visible after a reveal expands a deep path.
+        if (selectedTreeNode) selectedTreeNode.scrollIntoView({ block: "nearest" });
       }
 
       function renderRootNode(root) {
@@ -452,7 +458,7 @@ export function open() {
         if (root.scanned && Number.isFinite(root.patchCount) && root.patchCount >= 0) {
           node.appendChild(el("span", { className: "pb-count", text: "(" + root.patchCount + ")" }));
         }
-        if (selectedFolderPath === root.path) node.classList.add("is-selected");
+        if (selectedFolderPath === root.path) { node.classList.add("is-selected"); selectedTreeNode = node; }
 
         node.addEventListener("click", () => {
           if (expanded.has(root.path)) expanded.delete(root.path);
@@ -480,7 +486,7 @@ export function open() {
         node.appendChild(el("span", { text: folder.name }));
         if (folder.scanned && folder.patchCount >= 0)
           node.appendChild(el("span", { className: "pb-count", text: "(" + folder.patchCount + ")" }));
-        if (selectedFolderPath === folder.path) node.classList.add("is-selected");
+        if (selectedFolderPath === folder.path) { node.classList.add("is-selected"); selectedTreeNode = node; }
 
         node.addEventListener("click", async () => {
           if (isOpen) {
@@ -548,13 +554,17 @@ export function open() {
           return;
         }
 
+        let selectedRow = null;
         for (const r of rows) {
           const row = el("div", { className: "pb-row" });
           row.appendChild(badge(r.tag));
           row.appendChild(el("span", { className: "pb-name", text: r.name }));
           if (searchTerm)
             row.appendChild(el("span", { className: "pb-folder", text: r.folderPath || "" }));
-          if (r.path === selectedPatchPath) row.classList.add("is-selected");
+          if (r.path === selectedPatchPath) {
+            row.classList.add("is-selected");
+            selectedRow = row;
+          }
 
           row.addEventListener("click", async () => {
             selectedPatchPath = r.path;
@@ -563,9 +573,53 @@ export function open() {
           });
           listPane.appendChild(row);
         }
+        // Keep the selected patch visible — on reveal it may sit far down a
+        // long folder; for ordinary clicks the row is already in view so this
+        // is a no-op.
+        if (selectedRow) selectedRow.scrollIntoView({ block: "nearest" });
       }
 
-      async function refreshAll() {
+      // Expand the tree down to the patch currently loaded for the active mode
+      // so reopening the browser lands on "where we were" rather than the bare
+      // default view. Selects the containing folder + highlights the patch; it
+      // does NOT re-load (the patch is already loaded).
+      async function revealActivePatch() {
+        if (!nat.getActivePatchPath) return;
+        const active = await nat.getActivePatchPath();
+        if (!active) return;
+
+        // The root whose absolute path prefixes the patch path, matched on a
+        // separator boundary so "/a/b" doesn't spuriously claim "/a/bc/x".
+        // Sort longest first so a nested custom root wins over an ancestor.
+        const underRoot = (r) =>
+          r && r.path && (active.startsWith(r.path + "/") || active.startsWith(r.path + "\\"));
+        const root = (folderCache || [])
+          .filter(underRoot)
+          .sort((a, b) => b.path.length - a.path.length)[0];
+        if (!root) return;
+
+        // Remainder after the root path; its first char is the OS separator
+        // (works for both "/" and "\\"). Last segment is the file; the rest
+        // are ancestor folder names to expand top-down.
+        const rest = active.slice(root.path.length);
+        const sep = rest.charAt(0);
+        const segs = rest.split(sep).filter(Boolean);
+        if (segs.length === 0) return;
+        const folderSegs = segs.slice(0, -1);
+
+        let cur = root.path;
+        expanded.add(cur);
+        await ensureFolderContents(cur);
+        for (const seg of folderSegs) {
+          cur = cur + sep + seg;            // parent already scanned → node exists
+          expanded.add(cur);
+          await ensureFolderContents(cur);
+        }
+        selectedFolderPath = cur;           // deepest folder (or root if flat)
+        selectedPatchPath  = active;
+      }
+
+      async function refreshAll({ reveal = false } = {}) {
         await Promise.all([fetchRoots(), fetchList()]);
         // Eagerly fetch the contents of every initially-expanded root so the
         // first render shows immediate-child folders + counts.
@@ -575,6 +629,7 @@ export function open() {
             await ensureFolderContents(root.path);
           }
         }
+        if (reveal) await revealActivePatch();
         renderTree();
         renderList();
       }
@@ -670,8 +725,9 @@ export function open() {
       });
       applyExportGrey();
 
-      // First render — fire-and-forget the async refresh.
-      refreshAll();
+      // First render — fire-and-forget the async refresh. Reveal the active
+      // patch so the tree opens on the loaded patch's folder.
+      refreshAll({ reveal: true });
 
       teardown = () => { if (unsubMode) unsubMode(); };
 

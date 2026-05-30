@@ -112,8 +112,21 @@ target_link_libraries(GenVstTests PRIVATE
     juce::juce_audio_processors)   # PsgPreset uses AudioProcessorValueTreeState
 
 include(GoogleTest)
-# Default DISCOVERY_TIMEOUT is 5s — too tight for a freshly-linked Release
-# binary on macOS (cold dyld + JUCE static deps push first-load past the
-# limit and the POST_BUILD discovery step gets killed). 60s is the value
-# CMake's own docs suggest for slow-to-load discovery binaries.
+
+# macOS (Apple Silicon, Xcode 26.x) SIGKILLs an unsigned binary at exec, before
+# main, so the POST_BUILD gtest discovery below (which runs the binary to list
+# tests) — and any `ctest` run — gets killed. The linker does not ad-hoc-sign a
+# universal binary, and Xcode's CodeSign phase doesn't sign a plain (non-bundle)
+# executable even with CODE_SIGN_IDENTITY="-", so sign it ourselves. Registered
+# BEFORE gtest_discover_tests so it runs first within the target's combined
+# "CMake PostBuild Rules" phase, ahead of the discovery command.
+if(APPLE)
+    add_custom_command(TARGET GenVstTests POST_BUILD
+        COMMAND codesign --force --sign - "$<TARGET_FILE:GenVstTests>"
+        COMMENT "Ad-hoc signing GenVstTests (macOS refuses to exec it unsigned)"
+        VERBATIM)
+endif()
+
+# DISCOVERY_TIMEOUT is generous because the POST_BUILD discovery step runs the
+# freshly-linked binary; a cold dyld + JUCE static deps make first-load slow.
 gtest_discover_tests(GenVstTests DISCOVERY_TIMEOUT 60)
