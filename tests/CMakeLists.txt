@@ -32,7 +32,10 @@ add_executable(GenVstTests
     FmFreqCtrlModeTests.cpp
     FmLegatoTests.cpp
     FmTlInversionTests.cpp
+    PluginStateRestoreOrderingTests.cpp
     # Units under test, compiled straight into the test binary.
+    "${CMAKE_SOURCE_DIR}/src/PluginProcessor.cpp"   # GENVST_HEADLESS_TEST omits the WebView editor
+    "${CMAKE_SOURCE_DIR}/src/Telemetry.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchSystem.cpp"
     "${CMAKE_SOURCE_DIR}/src/PatchBrowser.cpp"
     "${CMAKE_SOURCE_DIR}/src/PluginState.cpp"
@@ -83,6 +86,20 @@ target_compile_definitions(GenVstTests PRIVATE
     GENVST_FACTORY_PATCHES_DIR="${CMAKE_SOURCE_DIR}/extern/patches"
     GENVST_FIXTURES_PATCHES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/patches"
     GENVST_FIXTURES_TUNINGS_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/tunings"
+    # Compile PluginProcessor.cpp without its WebView editor (createEditor
+    # returns nullptr; the PluginEditor.h include is skipped) so the processor
+    # can be instantiated in a headless gtest binary that links no GUI module.
+    GENVST_HEADLESS_TEST=1
+    # resolveFactoryRoot() falls back to GENVST_DEV_PATCH_DIR when the
+    # executable-relative bundle walk fails (always, in a test binary), so the
+    # cold-start default-load + drain have a real factory bank to act on — the
+    # ordering tests depend on the FM/SQ defaults being loadable.
+    GENVST_DEV_PATCH_DIR="${CMAKE_SOURCE_DIR}/extern/patches"
+    # The ordering tests pump the message loop (runDispatchLoopUntil) to
+    # dispatch the cold-start / mode_select AsyncUpdater. That API is gated
+    # behind JUCE_MODAL_LOOPS_PERMITTED, which plugin builds disable — enable
+    # it for the test binary only.
+    JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0)
 

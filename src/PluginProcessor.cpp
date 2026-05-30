@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
-#include "PluginEditor.h"
+#ifndef GENVST_HEADLESS_TEST
+ #include "PluginEditor.h"   // pulls in juce_gui_extra + WebView; omitted for headless unit tests
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -383,9 +385,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
 
     // --- Gallery scratch params (Task 04 widget gallery) --------------------
     // Bound by ui/gallery.html so every widget kind can be developed and
-    // verified against a live apvts parameter. Storage cost is trivial; left
-    // unguarded so the host's generic editor can drive them too. Visible as
-    // "GALLERY ..." in the host parameter list — irrelevant for end users.
+    // verified against a live apvts parameter. These are a *dev-only* surface
+    // (gallery.html is reachable only under the Vite dev server via
+    // GENVST_DEV_PAGE), so they are gated behind GENVST_DEV_SERVER: shipping
+    // them in release builds only pollutes the host's automatable-parameter
+    // list with "GALLERY …" entries that no end-user UI binds.
+   #if GENVST_DEV_SERVER
     for (char id : { 'a', 'b', 'c', 'd' })
     {
         const juce::String suffix = juce::String::charToString (id);
@@ -426,6 +431,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GenVstAudioProcessor::create
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "gallery_wheel", 1 }, "GALLERY Wheel",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f));
+   #endif // GENVST_DEV_SERVER
 
     return layout;
 }
@@ -1570,7 +1576,11 @@ void GenVstAudioProcessor::resetAllParametersToDefaults()
 
 juce::AudioProcessorEditor* GenVstAudioProcessor::createEditor()
 {
+   #ifdef GENVST_HEADLESS_TEST
+    return nullptr;   // headless unit-test build — the WebView editor isn't linked.
+   #else
     return new GenVstAudioProcessorEditor (*this);
+   #endif
 }
 
 bool GenVstAudioProcessor::hasEditor() const                            { return true; }
@@ -1625,8 +1635,33 @@ void GenVstAudioProcessor::setStateInformation (const void* data, int sizeInByte
     }
 
     pendingStateRestore = std::move (*pending);
-    // The first prepareToPlay drains pendingStateRestore — see comment on the
-    // pendingStateRestore data member.
+
+    // A state restore is authoritative — the apvts above was just overwritten
+    // with the project's saved values. replaceState fires the mode_select
+    // listener (every parameter goes through setValueNotifyingHost), and a
+    // prior cold-start in prepareToPlay (the prepareToPlay-before-
+    // setStateInformation ordering that Ableton uses) may have queued a
+    // default-load async as well. Either async, if left to run, would see an
+    // empty active-path and reload the *factory default* preset on top of the
+    // values we just restored — the "patch isn't restored on reopen" bug.
+    // Cancel the pending async and re-anchor lastHandledMode to the restored
+    // mode so the listener pathway treats the restore as the current state,
+    // not a manual mode switch.
+    cancelPendingUpdate();
+    lastHandledMode = currentMode();
+
+    // Drain immediately when the patch browser is already live (the
+    // prepareToPlay-first ordering — the browser was initialised by that first
+    // prepareToPlay). Otherwise leave the drain deferred to the first
+    // prepareToPlay (the setStateInformation-first ordering, where the browser
+    // — and thus factoryRootPath — doesn't exist yet). Without an immediate
+    // drain here, a host that never calls prepareToPlay again after restoring
+    // state would never re-register custom roots or restore the per-mode patch
+    // labels. setStateInformation runs on the message thread
+    // (01-architecture.md *Threading Model*), so a synchronous drain is safe.
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (patchBrowserInitialised && mm != nullptr && mm->isThisTheMessageThread())
+        drainPendingStateRestore();
 }
 
 // =============================================================================
@@ -1715,6 +1750,15 @@ void GenVstAudioProcessor::parameterChanged (const juce::String& parameterID, fl
 
 void GenVstAudioProcessor::handleAsyncUpdate()
 {
+    // A state restore is in flight (setStateInformation parsed a v2 envelope
+    // and the drain hasn't run yet). The restore is authoritative: the apvts
+    // already carries the saved patch values, and drainPendingStateRestore
+    // will install the per-mode active paths. Loading a factory default here
+    // would clobber the just-restored sound. Bail until the drain clears the
+    // pending payload.
+    if (pendingStateRestore.has_value())
+        return;
+
     const Mode m = currentMode();
     if (m == lastHandledMode)
         return;

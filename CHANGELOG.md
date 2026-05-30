@@ -6,6 +6,32 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.3] — 2026-05-29
+
+### Fixed
+
+- **Patch / parameter state not restored on project reload.** When a project
+  was saved and reopened (most visibly in Ableton Live), an instance could come
+  back on the factory-default patch instead of the configured one. The cold-start
+  default-patch load raced the host's state restore: in the
+  `prepareToPlay`-before-`setStateInformation` instantiation order that Live
+  uses, the queued default-load `AsyncUpdater` fired *after* the saved `apvts`
+  was restored and overwrote it with the factory default. `setStateInformation`
+  now treats a restore as authoritative — it cancels any pending default-load,
+  re-anchors the mode tracker, and drains the pending restore immediately when
+  the patch browser is already live (so custom roots and per-mode patch labels
+  also survive even if the host never calls `prepareToPlay` again). The
+  mode-switch handler additionally bails while a restore is in flight. Added a
+  headless integration test covering both host instantiation orderings plus a
+  second `prepareToPlay`.
+
+### Changed
+
+- **Gallery widget-development scratch parameters are no longer exposed in
+  release builds.** The `gallery_*` apvts parameters (bound only by the
+  dev-only `gallery.html`) were appearing as `"GALLERY …"` entries in the host's
+  automatable-parameter list. They are now gated behind `GENVST_DEV_SERVER`.
+
 ## [0.3.2] — 2026-05-28
 
 ### Fixed
